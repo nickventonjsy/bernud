@@ -37,6 +37,10 @@ r = await call("/memory/forget", { method: "POST", body: JSON.stringify({ query:
 assert.equal(r.body.forgotten, false);
 
 assert.equal((await call("/news?topic=nope")).status, 400);
+const pub = await fetch(base + "/public/news?topic=nope", { headers: { origin: "https://bernud.onrender.com" } });
+assert.equal(pub.status, 400); assert.equal(pub.headers.get("access-control-allow-origin"), "https://bernud.onrender.com");
+const evil = await fetch(base + "/health", { headers: { origin: "https://evil.example" } });
+assert.equal(evil.headers.get("access-control-allow-origin"), null);
 
 const xml = `<rss><channel><item><title><![CDATA[Bitcoin rises &amp; falls]]></title><description>&lt;p&gt;Markets move&lt;/p&gt;</description><pubDate>Sat, 24 Oct 2026 10:00:00 GMT</pubDate></item><item><title>Second</title></item></channel></rss>`;
 const items = parseRss(xml, "BBC");

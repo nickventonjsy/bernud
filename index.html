@@ -3,499 +3,1073 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#0b0f14">
+<meta name="theme-color" content="#050505">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
-<title>Bernud</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<title>Bernard</title>
 <style>
   :root {
-    --bg: #0b0f14;
-    --panel: #121922;
-    --line: #223041;
-    --text: #e8eef5;
-    --muted: #8b9bb0;
-    --accent: #4fd1ff;
-    --accent-2: #1a7fa8;
-    --warm: #ffb547;
-    --danger: #ff6b6b;
-    --ok: #57e39b;
+    --bg: #050505;
+    --panel: rgba(14, 4, 4, 0.72);
+    --line: rgba(255, 45, 45, 0.28);
+    --line-strong: rgba(255, 45, 45, 0.6);
+    --red: #ff2a2a;
+    --red-soft: #ff5a4f;
+    --red-dim: #7a1212;
+    --text: #f2eded;
+    --muted: #9a8f8f;
+    --faint: #5b5252;
+    --ok: #ff2a2a;
+    --mono: "Share Tech Mono", ui-monospace, monospace;
+    --sans: "Rajdhani", system-ui, sans-serif;
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; }
+  html, body { margin: 0; min-height: 100%; }
   body {
-    background: var(--bg);
+    background:
+      radial-gradient(ellipse at 50% 38%, rgba(120, 0, 0, 0.28), transparent 55%),
+      linear-gradient(rgba(255, 40, 40, 0.035) 1px, transparent 1px) 0 0 / 48px 48px,
+      linear-gradient(90deg, rgba(255, 40, 40, 0.035) 1px, transparent 1px) 0 0 / 48px 48px,
+      var(--bg);
     color: var(--text);
-    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+    font-family: var(--sans);
+    font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
   }
-  header { width: 100%; max-width: 480px; display: flex; justify-content: space-between; align-items: center; }
-  header h1 { font-size: 20px; font-weight: 600; letter-spacing: 0.08em; margin: 0; }
-  .icon-btn { background: none; border: 1px solid var(--line); color: var(--muted); border-radius: 10px; padding: 8px 12px; font: inherit; font-size: 14px; cursor: pointer; }
-  main { flex: 1; width: 100%; max-width: 480px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px; }
-
-  .orb-wrap { position: relative; width: 220px; height: 220px; display: grid; place-items: center; }
-  .orb {
-    width: 160px; height: 160px; border-radius: 50%;
-    background: radial-gradient(circle at 35% 30%, #9be7ff 0%, var(--accent) 35%, var(--accent-2) 75%, #0d3a4f 100%);
-    box-shadow: 0 0 40px rgba(79, 209, 255, 0.35);
-    transition: transform 0.4s ease, box-shadow 0.4s ease, filter 0.4s ease;
-    border: none; cursor: pointer;
+  button, input { font: inherit; color: inherit; }
+  .app {
+    min-height: 100vh;
+    display: grid;
+    grid-template-columns: minmax(280px, 1fr) minmax(360px, 1.35fr) minmax(280px, 1fr);
+    grid-template-rows: auto 1fr auto auto auto;
+    grid-template-areas:
+      "head head head"
+      "left core right"
+      "quick quick quick"
+      "ask ask ask"
+      "foot foot foot";
+    gap: 18px 22px;
+    padding: max(18px, env(safe-area-inset-top)) 22px max(14px, env(safe-area-inset-bottom));
+    max-width: 1680px;
+    margin: 0 auto;
   }
-  .ring { position: absolute; inset: 0; border-radius: 50%; border: 2px solid rgba(79, 209, 255, 0.25); opacity: 0; }
-  body[data-state="idle"] .orb { filter: grayscale(0.7) brightness(0.6); box-shadow: none; }
-  body[data-state="sleeping"] .orb { filter: brightness(0.75); }
-  body[data-state="sleeping"] .ring { animation: breathe 3.2s ease-in-out infinite; }
-  body[data-state="connecting"] .orb { animation: pulse 0.9s ease-in-out infinite; }
-  body[data-state="listening"] .orb { transform: scale(1.04); box-shadow: 0 0 70px rgba(79, 209, 255, 0.55); }
-  body[data-state="speaking"] .orb {
-    background: radial-gradient(circle at 35% 30%, #ffe2a8 0%, var(--warm) 40%, #b8721a 80%, #4a2c06 100%);
-    box-shadow: 0 0 80px rgba(255, 181, 71, 0.55);
-    animation: speak 0.6s ease-in-out infinite alternate;
+
+  /* ---------- Header ---------- */
+  header { grid-area: head; display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+  .brand { display: flex; align-items: center; gap: 18px; }
+  .brand-eye {
+    width: 54px; height: 54px; border-radius: 50%; display: grid; place-items: center;
+    border: 1px solid var(--line-strong); box-shadow: 0 0 18px rgba(255, 30, 30, 0.35), inset 0 0 14px rgba(255, 30, 30, 0.35);
   }
-  @keyframes breathe { 0%,100% { transform: scale(0.85); opacity: 0; } 50% { transform: scale(1.05); opacity: 1; } }
-  @keyframes pulse { 0%,100% { transform: scale(0.96); } 50% { transform: scale(1.04); } }
-  @keyframes speak { from { transform: scale(1.0); } to { transform: scale(1.08); } }
-  @media (prefers-reduced-motion: reduce) { .orb, .ring { animation: none !important; } }
+  .brand-eye i { width: 14px; height: 14px; border-radius: 50%; background: var(--red); box-shadow: 0 0 14px 4px rgba(255, 30, 30, 0.8); }
+  .brand h1 { margin: 0; font-weight: 500; font-size: 40px; letter-spacing: 0.32em; line-height: 1; }
+  .brand p { margin: 6px 0 0; font-size: 12px; letter-spacing: 0.42em; color: var(--muted); text-transform: uppercase; }
+  .head-right { display: flex; align-items: flex-start; gap: 28px; }
+  .sys { text-align: right; }
+  .sys .online { font-family: var(--mono); font-size: 12px; letter-spacing: 0.22em; display: inline-flex; align-items: center; gap: 8px; text-transform: uppercase; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red); box-shadow: 0 0 8px var(--red); display: inline-block; }
+  .dot.off { background: var(--faint); box-shadow: none; }
+  .verbs { margin-top: 18px; display: flex; gap: 22px; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.16em; color: var(--muted); text-transform: uppercase; }
+  .clock { text-align: right; border-left: 1px solid var(--line); padding-left: 22px; }
+  .clock .time { font-family: var(--mono); font-size: 38px; line-height: 1; letter-spacing: 0.04em; }
+  .clock .date { margin-top: 8px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.18em; color: var(--muted); text-transform: uppercase; }
 
-  .status { text-align: center; min-height: 72px; }
-  .status .big { font-size: 22px; font-weight: 600; margin: 0 0 4px; }
-  .status .small { color: var(--muted); margin: 0; font-size: 15px; }
-
-  .controls { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
-  .btn { border: none; border-radius: 12px; padding: 14px 22px; font: inherit; font-weight: 600; cursor: pointer; min-width: 140px; }
-  .btn.primary { background: var(--accent); color: #04202c; }
-  .btn.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); }
-  .btn.danger { background: var(--danger); color: #2a0606; }
-  .btn[hidden] { display: none; }
-
-  .panel { width: 100%; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 20px; }
-  .panel h2 { margin: 0 0 6px; font-size: 18px; }
-  .panel p { margin: 0 0 16px; color: var(--muted); font-size: 14px; }
-  label { display: block; font-size: 14px; color: var(--muted); margin: 14px 0 6px; }
-  input[type="text"], input[type="password"] {
-    width: 100%; padding: 12px; border-radius: 10px; border: 1px solid var(--line);
-    background: var(--bg); color: var(--text); font: inherit;
+  /* ---------- Panels ---------- */
+  .col { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+  .left { grid-area: left; } .right { grid-area: right; }
+  .panel {
+    position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 4px;
+    padding: 16px 18px; backdrop-filter: blur(4px);
+    box-shadow: inset 0 0 30px rgba(255, 20, 20, 0.04);
   }
-  input[type="file"] { width: 100%; color: var(--muted); font-size: 14px; }
-  .row { display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
-  .note { font-size: 13px; color: var(--muted); margin-top: 12px; }
-  .err { color: var(--danger); font-size: 14px; margin-top: 10px; min-height: 1em; }
-  .ok { color: var(--ok); }
-  [hidden] { display: none !important; }
-  footer { color: var(--muted); font-size: 12px; text-align: center; }
+  .panel::before, .panel::after {
+    content: ""; position: absolute; width: 10px; height: 10px; border-color: var(--line-strong); border-style: solid;
+  }
+  .panel::before { top: -1px; left: -1px; border-width: 2px 0 0 2px; }
+  .panel::after { bottom: -1px; right: -1px; border-width: 0 2px 2px 0; }
+  .p-head { display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; margin-bottom: 6px; border-bottom: 1px solid var(--line); }
+  .p-title { font-size: 19px; font-weight: 600; letter-spacing: 0.2em; text-transform: uppercase; display: flex; align-items: center; gap: 10px; }
+  .p-tag { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.16em; color: var(--muted); text-transform: uppercase; display: flex; align-items: center; gap: 7px; }
+  .p-tag .dot { width: 6px; height: 6px; }
+
+  .row { display: grid; grid-template-columns: 46px 1fr 1.25fr; align-items: center; gap: 14px; padding: 9px 0; border-bottom: 1px solid rgba(255, 45, 45, 0.12); }
+  .row:last-child { border-bottom: none; }
+  .ico { width: 46px; height: 46px; border-radius: 6px; display: grid; place-items: center; background: rgba(255, 40, 40, 0.06); border: 1px solid rgba(255, 45, 45, 0.18); color: var(--text); }
+  .ico svg { width: 24px; height: 24px; }
+  .lbl b { display: block; font-size: 15px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+  .lbl small { display: block; margin-top: 2px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; color: var(--muted); text-transform: uppercase; }
+  .val { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .val .big { font-family: var(--mono); font-size: 22px; letter-spacing: 0.02em; }
+  .val .big.red { color: var(--red); }
+  .bar { height: 4px; background: rgba(255, 255, 255, 0.07); border-radius: 2px; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--red-dim), var(--red)); transition: width 0.25s; }
+  canvas.spark { width: 100%; height: 30px; display: block; }
+
+  /* Brief */
+  .brief-item { display: grid; grid-template-columns: 56px 16px 1fr; gap: 10px; padding: 11px 0; border-bottom: 1px solid rgba(255, 45, 45, 0.12); align-items: start; }
+  .brief-item:last-child { border-bottom: none; }
+  .brief-item time { font-family: var(--mono); font-size: 14px; color: var(--muted); padding-top: 2px; }
+  .brief-item .node { width: 9px; height: 9px; border-radius: 50%; background: var(--red); box-shadow: 0 0 8px var(--red); margin-top: 6px; justify-self: center; }
+  .brief-item .t { font-size: 16px; font-weight: 500; line-height: 1.25; }
+  .brief-item .s { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-top: 3px; letter-spacing: 0.06em; }
+  .p-foot { display: flex; justify-content: space-between; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.14em; color: var(--muted); text-transform: uppercase; }
+  .p-foot button { background: none; border: none; padding: 0; color: var(--muted); letter-spacing: inherit; font-family: inherit; font-size: inherit; text-transform: uppercase; cursor: pointer; }
+  .p-foot button:hover { color: var(--text); }
+  .topics { display: flex; gap: 8px; flex-wrap: wrap; }
+  .topics button { background: none; border: 1px solid transparent; border-radius: 3px; padding: 2px 6px; color: var(--muted); font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; cursor: pointer; }
+  .topics button[aria-pressed="true"] { color: var(--text); border-color: var(--line-strong); }
+
+  /* Environment */
+  .env-top { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 10px 0 12px; border-bottom: 1px solid rgba(255, 45, 45, 0.12); }
+  .kv small { display: block; font-family: var(--mono); font-size: 10px; letter-spacing: 0.16em; color: var(--muted); text-transform: uppercase; }
+  .kv span { display: block; margin-top: 3px; font-size: 16px; }
+  .env-mid { display: grid; grid-template-columns: 1.1fr 1fr; gap: 12px; padding: 12px 0; border-bottom: 1px solid rgba(255, 45, 45, 0.12); align-items: center; }
+  .temp { font-family: var(--sans); font-size: 64px; font-weight: 500; line-height: 0.95; }
+  .temp sup { font-size: 0.55em; vertical-align: 0.55em; margin-left: 2px; }
+  .feels { color: var(--muted); font-size: 15px; margin-top: 6px; }
+  .aqi .q { font-size: 22px; font-weight: 600; margin-top: 4px; }
+  .aqi .n { color: var(--red); font-family: var(--mono); font-size: 13px; margin-top: 2px; }
+  .segs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px; margin-top: 8px; }
+  .segs i { height: 4px; background: rgba(255, 255, 255, 0.08); border-radius: 1px; }
+  .segs i.on { background: var(--red); box-shadow: 0 0 6px rgba(255, 40, 40, 0.6); }
+  .env-bot { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding-top: 12px; }
+  .env-bot .kv { display: flex; gap: 8px; align-items: center; }
+  .env-bot svg { width: 20px; height: 20px; flex: none; color: var(--text); }
+  .env-bot .kv span { font-family: var(--mono); font-size: 15px; margin: 0; }
+
+  /* Watchlist */
+  .coin { display: grid; grid-template-columns: 92px 1fr 64px; gap: 12px; align-items: center; padding: 9px 0; border-bottom: 1px solid rgba(255, 45, 45, 0.12); }
+  .coin:last-child { border-bottom: none; }
+  .coin b { display: block; font-size: 14px; letter-spacing: 0.14em; text-transform: uppercase; }
+  .coin .px { font-family: var(--mono); font-size: 17px; margin-top: 2px; }
+  .coin .chg { font-family: var(--mono); font-size: 12px; text-align: right; }
+  .coin .chg.up { color: #e8e3e3; } .coin .chg.down { color: var(--red); }
+  .coin canvas { height: 34px; }
+
+  /* ---------- Core ---------- */
+  .core { grid-area: core; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 0; min-width: 0; }
+  .core-canvas-wrap { position: relative; width: min(100%, 600px, 60vh); aspect-ratio: 1 / 1; }
+  #core { position: absolute; inset: 0; width: 100%; height: 100%; cursor: pointer; }
+  .verb { position: absolute; font-family: var(--mono); font-size: 11px; letter-spacing: 0.18em; color: var(--muted); text-transform: uppercase; display: flex; align-items: center; gap: 6px; pointer-events: none; }
+  .verb::after, .verb.r::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--text); opacity: 0.7; }
+  .verb.r::after { display: none; }
+  .tagline { margin-top: -6px; font-size: 30px; letter-spacing: 0.22em; font-weight: 500; text-align: center; min-height: 1.3em; }
+  .subline { margin-top: 6px; font-family: var(--mono); font-size: 12px; letter-spacing: 0.1em; color: var(--muted); text-align: center; min-height: 1.4em; max-width: 560px; padding: 0 12px; }
+  #wave { width: min(100%, 460px); height: 56px; margin-top: 10px; }
+
+  /* ---------- Quick actions + ask ---------- */
+  .quick { grid-area: quick; display: flex; justify-content: center; gap: 18px; flex-wrap: wrap; }
+  .qbtn {
+    display: flex; align-items: center; gap: 14px; min-width: 250px; justify-content: space-between;
+    padding: 12px 18px; background: rgba(10, 2, 2, 0.8); border: 1px solid var(--line); border-radius: 4px; cursor: pointer;
+    font-size: 16px; font-weight: 500; letter-spacing: 0.04em; transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .qbtn:hover, .qbtn:focus-visible { border-color: var(--line-strong); box-shadow: 0 0 16px rgba(255, 30, 30, 0.2); outline: none; }
+  .qbtn .l { display: flex; align-items: center; gap: 12px; }
+  .qbtn svg { width: 22px; height: 22px; }
+  .kbd { font-family: var(--mono); font-size: 11px; color: var(--muted); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 3px; padding: 2px 6px; }
+
+  .askrow { grid-area: ask; display: flex; align-items: center; gap: 16px; min-width: 0; }
+  .ask { min-width: 0; }
+  .ask input { width: 100%; }
+  .sq { width: 52px; height: 52px; border-radius: 6px; display: grid; place-items: center; background: rgba(10, 2, 2, 0.8); border: 1px solid var(--line); cursor: pointer; flex: none; }
+  .sq svg { width: 24px; height: 24px; }
+  .sq:hover { border-color: var(--line-strong); }
+  .ask {
+    flex: 1; display: flex; align-items: center; gap: 16px; padding: 8px 10px 8px 22px; min-height: 66px;
+    border: 1.5px solid var(--line-strong); border-radius: 40px; background: rgba(12, 2, 2, 0.85);
+    box-shadow: 0 0 24px rgba(255, 30, 30, 0.12), inset 0 0 18px rgba(255, 30, 30, 0.06);
+  }
+  .ask .spark-ico { color: var(--red); width: 26px; height: 26px; flex: none; filter: drop-shadow(0 0 6px rgba(255, 40, 40, 0.8)); }
+  .ask input { flex: 1; min-width: 0; background: none; border: none; outline: none; font-size: 22px; letter-spacing: 0.1em; }
+  .ask input::placeholder { color: var(--muted); }
+  .divider { width: 1px; height: 30px; background: var(--line); }
+  .mic {
+    width: 52px; height: 52px; border-radius: 50%; border: 1.5px solid var(--line-strong); background: rgba(255, 30, 30, 0.08);
+    display: grid; place-items: center; cursor: pointer; flex: none; transition: background 0.2s, box-shadow 0.2s;
+  }
+  .mic svg { width: 24px; height: 24px; }
+  .mic.live { background: var(--red); box-shadow: 0 0 22px rgba(255, 30, 30, 0.7); }
+  .tools { display: flex; gap: 12px; }
+
+  footer { grid-area: foot; display: flex; justify-content: space-between; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.24em; color: var(--muted); text-transform: uppercase; gap: 12px; flex-wrap: wrap; }
+
+  /* ---------- Settings drawer ---------- */
+  .drawer { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.7); display: none; align-items: center; justify-content: center; padding: 16px; z-index: 10; }
+  .drawer.open { display: flex; }
+  .drawer .panel { width: min(520px, 100%); max-height: 90vh; overflow: auto; }
+  .drawer p { color: var(--muted); font-size: 15px; line-height: 1.45; }
+  .drawer label { display: block; margin: 14px 0 6px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; color: var(--muted); text-transform: uppercase; }
+  .drawer input[type="password"], .drawer input[type="text"] { width: 100%; padding: 12px; border-radius: 4px; border: 1px solid var(--line); background: #0b0303; font-size: 16px; }
+  .drawer input[type="file"] { color: var(--muted); font-size: 14px; }
+  .drawer input[type="range"] { width: 100%; accent-color: var(--red); }
+  .btnrow { display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
+  .btn { padding: 11px 18px; border-radius: 4px; border: 1px solid var(--line-strong); background: rgba(255, 30, 30, 0.12); cursor: pointer; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; font-size: 14px; }
+  .btn.primary { background: var(--red); color: #1a0000; border-color: var(--red); }
+  .err { color: var(--red-soft); font-size: 14px; min-height: 1.2em; margin-top: 10px; }
+  .note { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-top: 6px; }
+
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+  /* ---------- Responsive ---------- */
+  @media (max-width: 1180px) {
+    .app {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      grid-template-areas: "head head" "core core" "quick quick" "ask ask" "left right" "foot foot";
+    }
+    .core { min-height: 0; }
+    .core-canvas-wrap { width: min(100%, 520px); }
+    .verb { display: none; }
+  }
+  @media (max-width: 760px) {
+    .app {
+      grid-template-columns: minmax(0, 1fr); gap: 14px; padding-left: 14px; padding-right: 14px;
+      grid-template-areas: "head" "core" "ask" "quick" "right" "left" "foot";
+    }
+    .brand h1 { font-size: 26px; letter-spacing: 0.26em; }
+    .brand p { font-size: 9.5px; letter-spacing: 0.3em; }
+    .brand-eye { width: 40px; height: 40px; }
+    .verbs, .sys { display: none; }
+    .clock { border: none; padding: 0; }
+    .clock .time { font-size: 26px; }
+    .clock .date { font-size: 9.5px; letter-spacing: 0.12em; }
+    .verb { display: none; }
+    .tagline { font-size: 22px; }
+    .quick { gap: 10px; }
+    .qbtn { min-width: 0; flex: 1 1 100%; }
+    .qbtn .kbd { display: none; }
+    .askrow .tools, .askrow > .sq { display: none; }
+    .ask { min-height: 58px; padding-left: 16px; }
+    .ask input { font-size: 17px; letter-spacing: 0.06em; }
+    .temp { font-size: 52px; }
+    .env-bot { grid-template-columns: repeat(2, 1fr); row-gap: 12px; }
+    .row { grid-template-columns: 42px 1fr 1.1fr; gap: 10px; }
+    .ico { width: 42px; height: 42px; }
+    footer { justify-content: center; letter-spacing: 0.12em; font-size: 9.5px; text-align: center; }
+    header { min-width: 0; } .brand { min-width: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) { .bar i { transition: none; } }
 </style>
 </head>
-<body data-state="idle">
+<body>
+<h2 class="sr-only">Bernard, Nicholas's personal voice assistant</h2>
+<div class="app">
   <header>
-    <h1>BERNUD</h1>
-    <button class="icon-btn" id="settingsBtn" type="button">Settings</button>
+    <div class="brand">
+      <div class="brand-eye" aria-hidden="true"><i></i></div>
+      <div>
+        <h1>BERNARD</h1>
+        <p>Personal intelligence system</p>
+      </div>
+    </div>
+    <div class="head-right">
+      <div class="sys">
+        <div class="online"><span class="dot" id="onlineDot"></span><span id="onlineText">System online</span></div>
+        <div class="verbs"><span>Research</span><span>Analyse</span><span>Organise</span><span>Assist</span><span>Evolve</span></div>
+      </div>
+      <div class="clock"><div class="time" id="clockTime">--:--</div><div class="date" id="clockDate"></div></div>
+    </div>
   </header>
 
-  <main>
-    <section id="home">
-      <div style="display:flex;flex-direction:column;align-items:center;gap:28px">
-        <div class="orb-wrap">
-          <span class="ring" aria-hidden="true"></span>
-          <button class="orb" id="orb" type="button" aria-label="Talk to Bernud"></button>
-        </div>
-        <div class="status" aria-live="polite">
-          <p class="big" id="statusBig">Tap to start</p>
-          <p class="small" id="statusSmall">Bernud needs your microphone to hear you.</p>
-        </div>
-        <p class="small" id="heard" style="color:var(--muted);font-size:13px;margin:-16px 0 0;min-height:1.5em;text-align:center"></p>
-        <div class="controls">
-          <button class="btn primary" id="startBtn" type="button">Start listening</button>
-          <button class="btn ghost" id="talkBtn" type="button" hidden>Talk now</button>
-          <button class="btn danger" id="hangupBtn" type="button" hidden>Hang up</button>
-        </div>
-      </div>
-    </section>
-
-    <section id="settings" class="panel" hidden>
-      <h2>Private wake word (optional)</h2>
-      <p>"Hey Bernud" already works using Chrome's speech recognition. For a private wake word that never sends audio anywhere while on standby, add a Picovoice AccessKey and your "Hey Bernud" file (Web / WASM). Both stay on this device only.</p>
-      <label for="keyInput">Picovoice AccessKey</label>
-      <input id="keyInput" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your AccessKey">
-      <label for="ppnInput">"Hey Bernud" wake word file (.ppn)</label>
-      <input id="ppnInput" type="file" accept=".ppn">
-      <div class="note" id="ppnStatus"></div>
-      <label for="sensInput">Sensitivity: <span id="sensVal"></span></label>
-      <input id="sensInput" type="range" min="0.3" max="0.9" step="0.05" style="width:100%">
-      <div class="note">Higher wakes more easily but may trigger by mistake.</div>
-      <div class="err" id="settingsErr"></div>
+  <!-- LEFT -->
+  <section class="col left">
+    <div class="panel" aria-label="System status">
+      <div class="p-head"><div class="p-title">System status</div><div class="p-tag"><span class="dot"></span>Real time</div></div>
       <div class="row">
-        <button class="btn primary" id="saveBtn" type="button">Save</button>
-        <button class="btn ghost" id="closeSettingsBtn" type="button">Close</button>
+        <div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z"/><path d="M19 11a7 7 0 0 1-14 0M12 18v3"/></svg></div>
+        <div class="lbl"><b>Voice link</b><small id="linkSub">Standby</small></div>
+        <div class="val"><div class="big" id="linkVal">IDLE</div><canvas class="spark" id="sparkVoice"></canvas></div>
       </div>
       <div class="row">
-        <button class="btn ghost" id="clearBtn" type="button">Clear saved setup</button>
+        <div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/></svg></div>
+        <div class="lbl"><b>Memory</b><small>Long-term store</small></div>
+        <div class="val"><div class="big" id="memVal">—</div><div class="bar"><i id="memBar"></i></div></div>
       </div>
-    </section>
-  </main>
+      <div class="row">
+        <div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3Z"/></svg></div>
+        <div class="lbl"><b>Network</b><small id="netSub">Checking</small></div>
+        <div class="val"><div class="big red" id="netVal">—</div><canvas class="spark" id="sparkNet"></canvas></div>
+      </div>
+    </div>
 
-  <footer>Keep this page open and the screen on for "Hey Bernud" to work. · v4</footer>
+    <div class="panel" aria-label="Daily brief">
+      <div class="p-head"><div class="p-title">Daily brief</div><div class="p-tag" id="briefDate"></div></div>
+      <div id="briefList"><div class="brief-item"><time>--:--</time><span class="node"></span><div><div class="t">Loading headlines…</div></div></div></div>
+      <div class="p-foot">
+        <div class="topics" id="topics" role="group" aria-label="News topic">
+          <button type="button" data-topic="uk" aria-pressed="true">UK</button>
+          <button type="button" data-topic="jersey" aria-pressed="false">Jersey</button>
+          <button type="button" data-topic="crypto" aria-pressed="false">Crypto</button>
+          <button type="button" data-topic="f1" aria-pressed="false">F1</button>
+        </div>
+        <button type="button" id="readNews">Read to me →</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- CORE -->
+  <section class="core" aria-label="Bernard">
+    <div class="core-canvas-wrap">
+      <canvas id="core" role="button" tabindex="0" aria-label="Talk to Bernard"></canvas>
+      <span class="verb" style="top:17%;left:2%">Understand</span>
+      <span class="verb" style="top:29%;left:0%">Reason</span>
+      <span class="verb" style="top:39%;left:1%">Plan</span>
+      <span class="verb r" style="top:17%;right:4%">Learn</span>
+      <span class="verb r" style="top:29%;right:1%">Adapt</span>
+      <span class="verb r" style="top:39%;right:0%">Assist</span>
+    </div>
+    <div class="tagline" id="tagline">At your service.</div>
+    <div class="subline" id="subline" aria-live="polite">Tap the core or the microphone to talk.</div>
+    <canvas id="wave" aria-hidden="true"></canvas>
+  </section>
+
+  <!-- RIGHT -->
+  <section class="col right">
+    <div class="panel" aria-label="Environment">
+      <div class="p-head"><div class="p-title">Environment</div><div class="p-tag"><span class="dot"></span>Live data</div></div>
+      <div class="env-top">
+        <div class="kv"><small>Location</small><span>St Helier, Jersey</span></div>
+        <div class="kv"><small>Conditions</small><span id="wCond">—</span></div>
+      </div>
+      <div class="env-mid">
+        <div><div class="temp" id="wTemp">--<sup>°C</sup></div><div class="feels" id="wFeels">Feels like --°</div></div>
+        <div class="aqi"><small class="kv" style="display:block"><small>Air quality</small></small><div class="q" id="aqLabel">—</div><div class="n" id="aqNum"></div><div class="segs" id="aqSegs"><i></i><i></i><i></i><i></i><i></i></div></div>
+      </div>
+      <div class="env-bot">
+        <div class="kv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3s6 6.4 6 11a6 6 0 0 1-12 0c0-4.6 6-11 6-11Z"/></svg><div><small>Humidity</small><span id="wHum">--</span></div></div>
+        <div class="kv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 8h11a3 3 0 1 0-3-3M3 12h16a3 3 0 1 1-3 3M3 16h8"/></svg><div><small>Wind</small><span id="wWind">--</span></div></div>
+        <div class="kv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="M12 12l4-3M12 7v1"/></svg><div><small>Pressure</small><span id="wPres">--</span></div></div>
+        <div class="kv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg><div><small>UV index</small><span id="wUv">--</span></div></div>
+      </div>
+    </div>
+
+    <div class="panel" aria-label="Watchlist">
+      <div class="p-head"><div class="p-title">Watchlist</div><div class="p-tag">Last 7 days · GBP</div></div>
+      <div id="coins"><div class="coin"><div><b>Loading</b><div class="px">—</div></div><canvas class="spark"></canvas><div class="chg"></div></div></div>
+    </div>
+  </section>
+
+  <!-- QUICK ACTIONS -->
+  <nav class="quick" aria-label="Quick actions">
+    <button class="qbtn" type="button" data-say="Give me my daily briefing: the weather in Jersey, how my watchlist is doing, and the top UK headlines.">
+      <span class="l"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h7"/></svg>Daily briefing</span><span class="kbd">Alt B</span>
+    </button>
+    <button class="qbtn" type="button" data-say="How is my crypto watchlist doing today?">
+      <span class="l"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 17l5-5 4 4 8-8"/><path d="M15 8h5v5"/></svg>Market check</span><span class="kbd">Alt M</span>
+    </button>
+    <button class="qbtn" type="button" data-say="What do you have saved in my memory? Just the most recent few.">
+      <span class="l"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/></svg>What do you remember?</span><span class="kbd">Alt R</span>
+    </button>
+  </nav>
+
+  <!-- ASK BAR -->
+  <div class="askrow">
+    <button class="sq" type="button" id="wakeBtn" title="Start listening for &quot;Hey Bernard&quot;" aria-label="Start listening for Hey Bernard">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+    </button>
+    <form class="ask" id="askForm" autocomplete="off">
+      <svg class="spark-ico" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 1l2.2 7.8L22 11l-7.8 2.2L12 21l-2.2-7.8L2 11l7.8-2.2z"/></svg>
+      <label for="askInput" class="sr-only">Ask Bernard anything</label>
+      <input id="askInput" type="text" placeholder="Ask Bernard anything…" enterkeyhint="send">
+      <span class="divider" aria-hidden="true"></span>
+      <button class="mic" type="button" id="micBtn" aria-label="Talk to Bernard">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M19 11a7 7 0 0 1-14 0M12 18v3"/></svg>
+      </button>
+    </form>
+    <div class="tools">
+      <button class="sq" type="button" id="hangBtn" title="Hang up" aria-label="Hang up">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2 3 7v10l9 5 9-5V7z"/><path d="M3 7l9 5 9-5M12 12v10"/></svg>
+      </button>
+      <button class="sq" type="button" id="logBtn" title="Conversation log" aria-label="Show what Bernard last said">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 3h12v18H6z"/><path d="M9 8h6M9 12h6M9 16h4"/></svg>
+      </button>
+      <button class="sq" type="button" id="settingsBtn" title="Settings" aria-label="Settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <footer>
+    <span>Bernard OS / v.05</span>
+    <span>Privacy &nbsp;|&nbsp; Cloud first &nbsp;&nbsp;|&nbsp;&nbsp; A more capable tomorrow</span>
+  </footer>
+</div>
+
+<!-- SETTINGS -->
+<div class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="setTitle">
+  <div class="panel">
+    <div class="p-head"><div class="p-title" id="setTitle">Settings</div><button class="btn" type="button" id="closeSettings">Close</button></div>
+    <p><b style="color:var(--text)">"Hey Bernard" wake word.</b> Press the grid button left of the ask bar to put Bernard on standby. He listens using Chrome's speech recognition (on-device where your computer supports it).</p>
+    <p>Optional: for a private wake word, add a Picovoice AccessKey and your "Hey Bernud" file (Web / WASM). Both stay on this device only.</p>
+    <label for="keyInput">Picovoice AccessKey</label>
+    <input id="keyInput" type="password" autocomplete="off" spellcheck="false" placeholder="Optional">
+    <label for="ppnInput">Wake word file (.ppn)</label>
+    <input id="ppnInput" type="file" accept=".ppn">
+    <div class="note" id="ppnStatus"></div>
+    <label for="sensInput">Picovoice sensitivity: <span id="sensVal"></span></label>
+    <input id="sensInput" type="range" min="0.3" max="0.9" step="0.05">
+    <div class="err" id="settingsErr"></div>
+    <div class="btnrow">
+      <button class="btn primary" type="button" id="saveBtn">Save</button>
+      <button class="btn" type="button" id="clearBtn">Clear saved setup</button>
+    </div>
+    <p class="note" id="diag"></p>
+  </div>
+</div>
 
 <script type="module">
   const AGENT_ID = "agent_0501m5q6cc15eqcrnamk2e1w84xc";
+  const SERVER = "https://bernud-server.onrender.com";
   const MODEL_URL = "https://cdn.jsdelivr.net/gh/Picovoice/porcupine@v3.0/lib/common/porcupine_params.pv";
-  const STORE = { key: "bernud.pvKey", ppn: "bernud.ppn", ppnName: "bernud.ppnName", sens: "bernud.sens" };
+  const STORE = { key: "bernud.pvKey", ppn: "bernud.ppn", ppnName: "bernud.ppnName", sens: "bernud.sens", topic: "bernud.topic" };
+  const TZ = "Europe/Jersey";
+  const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   const $ = (id) => document.getElementById(id);
-  const ui = {
-    body: document.body, orb: $("orb"), big: $("statusBig"), small: $("statusSmall"),
-    start: $("startBtn"), talk: $("talkBtn"), hangup: $("hangupBtn"),
-    home: $("home"), settings: $("settings"), settingsBtn: $("settingsBtn"),
-    keyInput: $("keyInput"), ppnInput: $("ppnInput"), ppnStatus: $("ppnStatus"),
-    sensInput: $("sensInput"), sensVal: $("sensVal"), settingsErr: $("settingsErr"),
-    save: $("saveBtn"), close: $("closeSettingsBtn"), clear: $("clearBtn"),
-  };
-
   const store = {
     get(k) { try { return localStorage.getItem(k); } catch { return null; } },
     set(k, v) { try { localStorage.setItem(k, v); return true; } catch { return false; } },
     del(k) { try { localStorage.removeItem(k); } catch {} },
   };
 
-  let porcupine = null;
-  let wvp = null;
+  // =====================================================================
+  //  STATE
+  // =====================================================================
+  let mode = "idle";           // idle | standby | connecting | listening | speaking
   let conversation = null;
-  let wakeLock = null;
-  let armed = false;      // user has pressed Start, so we should keep listening for the wake word
-  let busy = false;       // a conversation is starting or running
-  let pendingPpnB64 = null;
+  let busy = false;
+  let armed = false;           // standby (wake word) is on
+  let pendingText = null;      // typed message to send once connected
+  let lastAgentLine = "";
+  let level = 0;               // smoothed audio level 0..1 driving the core
+  const voiceHistory = new Array(60).fill(0);
 
-  function setState(state, big, small) {
-    ui.body.dataset.state = state;
-    if (big !== undefined) ui.big.textContent = big;
-    if (small !== undefined) ui.small.textContent = small;
-    const inCall = state === "connecting" || state === "listening" || state === "speaking";
-    ui.hangup.hidden = !inCall;
-    ui.talk.hidden = inCall || !armed;
-    ui.start.hidden = armed;
+  function setMode(m, sub) {
+    mode = m;
+    const tag = {
+      idle: "At your service.",
+      standby: "Standing by.",
+      connecting: "Connecting…",
+      listening: "Listening…",
+      speaking: "Speaking.",
+    }[m];
+    $("tagline").textContent = tag;
+    if (sub !== undefined) $("subline").textContent = sub;
+    $("micBtn").classList.toggle("live", m === "listening" || m === "speaking" || m === "connecting");
+    $("micBtn").setAttribute("aria-label", busy ? "Hang up" : "Talk to Bernard");
+    $("linkVal").textContent = { idle: "IDLE", standby: "STANDBY", connecting: "LINKING", listening: "ACTIVE", speaking: "ACTIVE" }[m];
+    $("linkVal").classList.toggle("red", m === "listening" || m === "speaking");
+    $("linkSub").textContent = { idle: "Ready", standby: "Wake word", connecting: "Handshake", listening: "You're speaking", speaking: "Bernard speaking" }[m];
+    $("wakeBtn").style.borderColor = armed ? "var(--red)" : "";
+    $("wakeBtn").style.boxShadow = armed ? "0 0 14px rgba(255,30,30,.5)" : "";
   }
 
-  function hasWakeSetup() {
-    return Boolean(store.get(STORE.key) && store.get(STORE.ppn));
+  // =====================================================================
+  //  CLOCK
+  // =====================================================================
+  function tick() {
+    const now = new Date();
+    $("clockTime").textContent = now.toLocaleTimeString("en-GB", { timeZone: TZ, hour: "2-digit", minute: "2-digit" });
+    const d = now.toLocaleDateString("en-GB", { timeZone: TZ, weekday: "short", day: "2-digit", month: "short", year: "numeric" }).toUpperCase().replace(/,/g, "");
+    $("clockDate").textContent = d;
+    $("briefDate").textContent = now.toLocaleDateString("en-GB", { timeZone: TZ, weekday: "short", day: "numeric", month: "short" }).toUpperCase().replace(/,/g, "");
+  }
+  tick(); setInterval(tick, 1000 * 15);
+
+  // =====================================================================
+  //  CORE ANIMATION
+  // =====================================================================
+  const core = $("core");
+  const cctx = core.getContext("2d");
+  const wave = $("wave");
+  const wctx = wave.getContext("2d");
+  let DPR = Math.min(window.devicePixelRatio || 1, 2);
+
+  // Points on a sphere (the "globe" inside the core)
+  const globe = [];
+  for (let i = 0; i < 900; i++) {
+    const y = 1 - (i / 899) * 2;
+    const r = Math.sqrt(1 - y * y);
+    const th = Math.PI * (3 - Math.sqrt(5)) * i;
+    globe.push([Math.cos(th) * r, y, Math.sin(th) * r]);
   }
 
-  // ---------- Screen wake lock ----------
-  async function keepAwake() {
-    try {
-      if ("wakeLock" in navigator && !wakeLock) {
-        wakeLock = await navigator.wakeLock.request("screen");
-        wakeLock.addEventListener("release", () => { wakeLock = null; });
-      }
-    } catch { /* not supported or refused: page still works while screen is on */ }
-  }
-  document.addEventListener("visibilitychange", async () => {
-    if (document.visibilityState === "visible" && armed) {
-      await keepAwake();
-      if (!busy) await startWakeWord();
-    }
-  });
-
-  // ---------- Wake word (Porcupine, runs on this device) ----------
-  async function loadPicovoice() {
-    if (porcupine) return true;
-    const key = store.get(STORE.key);
-    const ppn = store.get(STORE.ppn);
-    if (!key || !ppn) return false;
-    const sens = parseFloat(store.get(STORE.sens) || "0.6");
-    const [{ PorcupineWorker }, { WebVoiceProcessor }] = await Promise.all([
-      import("https://esm.sh/@picovoice/porcupine-web@3"),
-      import("https://esm.sh/@picovoice/web-voice-processor@4"),
-    ]);
-    wvp = WebVoiceProcessor;
-    porcupine = await PorcupineWorker.create(
-      key,
-      [{ label: "Hey Bernud", base64: ppn, sensitivity: sens }],
-      (detection) => { if (detection && !busy) onWake(); },
-      { publicPath: MODEL_URL, customWritePath: "bernud_porcupine_v3", forceWrite: true },
-    );
-    return true;
+  function sizeCanvas(c) {
+    const r = c.getBoundingClientRect();
+    const w = Math.max(1, Math.round(r.width * DPR)), h = Math.max(1, Math.round(r.height * DPR));
+    if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+    return [w, h];
   }
 
-  // ---------- Wake word fallback: Chrome's built-in speech recognition (no account needed) ----------
-  // Audio is sent to the browser's speech service while on standby, so Picovoice is preferred when set up.
-  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const WAKE_RE = /\b(hey|hi|hay|a|ok|okay)[\s,.!]*(bernud|bernard|bernards|bernad|bernhard|burnard|burner|bernie|bernoud|bernudd)\b/i;
-  let rec = null;
-  let recWanted = false;
-  let useLocalSpeech = false;
-
-  // Prefer Chrome's on-device speech pack where available (private, and works on PCs where
-  // the online speech service returns nothing). Must be called from a tap so Chrome allows the install.
-  async function prepareLocalSpeech() {
-    if (!SpeechRec || typeof SpeechRec.available !== "function") return false;
-    try {
-      let a = await SpeechRec.available({ langs: ["en-GB"], processLocally: true });
-      if (a === "downloadable" || a === "downloading") {
-        showHeard("Downloading Chrome's on-device speech pack…");
-        await SpeechRec.install({ langs: ["en-GB"], processLocally: true });
-        a = await SpeechRec.available({ langs: ["en-GB"], processLocally: true });
-      }
-      return a === "available";
-    } catch { return false; }
-  }
-  let recFailures = 0;
-
-  function showHeard(t) { const el = document.getElementById("heard"); if (el) el.textContent = t || ""; }
-
-  function startSpeechWake() {
-    if (!SpeechRec) return false;
-    recWanted = true;
-    if (rec) return true;
-    rec = new SpeechRec();
-    rec.lang = "en-GB";
-    if (useLocalSpeech) {
-      try { rec.processLocally = true; } catch {}
-      try { if (window.SpeechRecognitionPhrase) rec.phrases = [new SpeechRecognitionPhrase("Hey Bernud", 5.0)]; } catch {}
-    }
-    rec.continuous = true;
-    rec.interimResults = true;
-    rec.maxAlternatives = 3;
-    rec.onstart = () => { showHeard("Listening…"); };
-    rec.onaudiostart = () => { showHeard("Microphone on — say \"Hey Bernud\""); };
-    rec.onresult = (e) => {
-      const last = e.results[e.results.length - 1];
-      if (last && last[0]) showHeard("Heard: “" + last[0].transcript.trim() + "”");
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        for (let a = 0; a < e.results[i].length; a++) {
-          if (WAKE_RE.test(e.results[i][a].transcript)) {
-            recFailures = 0;
-            stopSpeechWake();
-            if (!busy) onWake();
-            return;
-          }
-        }
-      }
-    };
-    rec.onerror = (e) => {
-      if (e.error !== "no-speech" && e.error !== "aborted") showHeard("Speech error: " + e.error + (e.error === "network" ? " (Chrome couldn't reach its speech service)" : e.error === "audio-capture" ? " (no microphone found — check Chrome's mic setting)" : ""));
-      if (e.error === "not-allowed" || e.error === "service-not-allowed") {
-        recWanted = false;
-        armed = false;
-        setState("idle", "Microphone blocked", "Allow microphone access for this site, then tap Start again.");
-      } else if (e.error !== "no-speech" && e.error !== "aborted") {
-        recFailures++;
-      }
-    };
-    rec.onend = () => {
-      rec = null;
-      // Chrome stops recognition every so often; quietly restart while on standby.
-      if (recWanted && armed && !busy && document.visibilityState === "visible") {
-        const delay = Math.min(250 * Math.pow(2, recFailures), 8000);
-        setTimeout(() => { if (recWanted && armed && !busy) startSpeechWake(); }, delay);
-      }
-    };
-    try { rec.start(); } catch { rec = null; return false; }
-    return true;
-  }
-
-  function stopSpeechWake() {
-    recWanted = false;
-    if (rec) { try { rec.abort(); } catch {} rec = null; }
-  }
-
-  async function startWakeWord() {
-    if (hasWakeSetup()) {
+  function readLevel() {
+    let target = 0;
+    if (conversation && busy) {
       try {
-        await loadPicovoice();
-        await wvp.subscribe(porcupine);
-        setState("sleeping", "Say \"Hey Bernud\"", "Listening for the wake word on this device only.");
-        return;
-      } catch (err) {
-        console.error(err);
-        if (!SpeechRec) { setState("idle", "Wake word unavailable", friendlyPicovoiceError(err)); return; }
-        // fall through to the built-in recogniser
+        if (mode === "speaking") target = conversation.getOutputVolume();
+        else target = conversation.getInputVolume() * 0.7;
+      } catch {}
+    }
+    target = Math.min(1, (target || 0) * 1.6);
+    level += (target - level) * (target > level ? 0.35 : 0.08);
+    return level;
+  }
+
+  let t0 = performance.now();
+  function frame(now) {
+    const t = (now - t0) / 1000;
+    const lv = readLevel();
+    voiceHistory.push(lv); voiceHistory.shift();
+    drawCore(t, lv);
+    drawWave(t, lv);
+    if (Math.round(t * 10) % 3 === 0) drawSpark($("sparkVoice"), voiceHistory, 1);
+    requestAnimationFrame(frame);
+  }
+
+  function drawCore(t, lv) {
+    const [w, h] = sizeCanvas(core);
+    const c = cctx;
+    const cx = w / 2, cy = h / 2;
+    const R = Math.min(w, h) / 2;
+    const speaking = mode === "speaking";
+    const active = mode === "listening" || speaking || mode === "connecting";
+    const breathe = reduceMotion ? 0.5 : 0.5 + 0.5 * Math.sin(t * (active ? 2.2 : 1.1));
+    const pulse = 1 + lv * 0.18 + (active ? 0.015 : 0.01) * breathe;
+    const spin = reduceMotion ? 0 : t;
+
+    c.clearRect(0, 0, w, h);
+    c.save();
+    c.translate(cx, cy);
+
+    // Outer glow
+    const glow = c.createRadialGradient(0, 0, R * 0.05, 0, 0, R * 0.95);
+    glow.addColorStop(0, `rgba(255,40,30,${0.55 + lv * 0.4})`);
+    glow.addColorStop(0.18, `rgba(200,10,10,${0.22 + lv * 0.25})`);
+    glow.addColorStop(0.5, "rgba(80,0,0,0.10)");
+    glow.addColorStop(1, "rgba(0,0,0,0)");
+    c.fillStyle = glow;
+    c.beginPath(); c.arc(0, 0, R, 0, Math.PI * 2); c.fill();
+
+    // Crosshair lines
+    c.strokeStyle = "rgba(255,60,60,0.35)";
+    c.lineWidth = 1 * DPR;
+    c.beginPath(); c.moveTo(-R * 0.98, 0); c.lineTo(R * 0.98, 0); c.moveTo(0, -R * 0.98); c.lineTo(0, R * 0.98); c.stroke();
+    for (const k of [-0.62, -0.34, 0.34, 0.62]) {
+      c.fillStyle = "rgba(255,90,80,0.9)";
+      c.beginPath(); c.arc(R * k * pulse, 0, 2.2 * DPR, 0, Math.PI * 2); c.arc(0, R * k * pulse, 2.2 * DPR, 0, Math.PI * 2); c.fill();
+    }
+
+    // Tick ring
+    c.save(); c.rotate(spin * 0.05);
+    for (let i = 0; i < 120; i++) {
+      const a = (i / 120) * Math.PI * 2;
+      const long = i % 10 === 0;
+      const r1 = R * 0.9, r2 = R * (long ? 0.85 : 0.875);
+      c.strokeStyle = long ? "rgba(255,70,60,0.8)" : "rgba(255,60,60,0.28)";
+      c.lineWidth = (long ? 1.6 : 1) * DPR;
+      c.beginPath(); c.moveTo(Math.cos(a) * r1, Math.sin(a) * r1); c.lineTo(Math.cos(a) * r2, Math.sin(a) * r2); c.stroke();
+    }
+    c.restore();
+
+    // Rotating arc segments (several rings, alternating direction)
+    const rings = [
+      { r: 0.8, w: 2.2, segs: [[0.05, 0.22], [0.3, 0.42], [0.55, 0.62], [0.7, 0.9]], speed: 0.25, a: 0.75 },
+      { r: 0.72, w: 5, segs: [[0.0, 0.08], [0.18, 0.2], [0.48, 0.58], [0.66, 0.68], [0.8, 0.86]], speed: -0.4, a: 0.9 },
+      { r: 0.64, w: 1.4, segs: [[0, 1]], speed: 0, a: 0.35 },
+      { r: 0.58, w: 3, segs: [[0.1, 0.35], [0.45, 0.5], [0.6, 0.85]], speed: 0.55, a: 0.8 },
+      { r: 0.5, w: 1.2, segs: [[0.02, 0.2], [0.27, 0.48], [0.52, 0.73], [0.77, 0.98]], speed: -0.7, a: 0.6 },
+    ];
+    for (const ring of rings) {
+      c.save();
+      c.rotate(spin * ring.speed * (1 + lv * 1.5));
+      c.strokeStyle = `rgba(255,${50 + lv * 80},${40 + lv * 40},${Math.min(1, ring.a + lv * 0.3)})`;
+      c.shadowColor = "rgba(255,30,30,0.9)";
+      c.shadowBlur = (8 + lv * 18) * DPR;
+      c.lineWidth = ring.w * DPR;
+      c.lineCap = "round";
+      for (const [s, e] of ring.segs) {
+        c.beginPath();
+        c.arc(0, 0, R * ring.r * pulse, s * Math.PI * 2, e * Math.PI * 2);
+        c.stroke();
+      }
+      c.restore();
+    }
+    // Two white highlight arcs, like the reference
+    c.save(); c.rotate(-spin * 0.3);
+    c.strokeStyle = `rgba(255,235,235,${0.55 + lv * 0.4})`; c.lineWidth = 2 * DPR; c.shadowColor = "#fff"; c.shadowBlur = 6 * DPR;
+    c.beginPath(); c.arc(0, 0, R * 0.69 * pulse, 0.62 * Math.PI * 2, 0.66 * Math.PI * 2); c.stroke();
+    c.beginPath(); c.arc(0, 0, R * 0.69 * pulse, 0.12 * Math.PI * 2, 0.16 * Math.PI * 2); c.stroke();
+    c.restore();
+
+    // Globe of dots
+    const gR = R * 0.4 * pulse;
+    const rot = spin * 0.18;
+    const tilt = 0.35;
+    const cosR = Math.cos(rot), sinR = Math.sin(rot), cosT = Math.cos(tilt), sinT = Math.sin(tilt);
+    for (const [x0, y0, z0] of globe) {
+      const x1 = x0 * cosR + z0 * sinR;
+      const z1 = -x0 * sinR + z0 * cosR;
+      const y2 = y0 * cosT - z1 * sinT;
+      const z2 = y0 * sinT + z1 * cosT;
+      if (z2 < -0.15) continue;
+      const depth = (z2 + 1) / 2;
+      // fake continents: thin out dots with a noise-ish function
+      const land = Math.sin(x0 * 5.1 + 1.3) * Math.cos(y0 * 4.3) + Math.sin(z0 * 3.7 - 0.8) > 0.15;
+      const a = (land ? 1 : 0.3) * (0.35 + depth * 0.65);
+      c.fillStyle = `rgba(255,${70 + depth * 90},${60 + depth * 60},${a})`;
+      const s = (land ? 1.8 : 1.1) * DPR * (0.6 + depth * 0.6);
+      c.fillRect(x1 * gR - s / 2, y2 * gR - s / 2, s, s);
+    }
+
+    // Inner rings + hot centre
+    c.shadowColor = "rgba(255,40,40,1)";
+    for (const [rr, aa] of [[0.24, 0.8], [0.17, 0.9], [0.11, 1]]) {
+      c.strokeStyle = `rgba(255,${80 + lv * 120},${70 + lv * 80},${aa})`;
+      c.lineWidth = (rr === 0.11 ? 2.5 : 1.6) * DPR;
+      c.shadowBlur = (10 + lv * 25) * DPR;
+      c.beginPath(); c.arc(0, 0, R * rr * pulse * (1 + lv * 0.25), 0, Math.PI * 2); c.stroke();
+    }
+    const hot = c.createRadialGradient(0, 0, 0, 0, 0, R * (0.09 + lv * 0.08));
+    hot.addColorStop(0, "rgba(255,255,255,1)");
+    hot.addColorStop(0.35, `rgba(255,${120 + lv * 100},${110 + lv * 60},0.95)`);
+    hot.addColorStop(1, "rgba(255,20,20,0)");
+    c.shadowBlur = (30 + lv * 40) * DPR;
+    c.fillStyle = hot;
+    c.beginPath(); c.arc(0, 0, R * (0.09 + lv * 0.08), 0, Math.PI * 2); c.fill();
+
+    // Speaking: expanding ripple rings
+    if (speaking && !reduceMotion) {
+      for (let k = 0; k < 3; k++) {
+        const p = ((t * 0.9 + k / 3) % 1);
+        c.strokeStyle = `rgba(255,60,50,${(1 - p) * (0.25 + lv * 0.6)})`;
+        c.lineWidth = 2 * DPR; c.shadowBlur = 10 * DPR;
+        c.beginPath(); c.arc(0, 0, R * (0.28 + p * 0.62), 0, Math.PI * 2); c.stroke();
       }
     }
-    if (startSpeechWake()) {
-      setState("sleeping", "Say \"Hey Bernud\"", useLocalSpeech
-        ? "Standby mode (on-device speech, audio stays on this device)."
-        : "Standby mode (uses Chrome's online speech recognition).");
-    } else {
-      setState("idle", "Tap the orb to talk", "This browser can't listen for \"Hey Bernud\". Use Chrome, or set up Picovoice in Settings.");
+    c.restore();
+  }
+
+  function drawWave(t, lv) {
+    const [w, h] = sizeCanvas(wave);
+    const c = wctx;
+    c.clearRect(0, 0, w, h);
+    const bars = 64;
+    const gap = w / bars;
+    const mid = h / 2;
+    const active = mode === "speaking" || mode === "listening";
+    for (let i = 0; i < bars; i++) {
+      const x = i * gap + gap / 2;
+      const d = Math.abs(i - bars / 2) / (bars / 2);
+      const env = Math.pow(1 - d, 1.6);
+      const n = reduceMotion ? 0.5 : 0.5 + 0.5 * Math.sin(t * 6 + i * 0.7) * Math.cos(t * 2.3 + i * 0.31);
+      const amp = (active ? 0.08 + lv * 0.95 : 0.06) * env * (0.35 + n * 0.65);
+      const bh = Math.max(1.5 * DPR, amp * h);
+      c.fillStyle = `rgba(255,${50 + env * 60},${40 + env * 40},${0.35 + env * 0.65})`;
+      c.fillRect(x - DPR, mid - bh / 2, 2 * DPR, bh);
+    }
+    c.fillStyle = "rgba(255,60,60,0.9)";
+    c.beginPath(); c.arc(DPR * 4, mid, 2.5 * DPR, 0, Math.PI * 2); c.arc(w - DPR * 4, mid, 2.5 * DPR, 0, Math.PI * 2); c.fill();
+  }
+
+  function drawSpark(cv, data, max, fill = true) {
+    if (!cv) return;
+    const [w, h] = sizeCanvas(cv);
+    const c = cv.getContext("2d");
+    c.clearRect(0, 0, w, h);
+    if (!data.length) return;
+    const lo = Math.min(...data), hi = Math.max(...data);
+    const range = max === "auto" ? (hi - lo || 1) : max;
+    const base = max === "auto" ? lo : 0;
+    c.beginPath();
+    data.forEach((v, i) => {
+      const x = (i / (data.length - 1)) * w;
+      const y = h - ((v - base) / range) * (h - 4 * DPR) - 2 * DPR;
+      i ? c.lineTo(x, y) : c.moveTo(x, y);
+    });
+    c.strokeStyle = "#ff2a2a"; c.lineWidth = 1.5 * DPR; c.stroke();
+    if (fill) {
+      c.lineTo(w, h); c.lineTo(0, h); c.closePath();
+      const g = c.createLinearGradient(0, 0, 0, h); g.addColorStop(0, "rgba(255,40,40,0.35)"); g.addColorStop(1, "rgba(255,40,40,0)");
+      c.fillStyle = g; c.fill();
     }
   }
 
-  async function stopWakeWord() {
-    stopSpeechWake();
-    try { if (wvp && porcupine) await wvp.unsubscribe(porcupine); } catch {}
+  window.addEventListener("resize", () => { DPR = Math.min(window.devicePixelRatio || 1, 2); });
+  requestAnimationFrame(frame);
+
+  // =====================================================================
+  //  LIVE DATA PANELS
+  // =====================================================================
+  const WMO = {
+    0: "Clear sky", 1: "Mainly clear", 2: "Partly cloudy", 3: "Overcast", 45: "Fog", 48: "Freezing fog",
+    51: "Light drizzle", 53: "Drizzle", 55: "Heavy drizzle", 56: "Freezing drizzle", 57: "Freezing drizzle",
+    61: "Light rain", 63: "Rain", 65: "Heavy rain", 66: "Freezing rain", 67: "Freezing rain",
+    71: "Light snow", 73: "Snow", 75: "Heavy snow", 77: "Snow grains", 80: "Light showers", 81: "Showers", 82: "Heavy showers",
+    85: "Snow showers", 86: "Snow showers", 95: "Thunderstorm", 96: "Thunderstorm, hail", 99: "Thunderstorm, hail",
+  };
+
+  async function getJSON(url, ms = 9000) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), ms);
+    try {
+      const r = await fetch(url, { signal: ctrl.signal, cache: "no-store" });
+      if (!r.ok) throw new Error(r.status);
+      return await r.json();
+    } finally { clearTimeout(timer); }
   }
 
-  function friendlyPicovoiceError(err) {
-    const msg = String(err && (err.message || err)).toLowerCase();
-    if (msg.includes("activation") || msg.includes("accesskey") || msg.includes("access key")) return "Picovoice rejected the AccessKey. Check it in Settings.";
-    if (msg.includes("keyword") || msg.includes("ppn")) return "The wake word file didn't load. Make sure it's the Web (WASM) version.";
-    if (msg.includes("permission") || msg.includes("notallowed")) return "Microphone access was blocked. Allow it in your browser settings.";
-    return "Something went wrong starting the wake word. You can still tap the orb to talk.";
+  async function loadWeather() {
+    try {
+      const w = await getJSON("https://api.open-meteo.com/v1/forecast?latitude=49.19&longitude=-2.11&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,surface_pressure,uv_index&timezone=Europe%2FJersey");
+      const cur = w.current;
+      $("wTemp").innerHTML = `${Math.round(cur.temperature_2m)}<sup>°C</sup>`;
+      $("wFeels").textContent = `Feels like ${Math.round(cur.apparent_temperature)}°`;
+      $("wCond").textContent = WMO[cur.weather_code] || "—";
+      $("wHum").textContent = `${Math.round(cur.relative_humidity_2m)}%`;
+      $("wWind").textContent = `${Math.round(cur.wind_speed_10m)} km/h`;
+      $("wPres").textContent = `${Math.round(cur.surface_pressure)} hPa`;
+      const uv = Math.round(cur.uv_index ?? 0);
+      $("wUv").innerHTML = `${uv} <small style="display:inline;color:var(--red);letter-spacing:.05em">${uv < 3 ? "Low" : uv < 6 ? "Moderate" : uv < 8 ? "High" : "Very high"}</small>`;
+    } catch { $("wCond").textContent = "Unavailable"; }
+    try {
+      const a = await getJSON("https://air-quality-api.open-meteo.com/v1/air-quality?latitude=49.19&longitude=-2.11&current=european_aqi");
+      const n = Math.round(a.current.european_aqi);
+      const bands = [[20, "Good"], [40, "Fair"], [60, "Moderate"], [80, "Poor"], [100, "Very poor"], [Infinity, "Extremely poor"]];
+      const idx = bands.findIndex(([lim]) => n <= lim);
+      $("aqLabel").textContent = bands[idx][1];
+      $("aqNum").textContent = `EAQI ${n}`;
+      [...$("aqSegs").children].forEach((s, i) => s.classList.toggle("on", i <= Math.min(idx, 4)));
+    } catch { $("aqLabel").textContent = "—"; }
   }
 
-  // ---------- Conversation (ElevenLabs agent) ----------
-  async function onWake() {
-    if (busy) return;
-    if (navigator.vibrate) navigator.vibrate(60);
-    await startConversation();
+  const COINS = [["bitcoin", "BTC"], ["ethereum", "ETH"], ["solana", "SOL"], ["ripple", "XRP"]];
+  async function loadCoins() {
+    try {
+      const list = await getJSON(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=gbp&ids=${COINS.map((c) => c[0]).join(",")}&sparkline=true&price_change_percentage=24h`);
+      const byId = Object.fromEntries(list.map((c) => [c.id, c]));
+      const box = $("coins");
+      box.innerHTML = "";
+      for (const [id, sym] of COINS) {
+        const c = byId[id];
+        if (!c) continue;
+        const ch = c.price_change_percentage_24h ?? 0;
+        const px = c.current_price >= 100 ? c.current_price.toLocaleString("en-GB", { maximumFractionDigits: 0 }) : c.current_price.toLocaleString("en-GB", { maximumFractionDigits: 3 });
+        const row = document.createElement("div");
+        row.className = "coin";
+        row.innerHTML = `<div><b></b><div class="px"></div></div><canvas class="spark"></canvas><div class="chg"></div>`;
+        row.querySelector("b").textContent = sym;
+        row.querySelector(".px").textContent = "£" + px;
+        const chg = row.querySelector(".chg");
+        chg.textContent = `${ch >= 0 ? "▲" : "▼"} ${Math.abs(ch).toFixed(1)}%`;
+        chg.className = "chg " + (ch >= 0 ? "up" : "down");
+        box.appendChild(row);
+        const pts = (c.sparkline_in_7d?.price || []).filter((_, i, a) => i % 3 === 0 || i === a.length - 1);
+        requestAnimationFrame(() => drawSpark(row.querySelector("canvas"), pts, "auto"));
+      }
+    } catch {
+      $("coins").innerHTML = `<div class="coin"><div><b>Market data</b><div class="px">Unavailable</div></div><span></span><span></span></div>`;
+    }
   }
 
-  async function startConversation() {
-    if (busy) return;
+  let topic = store.get(STORE.topic) || "uk";
+  async function loadNews() {
+    [...$("topics").children].forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.topic === topic)));
+    const box = $("briefList");
+    try {
+      const j = await getJSON(`${SERVER}/public/news?topic=${topic}&limit=4`, 15000);
+      box.innerHTML = "";
+      if (!j.headlines?.length) throw new Error("none");
+      for (const h of j.headlines.slice(0, 3)) {
+        const item = document.createElement("div");
+        item.className = "brief-item";
+        const tm = h.published ? new Date(h.published).toLocaleTimeString("en-GB", { timeZone: TZ, hour: "2-digit", minute: "2-digit" }) : "--:--";
+        item.innerHTML = `<time></time><span class="node"></span><div><div class="t"></div><div class="s"></div></div>`;
+        item.querySelector("time").textContent = tm;
+        item.querySelector(".t").textContent = h.title;
+        item.querySelector(".s").textContent = h.source;
+        box.appendChild(item);
+      }
+    } catch {
+      box.innerHTML = `<div class="brief-item"><time>--:--</time><span class="node"></span><div><div class="t">Headlines unavailable right now</div><div class="s">Ask Bernard for the news instead</div></div></div>`;
+    }
+  }
+  $("topics").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-topic]");
+    if (!b) return;
+    topic = b.dataset.topic; store.set(STORE.topic, topic); loadNews();
+  });
+  $("readNews").addEventListener("click", () => ask(`Read me the latest ${({ uk: "UK", jersey: "Jersey", crypto: "crypto", f1: "Formula 1" })[topic]} headlines.`));
+
+  // Network: latency to Bernard's server
+  const netHistory = [];
+  async function pingServer() {
+    const t = performance.now();
+    try {
+      const j = await getJSON(`${SERVER}/health?t=${Date.now()}`, 8000);
+      const ms = Math.round(performance.now() - t);
+      netHistory.push(ms); if (netHistory.length > 30) netHistory.shift();
+      $("netVal").textContent = "SECURE";
+      $("netSub").textContent = `${ms} ms · ${j.storage === "postgres" ? "DB linked" : "Online"}`;
+      $("onlineDot").classList.remove("off"); $("onlineText").textContent = "System online";
+      $("memVal").textContent = j.storage === "postgres" ? "PERSISTENT" : "TEMPORARY";
+      $("memBar").style.width = j.storage === "postgres" ? "100%" : "35%";
+    } catch {
+      netHistory.push(0); if (netHistory.length > 30) netHistory.shift();
+      $("netVal").textContent = "OFFLINE"; $("netSub").textContent = "Server unreachable";
+      $("onlineDot").classList.add("off"); $("onlineText").textContent = "Server offline";
+    }
+    drawSpark($("sparkNet"), netHistory.length > 1 ? netHistory : [0, 0], "auto");
+  }
+
+  loadWeather(); loadCoins(); loadNews(); pingServer();
+  setInterval(loadWeather, 10 * 60 * 1000);
+  setInterval(loadCoins, 2 * 60 * 1000);
+  setInterval(loadNews, 10 * 60 * 1000);
+  setInterval(pingServer, 30 * 1000);
+
+  // =====================================================================
+  //  CONVERSATION
+  // =====================================================================
+  async function startConversation(firstText) {
+    if (busy) { if (firstText && conversation) sendText(firstText); return; }
     busy = true;
+    pendingText = firstText || null;
     await stopWakeWord();
-    setState("connecting", "Connecting…", "One moment.");
-    showHeard("");
+    setMode("connecting", "One moment.");
     try {
       await navigator.mediaDevices.getUserMedia({ audio: true });
       const { Conversation } = await import("https://esm.sh/@elevenlabs/client");
       conversation = await Conversation.startSession({
         agentId: AGENT_ID,
         connectionType: "webrtc",
-        onConnect: () => setState("listening", "Bernud is listening", "Say \"goodbye\" or tap Hang up when you're done."),
+        onConnect: () => {
+          setMode("listening", "Go ahead. Say \"goodbye\" when you're done.");
+          if (pendingText) { const t = pendingText; pendingText = null; setTimeout(() => sendText(t), 400); }
+        },
         onDisconnect: () => onConversationEnded(),
-        onError: (e) => { console.error("ElevenLabs error", e); showHeard("Bernud error: " + String((e && e.message) || e).slice(0, 140)); },
-        onModeChange: ({ mode }) => {
+        onError: (e) => { console.error("Bernard error", e); $("subline").textContent = "Error: " + String((e && e.message) || e).slice(0, 120); },
+        onModeChange: ({ mode: m }) => {
           if (!busy) return;
-          if (mode === "speaking") setState("speaking", "Bernud is speaking", "Interrupt any time.");
-          else setState("listening", "Bernud is listening", "Say \"goodbye\" or tap Hang up when you're done.");
+          setMode(m === "speaking" ? "speaking" : "listening");
+        },
+        onMessage: ({ message, source }) => {
+          if (!message) return;
+          if (source === "ai") { lastAgentLine = message; $("subline").textContent = message.length > 160 ? message.slice(0, 157) + "…" : message; }
+          else $("subline").textContent = "You: " + (message.length > 140 ? message.slice(0, 137) + "…" : message);
         },
       });
     } catch (err) {
       console.error(err);
-      const msg = String(err && (err.message || err)).toLowerCase();
-      const why = msg.includes("permission") || msg.includes("notallowed")
-        ? "Microphone access was blocked. Allow it in your browser settings."
-        : "Couldn't reach Bernud. Check your connection and try again.";
-      busy = false;
-      conversation = null;
-      setState("idle", "Couldn't connect", why);
-      showHeard("Error: " + String(err && (err.message || err.name || err)).slice(0, 140));
+      busy = false; conversation = null;
+      const msg = String(err && (err.message || err.name || err)).toLowerCase();
+      setMode("idle", msg.includes("permission") || msg.includes("notallowed") ? "Microphone blocked. Allow it for this site, then try again." : "Couldn't reach Bernard. Check your connection and try again.");
       if (armed) setTimeout(startWakeWord, 2500);
     }
   }
 
-  async function endConversation() {
-    if (conversation) {
-      try { await conversation.endSession(); } catch {}
-    } else {
-      onConversationEnded();
-    }
-  }
-
-  async function onConversationEnded() {
-    conversation = null;
-    busy = false;
-    if (armed) {
-      setState("sleeping", "Back on standby", "Say \"Hey Bernud\" when you need me.");
-      // Small pause so the mic is released before the wake word listener reclaims it.
-      setTimeout(startWakeWord, 800);
-    } else {
-      setState("idle", "Tap to start", "Bernud needs your microphone to hear you.");
-    }
-  }
-
-  // ---------- Buttons ----------
-  ui.start.addEventListener("click", async () => {
-    armed = true;
-    setState("connecting", "Starting…", "Asking for the microphone.");
-    await keepAwake();
+  function sendText(text) {
+    if (!conversation) return;
     try {
-      // Ask for mic once, up front, from a tap.
-      const s = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const label = s.getAudioTracks()[0]?.label;
-      if (label) showHeard("Using mic: " + label);
-      s.getTracks().forEach((t) => t.stop());
-      if (!hasWakeSetup()) useLocalSpeech = await prepareLocalSpeech();
-    } catch (err) {
-      armed = false;
-      const name = err && err.name;
-      setState("idle", name === "NotFoundError" ? "No microphone found" : "Microphone blocked",
-        name === "NotFoundError" ? "Plug in or enable a microphone, then tap Start again." : "Allow microphone access for this site, then tap Start again.");
-      showHeard(name ? "Mic error: " + name : "");
-      return;
-    }
-    await startWakeWord();
-  });
-
-  ui.orb.addEventListener("click", () => { if (busy) endConversation(); else startConversation(); });
-  ui.talk.addEventListener("click", () => startConversation());
-  ui.hangup.addEventListener("click", () => endConversation());
-
-  // ---------- Settings ----------
-  function openSettings() {
-    ui.home.hidden = true; ui.settings.hidden = false;
-    ui.keyInput.value = store.get(STORE.key) || "";
-    const name = store.get(STORE.ppnName);
-    ui.ppnStatus.innerHTML = "";
-    if (name) { ui.ppnStatus.className = "note ok"; ui.ppnStatus.textContent = "Saved: " + name; }
-    const sens = store.get(STORE.sens) || "0.6";
-    ui.sensInput.value = sens; ui.sensVal.textContent = sens;
-    ui.settingsErr.textContent = "";
-    pendingPpnB64 = null;
+      if (typeof conversation.sendUserMessage === "function") conversation.sendUserMessage(text);
+      $("subline").textContent = "You: " + text;
+    } catch (e) { console.error(e); }
   }
-  function closeSettings() { ui.settings.hidden = true; ui.home.hidden = false; }
 
-  ui.settingsBtn.addEventListener("click", () => (ui.settings.hidden ? openSettings() : closeSettings()));
-  ui.close.addEventListener("click", closeSettings);
-  ui.sensInput.addEventListener("input", () => { ui.sensVal.textContent = ui.sensInput.value; });
-  ui.keyInput.addEventListener("input", () => { ui.settingsErr.textContent = ""; });
+  async function endConversation() {
+    if (conversation) { try { await conversation.endSession(); } catch {} }
+    else onConversationEnded();
+  }
 
-  ui.ppnInput.addEventListener("change", async () => {
-    ui.settingsErr.textContent = "";
-    const file = ui.ppnInput.files && ui.ppnInput.files[0];
-    if (!file) return;
-    if (!file.name.toLowerCase().endsWith(".ppn")) {
-      ui.settingsErr.textContent = "That isn't a .ppn file. Download the Web (WASM) version from Picovoice.";
-      return;
+  function onConversationEnded() {
+    conversation = null; busy = false;
+    if (armed) { setMode("standby", "Say \"Hey Bernard\" when you need me."); setTimeout(startWakeWord, 800); }
+    else setMode("idle", "Tap the core or the microphone to talk.");
+  }
+
+  function ask(text) { startConversation(text); }
+
+  // =====================================================================
+  //  WAKE WORD  (Picovoice if set up, otherwise Chrome speech recognition)
+  // =====================================================================
+  let porcupine = null, wvp = null;
+  function hasPico() { return Boolean(store.get(STORE.key) && store.get(STORE.ppn)); }
+
+  async function loadPicovoice() {
+    if (porcupine) return;
+    const [{ PorcupineWorker }, { WebVoiceProcessor }] = await Promise.all([
+      import("https://esm.sh/@picovoice/porcupine-web@3"),
+      import("https://esm.sh/@picovoice/web-voice-processor@4"),
+    ]);
+    wvp = WebVoiceProcessor;
+    porcupine = await PorcupineWorker.create(
+      store.get(STORE.key),
+      [{ label: "Hey Bernard", base64: store.get(STORE.ppn), sensitivity: parseFloat(store.get(STORE.sens) || "0.6") }],
+      (d) => { if (d && !busy) onWake(); },
+      { publicPath: MODEL_URL, customWritePath: "bernud_porcupine_v3", forceWrite: true },
+    );
+  }
+
+  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const WAKE_RE = /\b(hey|hi|hay|a|ok|okay)[\s,.!]*(bernud|bernard|bernards|bernad|bernhard|burnard|burner|bernie|bernoud|bernudd)\b/i;
+  let rec = null, recWanted = false, recFailures = 0, useLocalSpeech = false;
+
+  async function prepareLocalSpeech() {
+    if (!SpeechRec || typeof SpeechRec.available !== "function") return false;
+    try {
+      let a = await SpeechRec.available({ langs: ["en-GB"], processLocally: true });
+      if (a === "downloadable" || a === "downloading") {
+        $("subline").textContent = "Downloading Chrome's on-device speech pack…";
+        await SpeechRec.install({ langs: ["en-GB"], processLocally: true });
+        a = await SpeechRec.available({ langs: ["en-GB"], processLocally: true });
+      }
+      return a === "available";
+    } catch { return false; }
+  }
+
+  function startSpeechWake() {
+    if (!SpeechRec) return false;
+    recWanted = true;
+    if (rec) return true;
+    rec = new SpeechRec();
+    rec.lang = "en-GB"; rec.continuous = true; rec.interimResults = true; rec.maxAlternatives = 3;
+    if (useLocalSpeech) {
+      try { rec.processLocally = true; } catch {}
+      try { if (window.SpeechRecognitionPhrase) rec.phrases = [new SpeechRecognitionPhrase("Hey Bernard", 5.0)]; } catch {}
     }
-    const buf = new Uint8Array(await file.arrayBuffer());
-    let bin = "";
-    for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]);
-    pendingPpnB64 = btoa(bin);
-    ui.ppnStatus.className = "note ok";
-    ui.ppnStatus.textContent = "Ready to save: " + file.name;
-    store.set(STORE.ppnName + ".pending", file.name);
+    rec.onresult = (e) => {
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        for (let a = 0; a < e.results[i].length; a++) {
+          if (WAKE_RE.test(e.results[i][a].transcript)) { recFailures = 0; stopSpeechWake(); if (!busy) onWake(); return; }
+        }
+      }
+    };
+    rec.onerror = (e) => {
+      if (e.error === "not-allowed" || e.error === "service-not-allowed") { recWanted = false; armed = false; setMode("idle", "Microphone blocked. Allow it for this site."); }
+      else if (e.error !== "no-speech" && e.error !== "aborted") { recFailures++; $("diag").textContent = "Wake word error: " + e.error; }
+    };
+    rec.onend = () => {
+      rec = null;
+      if (recWanted && armed && !busy && document.visibilityState === "visible") {
+        setTimeout(() => { if (recWanted && armed && !busy) startSpeechWake(); }, Math.min(250 * 2 ** recFailures, 8000));
+      }
+    };
+    try { rec.start(); } catch { rec = null; return false; }
+    return true;
+  }
+  function stopSpeechWake() { recWanted = false; if (rec) { try { rec.abort(); } catch {} rec = null; } }
+
+  async function startWakeWord() {
+    if (!armed || busy) return;
+    if (hasPico()) {
+      try { await loadPicovoice(); await wvp.subscribe(porcupine); setMode("standby", "Say \"Hey Bernard\". Private wake word active."); return; }
+      catch (err) { console.error(err); $("diag").textContent = "Picovoice failed: " + String(err.message || err).slice(0, 120); }
+    }
+    if (startSpeechWake()) setMode("standby", "Say \"Hey Bernard\" when you need me.");
+    else { armed = false; setMode("idle", "This browser can't listen for a wake word. Tap the core to talk."); }
+  }
+  async function stopWakeWord() {
+    stopSpeechWake();
+    try { if (wvp && porcupine) await wvp.unsubscribe(porcupine); } catch {}
+  }
+  function onWake() { if (navigator.vibrate) navigator.vibrate(60); startConversation(); }
+
+  async function toggleStandby() {
+    if (armed) { armed = false; await stopWakeWord(); if (!busy) setMode("idle", "Standby off. Tap the core to talk."); return; }
+    armed = true;
+    try {
+      const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+      s.getTracks().forEach((t) => t.stop());
+    } catch { armed = false; setMode("idle", "Microphone blocked. Allow it for this site, then try again."); return; }
+    if (!hasPico()) useLocalSpeech = await prepareLocalSpeech();
+    keepAwake();
+    await startWakeWord();
+  }
+
+  let wakeLock = null;
+  async function keepAwake() { try { if ("wakeLock" in navigator && !wakeLock) { wakeLock = await navigator.wakeLock.request("screen"); wakeLock.addEventListener("release", () => { wakeLock = null; }); } } catch {} }
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && armed) { keepAwake(); if (!busy) startWakeWord(); } });
+
+  // =====================================================================
+  //  CONTROLS
+  // =====================================================================
+  const talkToggle = () => (busy ? endConversation() : startConversation());
+  $("core").addEventListener("click", talkToggle);
+  $("core").addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); talkToggle(); } });
+  $("micBtn").addEventListener("click", talkToggle);
+  $("hangBtn").addEventListener("click", () => endConversation());
+  $("wakeBtn").addEventListener("click", toggleStandby);
+  $("logBtn").addEventListener("click", () => { $("subline").textContent = lastAgentLine || "Bernard hasn't said anything yet."; });
+  $("askForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const v = $("askInput").value.trim();
+    if (!v) { $("askInput").focus(); return; }
+    $("askInput").value = "";
+    ask(v);
+  });
+  document.querySelectorAll(".qbtn[data-say]").forEach((b) => b.addEventListener("click", () => ask(b.dataset.say)));
+  document.addEventListener("keydown", (e) => {
+    if (!e.altKey) return;
+    const k = e.key.toLowerCase();
+    const map = { b: 0, m: 1, r: 2 };
+    if (k in map) { e.preventDefault(); document.querySelectorAll(".qbtn")[map[k]].click(); }
   });
 
-  ui.save.addEventListener("click", async () => {
-    const key = ui.keyInput.value.trim();
-    const hasPpn = pendingPpnB64 || store.get(STORE.ppn);
-    if (!key) { ui.settingsErr.textContent = "Enter your Picovoice AccessKey first."; return; }
-    if (!hasPpn) { ui.settingsErr.textContent = "Choose your \"Hey Bernud\" .ppn file first."; return; }
-    store.set(STORE.key, key);
-    store.set(STORE.sens, ui.sensInput.value);
-    if (pendingPpnB64) {
-      if (!store.set(STORE.ppn, pendingPpnB64)) { ui.settingsErr.textContent = "Couldn't save the wake word file on this device."; return; }
-      store.set(STORE.ppnName, store.get(STORE.ppnName + ".pending") || "wake word");
-    }
-    // Rebuild the detector with the new setup.
+  // =====================================================================
+  //  SETTINGS
+  // =====================================================================
+  let pendingPpn = null;
+  function openSettings() {
+    $("drawer").classList.add("open");
+    $("keyInput").value = store.get(STORE.key) || "";
+    const n = store.get(STORE.ppnName); $("ppnStatus").textContent = n ? "Saved: " + n : "";
+    const s = store.get(STORE.sens) || "0.6"; $("sensInput").value = s; $("sensVal").textContent = s;
+    $("settingsErr").textContent = ""; pendingPpn = null;
+    $("diag").textContent = `Speech recognition: ${SpeechRec ? "supported" : "not supported"} · On-device: ${useLocalSpeech ? "yes" : "no"} · Picovoice: ${hasPico() ? "set up" : "not set up"}`;
+  }
+  const closeSettings = () => $("drawer").classList.remove("open");
+  $("settingsBtn").addEventListener("click", openSettings);
+  $("closeSettings").addEventListener("click", closeSettings);
+  $("drawer").addEventListener("click", (e) => { if (e.target === $("drawer")) closeSettings(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSettings(); });
+  $("sensInput").addEventListener("input", () => { $("sensVal").textContent = $("sensInput").value; });
+  $("keyInput").addEventListener("input", () => { $("settingsErr").textContent = ""; });
+  $("ppnInput").addEventListener("change", async () => {
+    $("settingsErr").textContent = "";
+    const f = $("ppnInput").files?.[0];
+    if (!f) return;
+    if (!f.name.toLowerCase().endsWith(".ppn")) { $("settingsErr").textContent = "That isn't a .ppn file."; return; }
+    const buf = new Uint8Array(await f.arrayBuffer());
+    let bin = ""; for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]);
+    pendingPpn = { b64: btoa(bin), name: f.name };
+    $("ppnStatus").textContent = "Ready to save: " + f.name;
+  });
+  $("saveBtn").addEventListener("click", async () => {
+    const key = $("keyInput").value.trim();
+    if (!key && !pendingPpn) { store.set(STORE.sens, $("sensInput").value); closeSettings(); return; }
+    if (!key) { $("settingsErr").textContent = "Enter your Picovoice AccessKey, or leave both blank."; return; }
+    if (!pendingPpn && !store.get(STORE.ppn)) { $("settingsErr").textContent = "Choose your wake word .ppn file."; return; }
+    store.set(STORE.key, key); store.set(STORE.sens, $("sensInput").value);
+    if (pendingPpn) { if (!store.set(STORE.ppn, pendingPpn.b64)) { $("settingsErr").textContent = "Couldn't save the file on this device."; return; } store.set(STORE.ppnName, pendingPpn.name); }
     await stopWakeWord();
-    try { if (porcupine) { await porcupine.release(); porcupine.terminate && porcupine.terminate(); } } catch {}
+    try { if (porcupine) { await porcupine.release(); porcupine.terminate?.(); } } catch {}
     porcupine = null;
     closeSettings();
-    if (armed && !busy) await startWakeWord();
-    else setState("idle", "Wake word saved", "Tap Start listening, then say \"Hey Bernud\".");
+    if (armed && !busy) startWakeWord();
+  });
+  $("clearBtn").addEventListener("click", async () => {
+    [STORE.key, STORE.ppn, STORE.ppnName, STORE.sens].forEach((k) => store.del(k));
+    await stopWakeWord(); porcupine = null;
+    $("keyInput").value = ""; $("ppnInput").value = ""; $("ppnStatus").textContent = "";
+    if (armed && !busy) startWakeWord();
   });
 
-  ui.clear.addEventListener("click", async () => {
-    Object.values(STORE).forEach((k) => store.del(k));
-    await stopWakeWord();
-    porcupine = null;
-    ui.keyInput.value = ""; ui.ppnInput.value = ""; ui.ppnStatus.textContent = "";
-    ui.settingsErr.textContent = "";
-  });
-
-  // ---------- Install as an app ----------
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("sw.js").catch(() => {});
-  }
-
-  setState("idle", "Tap Start listening", "Then just say \"Hey Bernud\". Or tap the orb to talk now.");
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+  setMode("idle", "Tap the core or the microphone to talk.");
 </script>
 </body>
 </html>

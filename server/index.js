@@ -197,8 +197,16 @@ async function headlines(topic, limit) {
 // HTTP
 // ---------------------------------------------------------------------------
 
-function send(res, status, body) {
-  res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+const PUBLIC_ORIGINS = new Set(["https://bernud.onrender.com"]);
+
+function send(res, status, body, req) {
+  const headers = { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" };
+  const origin = req && req.headers.origin;
+  if (origin && (PUBLIC_ORIGINS.has(origin) || /^http:\/\/localhost(:\d+)?$/.test(origin))) {
+    headers["access-control-allow-origin"] = origin;
+    headers["vary"] = "origin";
+  }
+  res.writeHead(status, headers);
   res.end(JSON.stringify(body));
 }
 
@@ -216,7 +224,20 @@ export async function handle(req, res) {
   const url = new URL(req.url, "http://x");
   const path = url.pathname.replace(/\/+$/, "") || "/";
 
-  if (path === "/" || path === "/health") return send(res, 200, { ok: true, service: "bernud", storage: db.kind });
+  if (path === "/" || path === "/health") return send(res, 200, { ok: true, service: "bernud", storage: db.kind }, req);
+
+  // Headlines are public information, so the dashboard can show them without the secret key.
+  if (req.method === "GET" && path === "/public/news") {
+    const topic = String(url.searchParams.get("topic") || "uk").toLowerCase();
+    if (!FEEDS[topic]) return send(res, 400, { error: "unknown topic" }, req);
+    const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 4, 1), 8);
+    try {
+      const items = await headlines(topic, limit);
+      return send(res, 200, { topic, headlines: items.map(({ title, source, published }) => ({ title, source, published })) }, req);
+    } catch {
+      return send(res, 200, { topic, headlines: [] }, req);
+    }
+  }
 
   if (!API_KEY || req.headers["x-bernud-key"] !== API_KEY) return send(res, 401, { error: "unauthorised" });
 
