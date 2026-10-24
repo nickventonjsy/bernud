@@ -273,7 +273,8 @@ async function calendarForBrief() {
   const out = { window: "today and tomorrow", events: [], not_checked: [] };
   for (const a of [gmail, personalGoogle]) {
     try {
-      if (!(await a.connected()) || !(await a.hasScope(SCOPES.calendar))) { out.not_checked.push(a.account); continue; }
+      if (!(await a.connected())) { if (a === gmail) out.not_checked.push(a.account); continue; }
+      if (!(await a.hasScope(SCOPES.calendar))) { out.not_checked.push(a.account); continue; }
       out.events.push(...(await a.events({ from, to })).map(({ id, link, description, ...e }) => e));
     } catch { out.not_checked.push(a.account); }
   }
@@ -446,7 +447,7 @@ export async function handle(req, res) {
           const out = [], problems = [];
           for (const k of which) {
             const a = googleAccounts[k];
-            if (!(await a.connected())) { problems.push(`${a.account} isn't connected`); continue; }
+            if (!(await a.connected())) { if (which.length === 1) problems.push(`${a.account} isn't connected`); continue; }
             try { out.push(...(await a.events({ from, to, query: b.query }))); } catch (e) { problems.push(`${a.account}: ${e.message}`); }
           }
           out.sort((x, y) => String(x.start).localeCompare(String(y.start)));
