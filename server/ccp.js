@@ -81,7 +81,7 @@ function firstDateAfter(text, re) {
 // Body words like "conditions", "notes" or "order" appear in most data sheets, so they are ignored.
 const NAME_TOPICS = [
   ["price list", /(price\s*list|pricelist|prices|tariff|\brrp\b|trade[ _-]?price)/i],
-  ["offer / promotion", /(offer|promo|special|black[ _-]?friday|deal|discount|clearance)/i],
+  ["offer / promotion", /(offer|promo|\bspecials?\b|black[ _-]?friday|\bdeals?\b|bundle|bundel|discount|clearance)/i],
   ["supplier terms", /(terms|t&c|trading|rebate|account[ _-]?terms|carriage)/i],
   ["notice", /(closure|closing|holiday|notice|announcement|update[ _-]?letter)/i],
   ["safety data sheet", /(\bsds\b|_sds|-sds|msds|safety[ _-]?data)/i],
@@ -122,7 +122,8 @@ export function classify(doc, today = todayLondon()) {
 
   let status = "uncertain";
   const reasons = [];
-  if (/\b(old|archive[d]?|superseded|obsolete|expired|do not use)\b/i.test(name)) { status = "historical"; reasons.push("name marks it as old/archived"); }
+  const where = doc.path || name;
+  if (/\b(old|archived?|archive|historical|historic|previous|legacy|superseded|obsolete|expired|do not use)\b/i.test(where)) { status = "historical"; reasons.push(/historic/i.test(where) ? "file or folder name marks it as HISTORICAL" : "file or folder name marks it as old/archived"); }
   else if (supBy) { status = "historical"; reasons.push(`says it is ${supBy[1].toLowerCase()} "${supBy[2].trim()}"`); }
   else if (expires && expires < today) { status = "historical"; reasons.push(`validity ended ${expires}`); }
   else if (effective && effective > today) { status = "uncertain"; reasons.push(`not effective until ${effective}`); }
@@ -398,7 +399,7 @@ export async function refreshIndex({ budgetMs = 25_000, force = false, lister = 
       const unchanged = prev && prev.modified === new Date(f.modifiedTime).toISOString() && !force;
       if (unchanged) {
         // Re-classify anyway: "current" vs "historical" depends on today's date.
-        const c = classify({ name: prev.name, text: prev.text, readable: prev.readable }, today);
+        const c = classify({ name: prev.name, path: prev.path, text: prev.text, readable: prev.readable }, today);
         const changed = ["status", "status_reason", "version", "effective", "expires"].some((k) => (c[k] || null) !== (prev[k] || null)) || JSON.stringify(c.covers) !== JSON.stringify(prev.covers);
         if (changed) await store.upsertDoc({ ...prev, ...c });
         skipped++;
