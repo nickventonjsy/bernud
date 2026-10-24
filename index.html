@@ -138,7 +138,7 @@
     </section>
   </main>
 
-  <footer>Keep this page open and the screen on for "Hey Bernud" to work. · v3</footer>
+  <footer>Keep this page open and the screen on for "Hey Bernud" to work. · v4</footer>
 
 <script type="module">
   const AGENT_ID = "agent_0501m5q6cc15eqcrnamk2e1w84xc";
@@ -226,6 +226,22 @@
   const WAKE_RE = /\b(hey|hi|hay|a|ok|okay)[\s,.!]*(bernud|bernard|bernards|bernad|bernhard|burnard|burner|bernie|bernoud|bernudd)\b/i;
   let rec = null;
   let recWanted = false;
+  let useLocalSpeech = false;
+
+  // Prefer Chrome's on-device speech pack where available (private, and works on PCs where
+  // the online speech service returns nothing). Must be called from a tap so Chrome allows the install.
+  async function prepareLocalSpeech() {
+    if (!SpeechRec || typeof SpeechRec.available !== "function") return false;
+    try {
+      let a = await SpeechRec.available({ langs: ["en-GB"], processLocally: true });
+      if (a === "downloadable" || a === "downloading") {
+        showHeard("Downloading Chrome's on-device speech pack…");
+        await SpeechRec.install({ langs: ["en-GB"], processLocally: true });
+        a = await SpeechRec.available({ langs: ["en-GB"], processLocally: true });
+      }
+      return a === "available";
+    } catch { return false; }
+  }
   let recFailures = 0;
 
   function showHeard(t) { const el = document.getElementById("heard"); if (el) el.textContent = t || ""; }
@@ -236,6 +252,10 @@
     if (rec) return true;
     rec = new SpeechRec();
     rec.lang = "en-GB";
+    if (useLocalSpeech) {
+      try { rec.processLocally = true; } catch {}
+      try { if (window.SpeechRecognitionPhrase) rec.phrases = [new SpeechRecognitionPhrase("Hey Bernud", 5.0)]; } catch {}
+    }
     rec.continuous = true;
     rec.interimResults = true;
     rec.maxAlternatives = 3;
@@ -296,7 +316,9 @@
       }
     }
     if (startSpeechWake()) {
-      setState("sleeping", "Say \"Hey Bernud\"", "Standby mode (uses Chrome's speech recognition).");
+      setState("sleeping", "Say \"Hey Bernud\"", useLocalSpeech
+        ? "Standby mode (on-device speech, audio stays on this device)."
+        : "Standby mode (uses Chrome's online speech recognition).");
     } else {
       setState("idle", "Tap the orb to talk", "This browser can't listen for \"Hey Bernud\". Use Chrome, or set up Picovoice in Settings.");
     }
@@ -388,6 +410,7 @@
       const label = s.getAudioTracks()[0]?.label;
       if (label) showHeard("Using mic: " + label);
       s.getTracks().forEach((t) => t.stop());
+      if (!hasWakeSetup()) useLocalSpeech = await prepareLocalSpeech();
     } catch (err) {
       armed = false;
       const name = err && err.name;
