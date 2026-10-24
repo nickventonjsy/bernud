@@ -2,11 +2,12 @@
 
 Nicholas's personal voice assistant. Open the page, tap **Start listening**, then say **"Hey Bernud"**.
 
-- Wake word detection runs entirely on the device (Picovoice Porcupine). No audio leaves the device until the wake word is heard.
+- "Hey Bernud" works out of the box in Chrome using its built-in speech recognition (audio goes to the browser's speech service while on standby).
+- Optional: add a Picovoice AccessKey and wake word file in Settings for fully on-device detection (no audio leaves the device until the wake word is heard).
 - Conversations are handled by the Bernud agent on ElevenLabs (Claude as the brain).
 - Say "goodbye" (or tap **Hang up**) and Bernud goes back to standby.
 
-## Setup (once per device)
+## Optional: private wake word (Picovoice)
 
 1. Create a free account at https://console.picovoice.ai and copy your **AccessKey**.
 2. In Porcupine, create the wake word **"Hey Bernud"** (English), platform **Web (WASM)**, and download the `.ppn` file.

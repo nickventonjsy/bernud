@@ -116,8 +116,8 @@
     </section>
 
     <section id="settings" class="panel" hidden>
-      <h2>Wake word setup</h2>
-      <p>Enter your Picovoice AccessKey and upload your "Hey Bernud" wake word file (Web / WASM). Both stay on this device only.</p>
+      <h2>Private wake word (optional)</h2>
+      <p>"Hey Bernud" already works using Chrome's speech recognition. For a private wake word that never sends audio anywhere while on standby, add a Picovoice AccessKey and your "Hey Bernud" file (Web / WASM). Both stay on this device only.</p>
       <label for="keyInput">Picovoice AccessKey</label>
       <input id="keyInput" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your AccessKey">
       <label for="ppnInput">"Hey Bernud" wake word file (.ppn)</label>
@@ -219,22 +219,83 @@
     return true;
   }
 
+  // ---------- Wake word fallback: Chrome's built-in speech recognition (no account needed) ----------
+  // Audio is sent to the browser's speech service while on standby, so Picovoice is preferred when set up.
+  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const WAKE_RE = /\b(hey|hi|hay|a|ok|okay)[\s,.!]*(bernud|bernard|bernards|bernad|bernhard|burnard|burner|bernie|bernoud|bernudd)\b/i;
+  let rec = null;
+  let recWanted = false;
+  let recFailures = 0;
+
+  function startSpeechWake() {
+    if (!SpeechRec) return false;
+    recWanted = true;
+    if (rec) return true;
+    rec = new SpeechRec();
+    rec.lang = "en-GB";
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.maxAlternatives = 3;
+    rec.onresult = (e) => {
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        for (let a = 0; a < e.results[i].length; a++) {
+          if (WAKE_RE.test(e.results[i][a].transcript)) {
+            recFailures = 0;
+            stopSpeechWake();
+            if (!busy) onWake();
+            return;
+          }
+        }
+      }
+    };
+    rec.onerror = (e) => {
+      if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+        recWanted = false;
+        armed = false;
+        setState("idle", "Microphone blocked", "Allow microphone access for this site, then tap Start again.");
+      } else if (e.error !== "no-speech" && e.error !== "aborted") {
+        recFailures++;
+      }
+    };
+    rec.onend = () => {
+      rec = null;
+      // Chrome stops recognition every so often; quietly restart while on standby.
+      if (recWanted && armed && !busy && document.visibilityState === "visible") {
+        const delay = Math.min(250 * Math.pow(2, recFailures), 8000);
+        setTimeout(() => { if (recWanted && armed && !busy) startSpeechWake(); }, delay);
+      }
+    };
+    try { rec.start(); } catch { rec = null; return false; }
+    return true;
+  }
+
+  function stopSpeechWake() {
+    recWanted = false;
+    if (rec) { try { rec.abort(); } catch {} rec = null; }
+  }
+
   async function startWakeWord() {
-    if (!hasWakeSetup()) {
-      setState("idle", "Tap the orb to talk", "Add your wake word in Settings to use \"Hey Bernud\".");
-      return;
+    if (hasWakeSetup()) {
+      try {
+        await loadPicovoice();
+        await wvp.subscribe(porcupine);
+        setState("sleeping", "Say \"Hey Bernud\"", "Listening for the wake word on this device only.");
+        return;
+      } catch (err) {
+        console.error(err);
+        if (!SpeechRec) { setState("idle", "Wake word unavailable", friendlyPicovoiceError(err)); return; }
+        // fall through to the built-in recogniser
+      }
     }
-    try {
-      await loadPicovoice();
-      await wvp.subscribe(porcupine);
-      setState("sleeping", "Say \"Hey Bernud\"", "Listening for the wake word on this device only.");
-    } catch (err) {
-      console.error(err);
-      setState("idle", "Wake word unavailable", friendlyPicovoiceError(err));
+    if (startSpeechWake()) {
+      setState("sleeping", "Say \"Hey Bernud\"", "Standby mode (uses Chrome's speech recognition).");
+    } else {
+      setState("idle", "Tap the orb to talk", "This browser can't listen for \"Hey Bernud\". Use Chrome, or set up Picovoice in Settings.");
     }
   }
 
   async function stopWakeWord() {
+    stopSpeechWake();
     try { if (wvp && porcupine) await wvp.unsubscribe(porcupine); } catch {}
   }
 
@@ -320,7 +381,6 @@
       return;
     }
     await startWakeWord();
-    if (!hasWakeSetup()) setState("idle", "Tap the orb to talk", "Add your wake word in Settings to use \"Hey Bernud\".");
   });
 
   ui.orb.addEventListener("click", () => { if (busy) endConversation(); else startConversation(); });
@@ -396,9 +456,7 @@
     navigator.serviceWorker.register("sw.js").catch(() => {});
   }
 
-  setState("idle",
-    hasWakeSetup() ? "Tap Start listening" : "Tap to start",
-    hasWakeSetup() ? "Then just say \"Hey Bernud\"." : "Add your wake word in Settings, or tap the orb to talk.");
+  setState("idle", "Tap Start listening", "Then just say \"Hey Bernud\". Or tap the orb to talk now.");
 </script>
 </body>
 </html>
