@@ -215,6 +215,15 @@
   .err { color: var(--red-soft); font-size: 14px; min-height: 1.2em; margin-top: 10px; }
   .note { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-top: 6px; }
 
+  .brief-panel { width: min(760px, 100%) !important; }
+  #briefBody { font-size: 16px; line-height: 1.5; }
+  #briefBody h1, #briefBody h2, #briefBody h3 { font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text); margin: 18px 0 6px; font-size: 16px; border-bottom: 1px solid var(--line); padding-bottom: 4px; }
+  #briefBody h1 { font-size: 19px; }
+  #briefBody p { color: var(--text); margin: 6px 0; }
+  #briefBody ul { margin: 4px 0 8px; padding-left: 20px; }
+  #briefBody li { margin: 3px 0; }
+  #briefBody a { color: var(--red-soft); }
+  #briefBody .meta { font-family: var(--mono); font-size: 11px; color: var(--muted); letter-spacing: 0.12em; text-transform: uppercase; }
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
   /* ---------- Responsive ---------- */
@@ -363,6 +372,9 @@
     <button class="qbtn" type="button" data-say="How is my crypto watchlist doing today?">
       <span class="l"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 17l5-5 4 4 8-8"/><path d="M15 8h5v5"/></svg>Market check</span><span class="kbd">Alt M</span>
     </button>
+    <button class="qbtn" type="button" data-say="Give me my CCP morning brief.">
+      <span class="l"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 20h16M6 20V9l6-5 6 5v11"/><path d="M10 20v-6h4v6"/></svg>CCP morning brief</span><span class="kbd">Alt C</span>
+    </button>
     <button class="qbtn" type="button" data-say="What do you have saved in my memory? Just the most recent few.">
       <span class="l"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/></svg>What do you remember?</span><span class="kbd">Alt R</span>
     </button>
@@ -386,7 +398,7 @@
       <button class="sq" type="button" id="hangBtn" title="Hang up" aria-label="Hang up">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2 3 7v10l9 5 9-5V7z"/><path d="M3 7l9 5 9-5M12 12v10"/></svg>
       </button>
-      <button class="sq" type="button" id="logBtn" title="Conversation log" aria-label="Show what Bernard last said">
+      <button class="sq" type="button" id="logBtn" title="CCP brief" aria-label="Open the latest CCP morning brief">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 3h12v18H6z"/><path d="M9 8h6M9 12h6M9 16h4"/></svg>
       </button>
       <button class="sq" type="button" id="settingsBtn" title="Settings" aria-label="Settings">
@@ -396,9 +408,28 @@
   </div>
 
   <footer>
-    <span>Bernard OS / v.05</span>
+    <span>Bernard OS / v.06</span>
     <span>Privacy &nbsp;|&nbsp; Cloud first &nbsp;&nbsp;|&nbsp;&nbsp; A more capable tomorrow</span>
   </footer>
+</div>
+
+<!-- CCP BRIEF -->
+<div class="drawer" id="briefDrawer" role="dialog" aria-modal="true" aria-labelledby="briefTitle">
+  <div class="panel brief-panel">
+    <div class="p-head"><div class="p-title" id="briefTitle">CCP brief</div><button class="btn" type="button" id="closeBrief">Close</button></div>
+    <div id="briefGate" hidden>
+      <p>Enter the dashboard passcode to view Cory Car Paints briefs on this device.</p>
+      <label for="passInput">Passcode</label>
+      <input id="passInput" type="password" autocomplete="off" spellcheck="false">
+      <div class="err" id="passErr"></div>
+      <div class="btnrow"><button class="btn primary" type="button" id="passBtn">Unlock</button></div>
+    </div>
+    <div id="briefBody"></div>
+    <div class="btnrow" id="briefActions" hidden>
+      <button class="btn primary" type="button" id="newBriefBtn">Ask for a new brief</button>
+      <button class="btn" type="button" id="forgetPass">Lock this device</button>
+    </div>
+  </div>
 </div>
 
 <!-- SETTINGS -->
@@ -1003,7 +1034,7 @@
   $("micBtn").addEventListener("click", talkToggle);
   $("hangBtn").addEventListener("click", () => endConversation());
   $("wakeBtn").addEventListener("click", toggleStandby);
-  $("logBtn").addEventListener("click", () => { $("subline").textContent = lastAgentLine || "Bernard hasn't said anything yet."; });
+  $("logBtn").addEventListener("click", openBrief);
   $("askForm").addEventListener("submit", (e) => {
     e.preventDefault();
     const v = $("askInput").value.trim();
@@ -1015,7 +1046,7 @@
   document.addEventListener("keydown", (e) => {
     if (!e.altKey) return;
     const k = e.key.toLowerCase();
-    const map = { b: 0, m: 1, r: 2 };
+    const map = { b: 0, m: 1, c: 2, r: 3 };
     if (k in map) { e.preventDefault(); document.querySelectorAll(".qbtn")[map[k]].click(); }
   });
 
@@ -1067,6 +1098,65 @@
     $("keyInput").value = ""; $("ppnInput").value = ""; $("ppnStatus").textContent = "";
     if (armed && !busy) startWakeWord();
   });
+
+  // =====================================================================
+  //  CCP BRIEF VIEWER  (safe markdown: headings, bullets, bold, links)
+  // =====================================================================
+  const PASS_KEY = "bernud.dashKey";
+  function inline(parent, text) {
+    const re = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|\*\*([^*]+)\*\*/g;
+    let last = 0, m;
+    while ((m = re.exec(text))) {
+      if (m.index > last) parent.appendChild(document.createTextNode(text.slice(last, m.index)));
+      if (m[1]) { const a = document.createElement("a"); a.href = m[2]; a.textContent = m[1]; a.target = "_blank"; a.rel = "noopener noreferrer"; parent.appendChild(a); }
+      else { const b = document.createElement("b"); b.textContent = m[3]; parent.appendChild(b); }
+      last = re.lastIndex;
+    }
+    if (last < text.length) parent.appendChild(document.createTextNode(text.slice(last)));
+  }
+  function renderMarkdown(md, box) {
+    box.innerHTML = "";
+    let list = null;
+    for (const raw of String(md).split("\n")) {
+      const line = raw.trimEnd();
+      const h = line.match(/^(#{1,3})\s+(.*)$/);
+      const li = line.match(/^\s*(?:[-*•]|\d+[.)])\s+(.*)$/);
+      if (h) { list = null; const el = document.createElement("h" + h[1].length); inline(el, h[2]); box.appendChild(el); }
+      else if (li) { if (!list) { list = document.createElement("ul"); box.appendChild(list); } const el = document.createElement("li"); inline(el, li[1]); list.appendChild(el); }
+      else if (line.trim()) { list = null; const el = document.createElement("p"); inline(el, line); box.appendChild(el); }
+      else list = null;
+    }
+  }
+  async function loadBrief() {
+    const pass = store.get(PASS_KEY);
+    $("briefGate").hidden = Boolean(pass);
+    $("briefActions").hidden = !pass;
+    if (!pass) { $("briefBody").innerHTML = ""; setTimeout(() => $("passInput").focus(), 50); return; }
+    $("briefBody").innerHTML = '<p class="meta">Loading…</p>';
+    try {
+      const r = await fetch(`${SERVER}/ccp/brief/latest`, { headers: { "x-dashboard-key": pass }, cache: "no-store" });
+      if (r.status === 401) { store.del(PASS_KEY); $("passErr").textContent = "That passcode wasn't accepted."; return loadBrief(); }
+      const j = await r.json();
+      if (!j.text) { $("briefBody").innerHTML = '<p>No CCP brief yet. Ask Bernard for your "CCP morning brief" and it will appear here.</p>'; return; }
+      renderMarkdown(j.text, $("briefBody"));
+      const meta = document.createElement("p"); meta.className = "meta";
+      meta.textContent = "Prepared " + new Date(j.created_at).toLocaleString("en-GB", { timeZone: TZ, weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+      $("briefBody").prepend(meta);
+    } catch { $("briefBody").innerHTML = "<p>Couldn't load the brief. Check your connection.</p>"; }
+  }
+  function openBrief() { $("briefDrawer").classList.add("open"); $("passErr").textContent = ""; loadBrief(); }
+  $("closeBrief").addEventListener("click", () => $("briefDrawer").classList.remove("open"));
+  $("briefDrawer").addEventListener("click", (e) => { if (e.target === $("briefDrawer")) $("briefDrawer").classList.remove("open"); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("briefDrawer").classList.remove("open"); });
+  $("passBtn").addEventListener("click", () => {
+    const v = $("passInput").value.trim();
+    if (!v) { $("passErr").textContent = "Enter the passcode first."; return; }
+    store.set(PASS_KEY, v); $("passInput").value = ""; $("passErr").textContent = ""; loadBrief();
+  });
+  $("passInput").addEventListener("keydown", (e) => { if (e.key === "Enter") $("passBtn").click(); });
+  $("passInput").addEventListener("input", () => { $("passErr").textContent = ""; });
+  $("forgetPass").addEventListener("click", () => { store.del(PASS_KEY); loadBrief(); });
+  $("newBriefBtn").addEventListener("click", () => { $("briefDrawer").classList.remove("open"); ask("Give me my CCP morning brief."); });
 
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
   setMode("idle", "Tap the core or the microphone to talk.");
