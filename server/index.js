@@ -101,6 +101,8 @@ const googleAccounts = { ccp: gmail, personal: personalGoogle };
 export const notify = (text, opts) => devices.ntfyPublish(NTFY_TOPIC, text, opts);
 const { createReminders } = await import("./reminders.js");
 export const reminders = createReminders({ kv: db.kv, notify });
+const { createSmartThings } = await import("./smartthings.js");
+export const smartthings = createSmartThings({ kv: db.kv, clientId: process.env.SMARTTHINGS_CLIENT_ID || "", clientSecret: process.env.SMARTTHINGS_CLIENT_SECRET || "", redirectUri: (process.env.PUBLIC_URL || "https://bernud-server.onrender.com").replace(/\/+$/, "") + "/smartthings/callback", secret: API_KEY, notify });
 export const scheduler = createScheduler({
   kv: db.kv, ccp, notify,
   agentId: process.env.AGENT_ID || "agent_0501m5q6cc15eqcrnamk2e1w84xc",
@@ -339,6 +341,20 @@ export async function handle(req, res) {
     } catch (e) { return page(res, 400, "Not connected", e.message); }
   }
 
+  // SmartThings sign-in (one-time link -> Samsung consent -> callback).
+  if (req.method === "GET" && path === "/smartthings/connect") {
+    const to = smartthings.configured() ? smartthings.startUrl(url.searchParams.get("t") || "") : null;
+    if (!to) return page(res, 400, "Link expired", "This SmartThings link has expired or was already used. Ask for a new one.");
+    res.writeHead(302, { location: to, "cache-control": "no-store" }); return res.end();
+  }
+  if (req.method === "GET" && path === "/smartthings/callback") {
+    if (url.searchParams.get("error")) return page(res, 400, "Not connected", "SmartThings sign-in was cancelled, so nothing changed.");
+    try {
+      const r = await smartthings.finish(url.searchParams.get("state") || "", url.searchParams.get("code") || "");
+      return page(res, 200, "SmartThings connected", `Bernud can now see ${r.devices} SmartThings device(s)${r.tvs.length ? ", including " + r.tvs.join(", ") : ""}. You can close this tab.`);
+    } catch (e) { return page(res, 400, "Not connected", e.message); }
+  }
+
   // PC helper endpoints (device key, never the agent key).
   if (path === "/device/pc/poll" || path === "/device/pc/result") {
     if (!DEVICE_KEY || req.headers["x-device-key"] !== DEVICE_KEY) return send(res, 401, { error: "unauthorised" });
@@ -393,6 +409,21 @@ export async function handle(req, res) {
       const items = await headlines(topic, limit);
       if (!items.length) return send(res, 200, { topic, headlines: [], note: "Couldn't fetch headlines right now." });
       return send(res, 200, { topic, headlines: items });
+    }
+
+    // ---------------- Samsung TVs / SmartThings ----------------
+    if (path === "/smartthings/connect-link" && req.method === "POST") {
+      if (!smartthings.configured()) return send(res, 200, { error: "not_configured", message: "The SmartThings app keys aren't on the server yet." });
+      return send(res, 200, { link: smartthings.connectLink(), expires_in_minutes: 15 });
+    }
+    if (path === "/tv") {
+      if (!smartthings.configured() || !(await smartthings.connected())) return send(res, 200, { ok: false, error: "not_connected", message: "SmartThings isn't connected yet, so the TVs can't be controlled." });
+      try {
+        if (req.method === "GET") return send(res, 200, { ok: true, devices: await smartthings.list() });
+        const b = await readJson(req);
+        if (b.action === "list") return send(res, 200, { ok: true, devices: await smartthings.list() });
+        return send(res, 200, await smartthings.control({ device: b.device, action: b.action, value: b.value }));
+      } catch (e) { return send(res, 200, { ok: false, error: e.code || "smartthings_error", message: String(e.message).slice(0, 300) }); }
     }
 
     // ---------------- Reminders and price alerts ----------------
@@ -588,6 +619,7 @@ export async function handle(req, res) {
 await db.init();
 if (ccp.configured() && process.env.NODE_ENV !== "test") ccp.startBackgroundIndex();
 if (process.env.NODE_ENV !== "test" && NTFY_TOPIC) { scheduler.start(); reminders.start(); }
+if (process.env.NODE_ENV !== "test") smartthings.startKeepAlive();
 
 if (process.env.NODE_ENV !== "test") {
   http.createServer((req, res) => { handle(req, res); }).listen(PORT, () => {
