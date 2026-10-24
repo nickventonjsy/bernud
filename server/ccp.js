@@ -77,29 +77,44 @@ function firstDateAfter(text, re) {
   return d.length ? d[0].iso : null;
 }
 
-const TOPICS = [
-  ["price list", /\b(price\s*list|pricelist|prices|tariff|rrp|trade price|cost price)\b/i],
-  ["supplier terms", /\b(terms|conditions|t&cs?|trading terms|rebate|account terms|payment terms|carriage)\b/i],
-  ["technical data sheet", /\b(tds|technical data|data sheet)\b/i],
-  ["safety data sheet", /\b(sds|msds|safety data)\b/i],
-  ["product information", /\b(product|catalogue|catalog|range|brochure|spec)\b/i],
-  ["procedures", /\b(procedure|process|policy|how to|sop|checklist)\b/i],
-  ["notes / priorities", /\b(notes?|priorit|actions?|to-?do|minutes|meeting|plan|deadlines?)\b/i],
-  ["quotes / orders", /\b(quote|quotation|order|invoice|po\b)/i],
+// Labels come from the file NAME first (reliable), then only from strong phrases in the content.
+// Body words like "conditions", "notes" or "order" appear in most data sheets, so they are ignored.
+const NAME_TOPICS = [
+  ["price list", /(price\s*list|pricelist|prices|tariff|\brrp\b|trade[ _-]?price)/i],
+  ["offer / promotion", /(offer|promo|special|black[ _-]?friday|deal|discount|clearance)/i],
+  ["supplier terms", /(terms|t&c|trading|rebate|account[ _-]?terms|carriage)/i],
+  ["notice", /(closure|closing|holiday|notice|announcement|update[ _-]?letter)/i],
+  ["safety data sheet", /(\bsds\b|_sds|-sds|msds|safety[ _-]?data)/i],
+  ["technical data sheet", /(\btds\b|_tds|-tds|tds[_-]|technical[ _-]?data)/i],
+  ["procedures", /(procedure|process|policy|how[ _-]?to|\bsop\b|checklist)/i],
+  ["notes / priorities", /(notes|priorit|actions|to[ _-]?do|minutes|meeting|plan\b|deadlines?)/i],
+  ["quotes / orders", /(quote|quotation|order|invoice|\bpo[ _-]?\d)/i],
+  ["product information", /(catalogue|catalog|brochure|range|testimonial)/i],
+];
+const CONTENT_TOPICS = [
+  ["safety data sheet", /safety data sheet[\s\S]{0,400}section\s*1|according to regulation \(ec\) no\.? ?1907\/2006/i],
+  ["technical data sheet", /technical data sheet|\btds\b/i],
+  ["price list", /\bprice\s*list\b/i],
+  ["supplier terms", /terms (and|&) conditions of (sale|supply|business)/i],
 ];
 
 export function classify(doc, today = todayLondon()) {
   const name = doc.name || "";
   const head = (doc.text || "").slice(0, 6000);
   const both = name + "\n" + head;
-  const covers = TOPICS.filter(([, re]) => re.test(both)).map(([t]) => t);
+  let covers = NAME_TOPICS.filter(([, re]) => re.test(name)).map(([t]) => t);
+  if (!covers.length) covers = CONTENT_TOPICS.filter(([, re]) => re.test(head)).map(([t]) => t).slice(0, 1);
 
   const effective =
     firstDateAfter(both, /\b(effective(?:\s+(?:from|date))?|valid\s+from|w\.?e\.?f\.?|applies\s+from|from)\b\s*[:\-]?\s*/i) ||
     null;
   const expires = firstDateAfter(both, /\b(valid\s+(?:until|to|till|through)|expir(?:es|y|ing)(?:\s+date)?|until|ends?)\b\s*[:\-]?\s*/i);
-  const vm = both.match(/\b(?:version|ver\.?|v)\s?(\d+(?:\.\d+)*)\b/i);
-  const version = vm ? "v" + vm[1] : null;
+  // Version from the file name (e.g. "_v2", "rev3"); a version printed inside a data sheet
+  // template ("Version 1.0") is recorded but isn't enough on its own to call a file current.
+  const nvm = name.match(/(?:^|[\s_-])(?:version|ver|v|rev)[\s._-]?(\d+(?:\.\d+)*)(?!\d)/i);
+  const cvm = head.match(/\b(?:version|revision|rev\.?)\s?(\d+(?:\.\d+)*)\b/i);
+  const version = nvm ? "v" + nvm[1] : cvm ? "v" + cvm[1] + " (in document)" : null;
+  const nameVersion = Boolean(nvm);
   const nameDates = findDates(name);
   const nameDate = nameDates.length ? nameDates[nameDates.length - 1].iso : null;
   const sup = both.match(/\b(supersedes|replaces)\s+["“']?([^\n"”']{3,80})/i);
@@ -111,14 +126,14 @@ export function classify(doc, today = todayLondon()) {
   else if (supBy) { status = "historical"; reasons.push(`says it is ${supBy[1].toLowerCase()} "${supBy[2].trim()}"`); }
   else if (expires && expires < today) { status = "historical"; reasons.push(`validity ended ${expires}`); }
   else if (effective && effective > today) { status = "uncertain"; reasons.push(`not effective until ${effective}`); }
-  else if (effective || (expires && expires >= today) || version || nameDate) {
+  else if (effective || (expires && expires >= today) || nameVersion || nameDate) {
     status = "current";
     if (effective) reasons.push(`effective ${effective}`);
     if (expires) reasons.push(`valid until ${expires}`);
-    if (version) reasons.push(version);
+    if (nameVersion) reasons.push(`${version} in file name`);
     if (!effective && !expires && nameDate) reasons.push(`dated ${nameDate} in name`);
   } else {
-    reasons.push("no effective date, version or replacement notice found");
+    reasons.push(version ? `only ${version}; no effective date or replacement notice` : "no effective date, version or replacement notice found");
   }
   if (!doc.text && doc.readable === false) reasons.push("contents could not be read");
 
@@ -133,15 +148,18 @@ export function classify(doc, today = todayLondon()) {
 
 // Normalised "family" name used to spot competing versions of the same document.
 export function family(name) {
+  // Keep product codes (XPRESS405 ≠ XPRESS605); drop versions, dates and copy suffixes (_2, -1, "copy").
   return String(name)
     .toLowerCase()
     .replace(/\.[a-z0-9]{2,5}$/, "")
-    .replace(new RegExp(MONTH_RE, "gi"), " ")
-    .replace(/\b(v|ver|version)\s?\d+(\.\d+)*\b/g, " ")
-    .replace(/\b(19|20)\d{2}\b/g, " ")
+    .replace(/[ _-]?\(\d+\)$/, "")
+    .replace(/(?:[ _-](?:v|ver|version|rev)[ ._-]?\d+(?:\.\d+)*)+/g, " ")
+    .replace(new RegExp(`[ _-]${MONTH_RE}[ _-]?(19|20)\\d{2}`, "gi"), " ")
+    .replace(/[ _-](19|20)\d{2}\b/g, " ")
     .replace(/\b\d{1,2}[\/.\-]\d{1,2}([\/.\-]\d{2,4})?\b/g, " ")
-    .replace(/\b(copy|final|draft|new|updated?|latest|old|current)\b/g, " ")
-    .replace(/[^a-z]+/g, " ")
+    .replace(/[ _-](copy|final|draft|new|updated?|latest|old|current)\b/g, " ")
+    .replace(/(?:[ _-]\d)+$/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
     .trim();
 }
 
@@ -381,7 +399,8 @@ export async function refreshIndex({ budgetMs = 25_000, force = false, lister = 
       if (unchanged) {
         // Re-classify anyway: "current" vs "historical" depends on today's date.
         const c = classify({ name: prev.name, text: prev.text, readable: prev.readable }, today);
-        if (c.status !== prev.status || c.status_reason !== prev.status_reason) await store.upsertDoc({ ...prev, ...c });
+        const changed = ["status", "status_reason", "version", "effective", "expires"].some((k) => (c[k] || null) !== (prev[k] || null)) || JSON.stringify(c.covers) !== JSON.stringify(prev.covers);
+        if (changed) await store.upsertDoc({ ...prev, ...c });
         skipped++;
       } else todo.push(f);
     }
@@ -522,7 +541,7 @@ export function priceWatch(docs, today, days = 30) {
   const soon = addDays(today, days);
   const out = [];
   for (const d of docs) {
-    if (!d.covers?.some((c) => c === "price list" || c === "supplier terms")) continue;
+    if (!d.covers?.some((c) => c === "price list" || c === "supplier terms" || c === "offer / promotion")) continue;
     if (d.expires && d.expires >= today && d.expires <= soon) out.push({ document: d.name, link: d.link, issue: `Validity ends ${d.expires}` });
     if (d.effective && d.effective > today && d.effective <= soon) out.push({ document: d.name, link: d.link, issue: `New pricing/terms take effect ${d.effective}` });
     if (d.status === "historical" && d.expires) out.push({ document: d.name, link: d.link, issue: `Expired ${d.expires}; don't quote from it` });
@@ -560,7 +579,8 @@ export async function briefContext({ now = new Date(), refresh = true } = {}) {
   const changedIds = new Set([...(changes.added || []), ...(changes.modified || [])].map((c) => docs.find((d) => d.name === c.name && d.link === c.link)?.id));
 
   // Short excerpts: priority/notes docs and anything changed, so Bernard can see what's going on.
-  const focus = docs.filter((d) => d.text && d.status !== "historical" && (changedIds.has(d.id) || d.covers?.includes("notes / priorities")))
+  const FOCUS = ["notes / priorities", "notice", "offer / promotion", "price list", "supplier terms", "quotes / orders"];
+  const focus = docs.filter((d) => d.text && d.status !== "historical" && (changedIds.has(d.id) || d.covers?.some((c) => FOCUS.includes(c))))
     .sort((a, b) => String(b.modified).localeCompare(String(a.modified))).slice(0, 6)
     .map((d) => ({ name: d.name, link: d.link, modified: d.modified, excerpt: d.text.slice(0, 2500) }));
 
