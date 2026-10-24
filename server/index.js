@@ -102,6 +102,8 @@ export const gmail = createGmail({
   secret: API_KEY,
 });
 export const notify = (text, opts) => devices.ntfyPublish(NTFY_TOPIC, text, opts);
+const { createReminders } = await import("./reminders.js");
+export const reminders = createReminders({ kv: db.kv, notify });
 export const scheduler = createScheduler({
   kv: db.kv, ccp, notify,
   agentId: process.env.AGENT_ID || "agent_0501m5q6cc15eqcrnamk2e1w84xc",
@@ -377,6 +379,10 @@ export async function handle(req, res) {
       return send(res, 200, { topic, headlines: items });
     }
 
+    // ---------------- Reminders and price alerts ----------------
+    if (path === "/reminders" && req.method === "POST") return send(res, 200, await reminders.reminder(await readJson(req)));
+    if (path === "/alerts" && req.method === "POST") return send(res, 200, await reminders.alert(await readJson(req)));
+
     // ---------------- Web ----------------
     if (path === "/web/search" || path === "/web/read") {
       try {
@@ -529,7 +535,7 @@ export async function handle(req, res) {
 
 await db.init();
 if (ccp.configured() && process.env.NODE_ENV !== "test") ccp.startBackgroundIndex();
-if (process.env.NODE_ENV !== "test" && NTFY_TOPIC) scheduler.start();
+if (process.env.NODE_ENV !== "test" && NTFY_TOPIC) { scheduler.start(); reminders.start(); }
 
 if (process.env.NODE_ENV !== "test") {
   http.createServer((req, res) => { handle(req, res); }).listen(PORT, () => {
