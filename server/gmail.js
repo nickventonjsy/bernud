@@ -13,7 +13,28 @@ const GMAIL = "https://gmail.googleapis.com/gmail/v1/users/me";
 const CAL = "https://www.googleapis.com/calendar/v3";
 const TZ = "Europe/London";
 
-export function createGmail({ kv, clientId, clientSecret, redirectUri, account, secret, name = "ccp", kvKey = "gmail_refresh_token", scopes = [SCOPES.gmailRead], fetchImpl = fetch }) {
+// Nicholas's normal email signature, added to every draft Bernard writes.
+export const CCP_SIGNATURE = ["Kind regards", "", "Nick Venton", "Manager/Director", "", "Cory Car Paints Ltd", "The Red Barn", "Mont Les Vaux", "St Brelade", "Jersey", "JE3 8AG", "", "T: 01534 742337", "E: corycarpaints@gmail.com", "FB: facebook.com/CoryCarPaints"].join("\n");
+
+// Remove any sign-off Bernard wrote himself, then add the real signature once.
+export function withSignature(body, signature) {
+  if (!signature) return body;
+  const lines = String(body).replace(/\r\n/g, "\n").trimEnd().split("\n");
+  if (/Nick Venton\s*\n\s*Manager\/Director/i.test(lines.join("\n"))) return lines.join("\n");
+  const SIGNOFF = /^(kind regards|best regards|warm regards|regards|best|many thanks|thanks|thank you|cheers)[,.!]?$/i;
+  const NAME = /^(nicholas|nick)( venton)?[,.]?$/i;
+  const COMPANY = /^cory car paints( ltd)?\.?$/i;
+  const popBlank = () => { while (lines.length && !lines[lines.length - 1].trim()) lines.pop(); };
+  const last = () => (lines[lines.length - 1] || "").trim();
+  popBlank();
+  // Remove only a trailing block made of whole sign-off lines: [sign-off] [name] [company].
+  if (lines.length > 1 && COMPANY.test(last())) { lines.pop(); popBlank(); }
+  if (lines.length > 1 && NAME.test(last())) { lines.pop(); popBlank(); }
+  if (lines.length > 1 && SIGNOFF.test(last())) { lines.pop(); popBlank(); }
+  return lines.join("\n") + "\n\n" + signature;
+}
+
+export function createGmail({ kv, clientId, clientSecret, redirectUri, account, secret, name = "ccp", kvKey = "gmail_refresh_token", scopes = [SCOPES.gmailRead], signature = "", fetchImpl = fetch }) {
   const key = createHash("sha256").update("bernud-gmail:" + (secret || "")).digest();
   const links = new Map(); // one-time connect tokens -> expiry
   const states = new Map(); // OAuth state -> expiry
@@ -188,6 +209,7 @@ export function createGmail({ kv, clientId, clientSecret, redirectUri, account, 
       if (!(await hasScope(SCOPES.gmailCompose))) throw Object.assign(new Error("Drafting isn't allowed yet: corycarpaints@gmail.com needs reconnecting with the drafts permission."), { code: "needs_permission" });
       body = String(body || "").trim();
       if (!body) throw new Error("The draft needs some text.");
+      body = withSignature(body, signature);
       const headers = [];
       let threadId;
       if (draftId) {
