@@ -390,6 +390,10 @@
       <label for="askInput" class="sr-only">Ask Bernard anything</label>
       <input id="askInput" type="text" placeholder="Ask Bernard anything…" enterkeyhint="send">
       <span class="divider" aria-hidden="true"></span>
+      <button class="mic" type="button" id="photoBtn" title="Show Bernard a photo" aria-label="Show Bernard a photo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+      </button>
+      <input type="file" id="photoInput" accept="image/*" capture="environment" hidden>
       <button class="mic" type="button" id="micBtn" aria-label="Talk to Bernard">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M19 11a7 7 0 0 1-14 0M12 18v3"/></svg>
       </button>
@@ -874,13 +878,14 @@
     setMode("connecting", "One moment.");
     try {
       await navigator.mediaDevices.getUserMedia({ audio: true });
-      const { Conversation } = await import("https://esm.sh/@elevenlabs/client");
+      const { Conversation } = await import("https://esm.sh/@elevenlabs/client@1.30.0");
       conversation = await Conversation.startSession({
         agentId: AGENT_ID,
         connectionType: "webrtc",
         onConnect: () => {
           setMode("listening", "Go ahead. Say \"goodbye\" when you're done.");
-          if (pendingText) { const t = pendingText; pendingText = null; setTimeout(() => sendText(t), 400); }
+          if (pendingPhoto) { const p = pendingPhoto; pendingPhoto = null; setTimeout(() => sendPhoto(p.blob, p.text), 400); }
+          else if (pendingText) { const t = pendingText; pendingText = null; setTimeout(() => sendText(t), 400); }
         },
         onDisconnect: () => onConversationEnded(),
         onError: (e) => { console.error("Bernard error", e); $("subline").textContent = "Error: " + String((e && e.message) || e).slice(0, 120); },
@@ -923,6 +928,40 @@
   }
 
   function ask(text) { startConversation(text); }
+
+  // ---- Photos: shrink on the phone, upload into the conversation, ask Bernard about it ----
+  let pendingPhoto = null;
+  const PHOTO_PROMPT = "Here's a photo. Tell me what it shows. If it's a paint or refinishing product, identify the brand, product and code, and find its technical and safety data sheets in the CCP folder.";
+  async function shrinkImage(file, max = 1600) {
+    try {
+      const bmp = await createImageBitmap(file);
+      const k = Math.min(1, max / Math.max(bmp.width, bmp.height));
+      const c = document.createElement("canvas");
+      c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+      c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+      return await new Promise((r) => c.toBlob((b) => r(b || file), "image/jpeg", 0.85));
+    } catch { return file; }
+  }
+  async function sendPhoto(blob, text) {
+    if (!conversation) return;
+    try {
+      $("subline").textContent = "Sending your photo…";
+      const { fileId } = await conversation.uploadFile(new File([blob], "photo.jpg", { type: blob.type || "image/jpeg" }));
+      conversation.sendMultimodalMessage({ text, fileId });
+      $("subline").textContent = "You: (photo) " + text.slice(0, 100);
+    } catch (e) { console.error(e); $("subline").textContent = "Couldn't send the photo: " + String(e.message || e).slice(0, 100); }
+  }
+  $("photoBtn").addEventListener("click", () => $("photoInput").click());
+  $("photoInput").addEventListener("change", async () => {
+    const f = $("photoInput").files && $("photoInput").files[0];
+    $("photoInput").value = "";
+    if (!f) return;
+    const typed = $("askInput").value.trim(); $("askInput").value = "";
+    const blob = await shrinkImage(f);
+    const text = typed || PHOTO_PROMPT;
+    if (conversation) sendPhoto(blob, text);
+    else { pendingPhoto = { blob, text }; startConversation(); }
+  });
 
   // =====================================================================
   //  WAKE WORD  (Picovoice if set up, otherwise Chrome speech recognition)
