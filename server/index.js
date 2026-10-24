@@ -101,10 +101,10 @@ const googleAccounts = { ccp: gmail, personal: personalGoogle };
 export const notify = (text, opts) => devices.ntfyPublish(NTFY_TOPIC, text, opts);
 const { createReminders } = await import("./reminders.js");
 export const reminders = createReminders({ kv: db.kv, notify });
-const { createYouTube } = await import("./youtube.js");
-export const youtube = createYouTube({ web, pc, notify, zw: { url: (process.env.ZW_URL || "https://zentrawire.onrender.com").replace(/\/+$/, ""), key: process.env.ZW_ASSISTANT_KEY || "" } });
 const { createSmartThings } = await import("./smartthings.js");
 export const smartthings = createSmartThings({ kv: db.kv, clientId: process.env.SMARTTHINGS_CLIENT_ID || "", clientSecret: process.env.SMARTTHINGS_CLIENT_SECRET || "", redirectUri: (process.env.PUBLIC_URL || "https://bernud-server.onrender.com").replace(/\/+$/, "") + "/smartthings/callback", secret: API_KEY, notify });
+const { createYouTube } = await import("./youtube.js");
+export const youtube = createYouTube({ web, pc, notify, smartthings, zw: { url: (process.env.ZW_URL || "https://zentrawire.onrender.com").replace(/\/+$/, ""), key: process.env.ZW_ASSISTANT_KEY || "" } });
 export const scheduler = createScheduler({
   kv: db.kv, ccp, notify,
   agentId: process.env.AGENT_ID || "agent_0501m5q6cc15eqcrnamk2e1w84xc",

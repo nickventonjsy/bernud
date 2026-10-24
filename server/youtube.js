@@ -37,7 +37,7 @@ catch { 'CAST_FAILED: ' + $dev.name + ' refused: ' + $_.Exception.Message }
 `.trim();
 }
 
-export function createYouTube({ web, zw, pc, notify }) {
+export function createYouTube({ web, zw, pc, notify, smartthings = null, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
   async function zwGet(params) {
     if (!zw.url || !zw.key) throw Object.assign(new Error("ZentraWire isn't linked."), { code: "not_connected" });
     const r = await fetch(`${zw.url}/api/assistant/youtube?${new URLSearchParams(params)}`, { headers: { "x-zw-assistant": zw.key }, signal: AbortSignal.timeout(15000) });
@@ -75,9 +75,18 @@ export function createYouTube({ web, zw, pc, notify }) {
       return { ...r, played_on: "pc", url };
     }
     if (where === "tv") {
-      const r = await pc.send("powershell", dialScript({ videoId: vid, target: tv || "" }));
+      // A Samsung TV only accepts casts while it's on: wake it through SmartThings first if it's off.
+      let woke = null;
+      if (smartthings && !/fire/i.test(tv || "") && (await smartthings.connected().catch(() => false))) {
+        try {
+          const st = await smartthings.control({ device: tv || "", action: "status" });
+          if (st.ok && st.device && st.device.power !== "on") { await smartthings.control({ device: tv || "", action: "on" }); woke = st.device.name; await sleep(9000); }
+        } catch {}
+      }
+      let r = await pc.send("powershell", dialScript({ videoId: vid, target: tv || "" }));
+      if (woke && !/CAST_OK:/.test(String(r.output || ""))) { await sleep(4000); r = await pc.send("powershell", dialScript({ videoId: vid, target: tv || "" })); }
       const out = String(r.output || "");
-      if (/CAST_OK:/.test(out)) return { ok: true, played_on: out.split("CAST_OK:")[1].trim(), url };
+      if (/CAST_OK:/.test(out)) return { ok: true, played_on: out.split("CAST_OK:")[1].trim(), url, switched_tv_on: woke || undefined };
       return { ok: false, error: "cast_failed", message: (out.match(/CAST_FAILED:.*/) || [out || "No answer from the PC."])[0].slice(0, 300), url };
     }
     throw new Error("where must be pc, phone or tv");

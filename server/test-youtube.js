@@ -26,4 +26,15 @@ r = await yt.handle({ action: "play", id: "AAAAAAAAAAA", where: "phone" }); asse
 await assert.rejects(yt.handle({ action: "play", id: "not a video", where: "pc" }), /video id/);
 await assert.rejects(yt.handle({ action: "new" }), /isn't linked/);
 assert.equal(videoIdFrom("https://www.youtube.com/live/CCCCCCCCCCC?si=x"), "CCCCCCCCCCC");
+// wakes a Samsung TV that is off, then casts
+{
+  const calls = []; let power = "off";
+  const st = { connected: async () => true, control: async ({ action }) => { calls.push(action); if (action === "status") return { ok: true, device: { name: "Nick's S95BA 55 Tv", power } }; power = "on"; return { ok: true }; } };
+  castOut = "CAST_OK: Nick's S95BA 55 Tv (201)"; online = true;
+  const y2 = createYouTube({ web, pc, notify: async () => {}, zw: {}, smartthings: st, sleep: async () => {} });
+  const r2 = await y2.handle({ action: "play", id: "AAAAAAAAAAA", where: "tv", tv: "S95" });
+  assert.deepEqual(calls, ["status", "on"]); assert.equal(r2.switched_tv_on, "Nick's S95BA 55 Tv"); assert.equal(r2.ok, true);
+  calls.length = 0; const r3 = await y2.handle({ action: "play", id: "AAAAAAAAAAA", where: "tv", tv: "Fire" });
+  assert.deepEqual(calls, [], "Fire TV isn't a SmartThings TV"); assert.equal(r3.ok, true);
+}
 console.log("youtube tests passed"); process.exit(0);
