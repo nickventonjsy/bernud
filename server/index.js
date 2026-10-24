@@ -517,6 +517,7 @@ export async function handle(req, res) {
         if (path === "/gmail/disconnect" && req.method === "POST") { await gmail.disconnect(); return send(res, 200, { disconnected: true }); }
       } catch (e) {
         console.error("gmail", e.message);
+        if (e.status === 404) return send(res, 200, { error: "not_found", message: "That email or draft no longer exists (it may have been sent or deleted). List the drafts again to find the current one." });
         return send(res, 200, { error: e.code === "not_connected" || e.code === "needs_permission" ? e.code : "gmail_error", message: e.code ? e.message : "Couldn't reach Gmail right now.", detail: String(e.message).slice(0, 200) });
       }
       return send(res, 404, { error: "not found" });
