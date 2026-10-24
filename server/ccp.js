@@ -371,7 +371,7 @@ async function pgStore(url) {
     async lastBrief() { const { rows } = await pool.query("SELECT id, created_at, snapshot, text FROM ccp_briefs ORDER BY created_at DESC LIMIT 1"); return rows[0] || null; },
     async saveBrief(b) { await pool.query("INSERT INTO ccp_briefs (id, created_at, snapshot, text) VALUES ($1, $2, $3, $4)", [b.id, b.created_at, JSON.stringify(b.snapshot), b.text || null]); return b; },
     async updateBriefText(id, text) { const { rows } = await pool.query("UPDATE ccp_briefs SET text = $2 WHERE id = $1 RETURNING id, created_at", [id, text]); return rows[0] || null; },
-    async latestWithText() { const { rows } = await pool.query("SELECT id, created_at, text FROM ccp_briefs WHERE text IS NOT NULL ORDER BY created_at DESC LIMIT 1"); return rows[0] || null; },
+    async latestWithText() { const { rows } = await pool.query("SELECT id, created_at, snapshot, text FROM ccp_briefs WHERE text IS NOT NULL ORDER BY created_at DESC LIMIT 1"); return rows[0] || null; },
   };
 }
 function iso(d) { return d instanceof Date ? d.toISOString().slice(0, 10) : String(d).slice(0, 10); }
@@ -558,7 +558,8 @@ export async function briefContext({ now = new Date(), refresh = true } = {}) {
   else index = { ...indexState(), note: "Background indexing still in progress; brief uses documents indexed so far." };
   const docs = await store.allDocs();
   const today = todayLondon(now);
-  const prev = await store.lastBrief();
+  // Compare with the last brief that was actually delivered (saved with text), not abandoned attempts.
+  const prev = await store.latestWithText();
   const snapshot = Object.fromEntries(docs.map((d) => [d.id, { m: d.modified, n: d.name }]));
 
   let changes;
@@ -582,8 +583,8 @@ export async function briefContext({ now = new Date(), refresh = true } = {}) {
   // Short excerpts: priority/notes docs and anything changed, so Bernard can see what's going on.
   const FOCUS = ["notes / priorities", "notice", "offer / promotion", "price list", "supplier terms", "quotes / orders"];
   const focus = docs.filter((d) => d.text && d.status !== "historical" && (changedIds.has(d.id) || d.covers?.some((c) => FOCUS.includes(c))))
-    .sort((a, b) => String(b.modified).localeCompare(String(a.modified))).slice(0, 6)
-    .map((d) => ({ name: d.name, link: d.link, modified: d.modified, excerpt: d.text.slice(0, 2500) }));
+    .sort((a, b) => String(b.modified).localeCompare(String(a.modified))).slice(0, 5)
+    .map((d) => ({ id: d.id, name: d.name, link: d.link, modified: d.modified, status: d.status, excerpt: d.text.slice(0, 1500) }));
 
   const brief = { id: randomUUID(), created_at: now.toISOString(), snapshot };
   await store.saveBrief(brief);
@@ -593,14 +594,44 @@ export async function briefContext({ now = new Date(), refresh = true } = {}) {
     date: now.toLocaleDateString("en-GB", { timeZone: TZ, weekday: "long", day: "numeric", month: "long", year: "numeric" }),
     time: now.toLocaleTimeString("en-GB", { timeZone: TZ, hour: "2-digit", minute: "2-digit" }),
     index,
-    source_map: docs.map(sourceMapEntry),
-    conflicts: findConflicts(docs),
-    changes,
-    deadlines_next_7_days: deadlines(docs, today),
+    source_map_summary: summarise(docs),
+    business_documents: docs.filter(isBusinessDoc).sort((a, b) => String(b.modified).localeCompare(String(a.modified))).slice(0, 40).map(compactEntry),
+    conflicts: compactConflicts(findConflicts(docs)),
+    changes: capChanges(changes),
+    deadlines_next_7_days: deadlines(docs, today).slice(0, 15).map((d) => ({ ...d, text: d.text.slice(0, 160) })),
     pricing_and_supplier_watch: priceWatch(docs, today),
     focus_documents: focus,
+    note: "Data sheets (TDS/SDS) are summarised by count only; use ccp_search / ccp_read for any specific document.",
     not_connected: ["email", "calendar", "orders / stock system"],
   };
+}
+
+const DATA_SHEETS = new Set(["technical data sheet", "safety data sheet"]);
+function isBusinessDoc(d) { return (d.covers || []).some((c) => !DATA_SHEETS.has(c) && c !== "general" && c !== "product information"); }
+function compactEntry(d) {
+  return { id: d.id, name: d.name, folder: d.path && d.path.includes("/") ? d.path.split("/").slice(0, -1).join("/") : "", link: d.link, covers: d.covers, last_modified: d.modified ? d.modified.slice(0, 10) : null, effective: d.effective || undefined, valid_until: d.expires || undefined, version: d.version || undefined, status: d.status, why: d.status_reason };
+}
+function count(list, f) { const o = {}; for (const x of list) for (const k of [].concat(f(x))) o[k] = (o[k] || 0) + 1; return o; }
+export function summarise(docs) {
+  return {
+    total: docs.length,
+    unreadable: docs.filter((d) => !d.readable).map((d) => d.name).slice(0, 20),
+    by_status: count(docs, (d) => d.status),
+    by_type: count(docs, (d) => d.covers || ["general"]),
+    by_folder: count(docs, (d) => (d.path && d.path.includes("/") ? d.path.split("/").slice(0, -1).join("/") : "(top level)")),
+  };
+}
+function compactConflicts(list) {
+  const biz = list.filter((c) => !/\b(tds|sds)\b/.test(c.family));
+  return {
+    business_document_conflicts: biz.slice(0, 15).map((c) => ({ issue: c.issue, documents: c.documents.map((d) => ({ name: d.name, link: d.link, status: d.status })) })),
+    data_sheet_duplicates: list.length - biz.length,
+  };
+}
+function capChanges(ch) {
+  const out = { compared_with: ch.compared_with };
+  for (const k of ["added", "modified", "removed"]) if (ch[k]) { out[k + "_count"] = ch[k].length; out[k] = ch[k].slice(0, 20); }
+  return out;
 }
 
 export async function saveBriefText(id, text) {

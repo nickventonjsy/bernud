@@ -70,14 +70,18 @@ assert.match(ctx.changes.compared_with, /no previous brief/);
 assert.deepEqual(ctx.changes.modified.map((m) => m.name), ["Priorities and notes.docx"]);
 assert.deepEqual(ctx.deadlines_next_7_days.map((d) => d.date), ["2026-10-28", "2026-10-30"]);
 assert.ok(ctx.focus_documents.some((d) => d.name === "Priorities and notes.docx"));
-assert.ok(ctx.source_map.find((d) => d.name === "Photo.jpg").readable === false);
+assert.deepEqual(ctx.source_map_summary.unreadable, ["Photo.jpg"]);
 
+assert.ok(ctx.business_documents.length >= 1 && ctx.source_map_summary.total === 3);
+await ccp.saveBriefText(ctx.brief_id, "first brief");
+// an abandoned attempt (no text) must not become the comparison point
+await ccp.briefContext({ now: new Date("2026-10-24T08:00:00Z"), refresh: false });
 // a file changes between briefs
 files = files.map((f) => (f.id === "a" ? { ...f, modifiedTime: "2026-10-25T06:00:00Z" } : f));
 texts.a = texts.a.replace("48.20", "49.10");
 await ccp.refreshIndex({ lister, reader });
 ctx = await ccp.briefContext({ now: new Date("2026-10-25T07:30:00Z"), refresh: false });
-assert.match(ctx.changes.compared_with, /previous brief/);
+assert.match(ctx.changes.compared_with, /previous brief at 24\/10\/2026, 08:30/);
 assert.deepEqual(ctx.changes.modified.map((m) => m.name), ["Lechler Price List 2026.xlsx"]);
 assert.ok(ctx.pricing_and_supplier_watch.some((p) => /Validity ends 2026-11-15/.test(p.issue)));
 
@@ -105,4 +109,11 @@ assert.equal(claims.scope, "https://www.googleapis.com/auth/drive.readonly");
 assert.ok(createVerify("RSA-SHA256").update(`${h}.${p}`).verify(publicKey, Buffer.from(sig, "base64url")));
 globalThis.fetch = realFetch;
 
-console.log("ccp tests passed");
+// response stays small even for a big folder
+files = Array.from({ length: 700 }, (_, i) => ({ id: "t" + i, name: `PRODUCT${i}_TDS${i % 3 ? "" : "_2"}.pdf`, path: `99 INBOX/PRODUCT${i}_TDS.pdf`, mimeType: "x", modifiedTime: "2026-10-02T09:00:00Z", webViewLink: "https://d/t" + i }));
+for (const f of files) texts[f.id] = "Technical Data Sheet\nApplication conditions 20C\nNotes: mix 2:1 ".repeat(40);
+await ccp.refreshIndex({ lister: async () => files, reader, budgetMs: 60000 });
+const big = await ccp.briefContext({ now: new Date("2026-10-26T07:30:00Z"), refresh: false });
+const size = JSON.stringify(big).length;
+assert.ok(size < 30000, "brief context too large: " + size);
+console.log("ccp tests passed (brief context " + size + " bytes for 700 files)");
