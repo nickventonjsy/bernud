@@ -15,7 +15,7 @@ const fetchImpl = async (u, o = {}) => {
   }
   if (u.startsWith("https://oauth2.googleapis.com/revoke")) { revoked++; return res({}); }
   if (u.endsWith("/profile")) return res({ emailAddress: profileEmail });
-  if (u.includes("/messages?")) { const q = new URL(u).searchParams.get("q"); lastQ.push(q); return res(q.includes("category:promotions OR") ? { messages: [{ id: "p1" }, { id: "p2" }] } : q.includes("before:") ? { messages: [{ id: "o1" }] } : { messages: [{ id: "a" }, { id: "b" }], resultSizeEstimate: 5 }); }
+  if (u.includes("/messages?")) { const q = new URL(u).searchParams.get("q"); lastQ.push(q); return res(q.includes("category:promotions OR") ? { messages: [{ id: "p1" }, { id: "p2" }] } : q.includes("before:") ? { messages: [{ id: "o1" }] } : q === "in:inbox is:unread" ? { messages: [{ id: "u" }], resultSizeEstimate: 200 } : { messages: [{ id: "a" }, { id: "b" }], resultSizeEstimate: 5 }); }
   const id = u.match(/messages\/([^?]+)/)[1];
   return res(msg(id, "Subject " + id));
 };
@@ -44,7 +44,7 @@ assert.ok(!m.get("gmail_refresh_token").includes("rt-secret"), "token stored enc
 const be = await g.briefEmails("2026-10-23T08:00:00Z");
 assert.equal(be.messages.length, 2); assert.equal(be.messages[0].snippet, "Hi & thanks"); assert.equal(be.messages[0].unread, true); assert.equal(be.messages[0].has_attachment, true);
 assert.match(be.messages[0].link, /mail\.google\.com.*#all\/a/);
-assert.equal(be.more_not_shown, 3); assert.equal(be.promotions_or_social_skipped, 2); assert.equal(be.older_unread_in_inbox, 1);
+assert.equal(be.more_not_shown, 3); assert.equal(be.promotions_or_social_in_window_skipped, 2); assert.equal(be.unread_older_than_window_excluding_promotions_social, 1); assert.ok(be.unread_in_inbox_total_approx >= 1);
 assert.match(lastQ[0], /^in:inbox -category:promotions -category:social after:\d+$/);
 assert.equal(be.window.basis, "since the previous brief");
 const none = await g.briefEmails(null); assert.equal(none.window.basis, "last 24 hours (no previous brief)");
