@@ -15,6 +15,7 @@ import { createSign, randomUUID } from "node:crypto";
 export const TZ = "Europe/London";
 const FOLDER_ID = process.env.CCP_FOLDER_ID || "";
 const MAX_TEXT = 400_000;
+const CONCURRENCY = 4;
 const DRIVE = "https://www.googleapis.com/drive/v3";
 const SHEETS = "https://sheets.googleapis.com/v4/spreadsheets";
 
@@ -373,6 +374,7 @@ export async function refreshIndex({ budgetMs = 25_000, force = false, lister = 
     const existing = new Map((await store.allDocs()).map((d) => [d.id, d]));
     let read = 0, skipped = 0, failed = 0, pending = 0;
     const today = todayLondon();
+    const todo = [];
     for (const f of files) {
       const prev = existing.get(f.id);
       const unchanged = prev && prev.modified === new Date(f.modifiedTime).toISOString() && !force;
@@ -381,15 +383,22 @@ export async function refreshIndex({ budgetMs = 25_000, force = false, lister = 
         const c = classify({ name: prev.name, text: prev.text, readable: prev.readable }, today);
         if (c.status !== prev.status || c.status_reason !== prev.status_reason) await store.upsertDoc({ ...prev, ...c });
         skipped++;
-        continue;
-      }
-      if (Date.now() - started > budgetMs) { pending++; continue; }
-      let text = null, readable = false;
-      try { text = await reader(f); readable = text != null; if (text && text.length > MAX_TEXT) text = text.slice(0, MAX_TEXT); read++; }
-      catch (e) { failed++; console.error("read failed", f.name, e.message); }
-      const doc = { id: f.id, name: f.name, path: f.path || f.name, mime: f.mimeType, link: f.webViewLink, modified: new Date(f.modifiedTime).toISOString(), size: f.size ? Number(f.size) : null, text, readable };
-      await store.upsertDoc({ ...doc, ...classify(doc, today) });
+      } else todo.push(f);
     }
+    // Read changed files a few at a time.
+    let next = 0;
+    async function worker() {
+      while (next < todo.length) {
+        const f = todo[next++];
+        if (Date.now() - started > budgetMs) { pending++; continue; }
+        let text = null, readable = false;
+        try { text = await reader(f); readable = text != null; if (text && text.length > MAX_TEXT) text = text.slice(0, MAX_TEXT); read++; }
+        catch (e) { failed++; console.error("read failed", f.name, e.message); }
+        const doc = { id: f.id, name: f.name, path: f.path || f.name, mime: f.mimeType, link: f.webViewLink, modified: new Date(f.modifiedTime).toISOString(), size: f.size ? Number(f.size) : null, text, readable };
+        await store.upsertDoc({ ...doc, ...classify(doc, today) });
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, todo.length || 1) }, worker));
     if (!pending) await store.removeDocs(new Set(files.map((f) => f.id)));
     lastIndex = { at: new Date().toISOString(), files: files.length, read, unchanged: skipped, failed, pending };
     return lastIndex;
@@ -397,7 +406,24 @@ export async function refreshIndex({ budgetMs = 25_000, force = false, lister = 
   try { return await indexing; } finally { indexing = null; }
 }
 
-export function indexState() { return lastIndex; }
+export function indexState() { return { ...(lastIndex || {}), background_running: backgroundRunning }; }
+
+// Keep indexing in the background until every file has been read (large folders).
+let backgroundRunning = false;
+export function startBackgroundIndex(opts = {}) {
+  if (backgroundRunning) return false;
+  backgroundRunning = true;
+  (async () => {
+    try {
+      for (let pass = 0; pass < 60; pass++) {
+        const r = await refreshIndex({ budgetMs: 120_000, ...opts });
+        if (!r.pending) break;
+      }
+    } catch (e) { console.error("background index", e.message); }
+    finally { backgroundRunning = false; }
+  })();
+  return true;
+}
 
 // ---------------------------------------------------------------------------
 // Search and read
@@ -507,7 +533,9 @@ export function priceWatch(docs, today, days = 30) {
 
 export async function briefContext({ now = new Date(), refresh = true } = {}) {
   let index = null;
-  if (refresh) index = await refreshIndex();
+  // Don't wait on a long background pass; the brief uses what's indexed so far and says so.
+  if (refresh && !indexing && !backgroundRunning) index = await refreshIndex({ budgetMs: 20_000 });
+  else index = { ...indexState(), note: "Background indexing still in progress; brief uses documents indexed so far." };
   const docs = await store.allDocs();
   const today = todayLondon(now);
   const prev = await store.lastBrief();

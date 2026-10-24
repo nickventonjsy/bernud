@@ -53,7 +53,7 @@ let reads = 0;
 const lister = async () => files;
 const reader = async (f) => { reads++; return texts[f.id]; };
 let idx = await ccp.refreshIndex({ lister, reader });
-assert.equal(idx.files, 3); assert.equal(idx.read, 3);
+assert.equal(idx.files, 3); assert.equal(idx.read, 3); assert.equal(idx.pending, 0);
 idx = await ccp.refreshIndex({ lister, reader });
 assert.equal(idx.unchanged, 3); assert.equal(reads, 3, "unchanged files are not re-read");
 

@@ -311,7 +311,8 @@ export async function handle(req, res) {
       try {
         if (req.method === "POST" && path === "/ccp/index") {
           const body = await readJson(req);
-          return send(res, 200, await ccp.refreshIndex({ force: Boolean(body.force), budgetMs: 120_000 }));
+          const started = ccp.startBackgroundIndex({ force: Boolean(body.force) });
+          return send(res, 200, { started, note: started ? "Indexing in the background; check /ccp/status." : "Indexing already running.", status: ccp.indexState() });
         }
         if (req.method === "GET" && path === "/ccp/sources") {
           if (url.searchParams.get("refresh") === "1") await ccp.refreshIndex();
@@ -355,6 +356,7 @@ export async function handle(req, res) {
 }
 
 await db.init();
+if (ccp.configured() && process.env.NODE_ENV !== "test") ccp.startBackgroundIndex();
 
 if (process.env.NODE_ENV !== "test") {
   http.createServer((req, res) => { handle(req, res); }).listen(PORT, () => {
