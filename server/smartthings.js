@@ -56,7 +56,8 @@ export function createSmartThings({ kv, clientId, clientSecret, redirectUri, sec
 
   const capsOf = (d) => new Set((d.components || []).flatMap((c) => (c.capabilities || []).map((x) => x.id)));
   const isTv = (d) => (d.components || []).some((c) => (c.categories || []).some((k) => /television|tv/i.test(k.name))) || /tv/i.test(d.ocf?.ocfDeviceType || "") || capsOf(d).has("samsungvd.mediaInputSource") || capsOf(d).has("tvChannel");
-  const view = (d) => ({ id: d.deviceId, name: d.label || d.name, room: d.roomId || undefined, type: isTv(d) ? "tv" : (d.components?.[0]?.categories?.[0]?.name || "device"), capabilities: [...capsOf(d)].filter((c) => !/^(healthCheck|refresh|execute|ocf)$/.test(c)).slice(0, 25) });
+  const isLight = (d) => !isTv(d) && ((d.components || []).some((c) => (c.categories || []).some((k) => /light|bulb|lamp/i.test(k.name))) || capsOf(d).has("switchLevel") || capsOf(d).has("colorControl"));
+  const view = (d) => ({ id: d.deviceId, name: d.label || d.name, room: d.roomId || undefined, type: isTv(d) ? "tv" : isLight(d) ? "light" : (d.components?.[0]?.categories?.[0]?.name || "device"), capabilities: [...capsOf(d)].filter((c) => !/^(healthCheck|refresh|execute|ocf)$/.test(c)).slice(0, 25) });
 
   async function devices() { const j = await api("/v1/devices"); return (j.items || []); }
   async function find(nameOrId) {
@@ -81,56 +82,98 @@ export function createSmartThings({ kv, clientId, clientSecret, redirectUri, sec
       input: v("samsungvd.mediaInputSource", "inputSource") || v("mediaInputSource", "inputSource") || null,
       inputs_available: v("samsungvd.mediaInputSource", "supportedInputSourcesMap")?.map?.((x) => x.name || x.id) || v("mediaInputSource", "supportedInputSources") || undefined,
       channel: v("tvChannel", "tvChannel") || undefined,
+      brightness: v("switchLevel", "level") ?? undefined,
+      white_kelvin: v("colorTemperature", "colorTemperature") ?? undefined,
+      colour: v("colorControl", "hue") != null ? { hue: v("colorControl", "hue"), saturation: v("colorControl", "saturation") } : undefined,
       online: (await api(`/v1/devices/${d.deviceId}/health`).catch(() => null))?.state || undefined,
     };
   }
 
-  async function control({ device, action, value }) {
-    const d = await find(device);
+  const COLOURS = { red: [0, 100], orange: [8, 100], amber: [10, 100], yellow: [16, 100], gold: [12, 90], green: [33, 100], lime: [25, 100], teal: [47, 100], cyan: [50, 100], blue: [66, 100], "light blue": [58, 60], purple: [75, 100], violet: [78, 90], magenta: [83, 100], pink: [90, 60], white: [0, 0] };
+  const WHITES = { candle: 2200, "very warm": 2200, warm: 2700, "warm white": 2700, soft: 3000, "soft white": 3000, neutral: 4000, "neutral white": 4000, cool: 5000, "cool white": 5000, daylight: 6500, bright: 6500 };
+
+  async function commandsFor(d, action, val) {
     const caps = capsOf(d);
     const need = (c) => { if (!caps.has(c)) throw new Error(`${d.label || d.name} doesn't support that (no ${c}).`); };
-    const val = String(value ?? "").trim();
-    let commands;
     switch (action) {
-      case "status": return { ok: true, device: await status(d) };
-      case "on": need("switch"); commands = [cmd("switch", "on")]; break;
-      case "off": need("switch"); commands = [cmd("switch", "off")]; break;
-      case "volume": {
+      case "on": need("switch"); return [cmd("switch", "on")];
+      case "off": need("switch"); return [cmd("switch", "off")];
+      case "volume":
         need("audioVolume");
-        if (/^\d+$/.test(val)) commands = [cmd("audioVolume", "setVolume", [Math.max(0, Math.min(100, Number(val)))])];
-        else if (/up|louder/i.test(val)) commands = [cmd("audioVolume", "volumeUp")];
-        else if (/down|quieter/i.test(val)) commands = [cmd("audioVolume", "volumeDown")];
-        else throw new Error("Volume: a number 0-100, up or down.");
-        break;
-      }
-      case "mute": need("audioMute"); commands = [cmd("audioMute", /^(off|false|unmute)$/i.test(val) ? "unmute" : "mute")]; break;
+        if (/^\d+$/.test(val)) return [cmd("audioVolume", "setVolume", [Math.max(0, Math.min(100, Number(val)))])];
+        if (/up|louder/i.test(val)) return [cmd("audioVolume", "volumeUp")];
+        if (/down|quieter/i.test(val)) return [cmd("audioVolume", "volumeDown")];
+        throw new Error("Volume: a number 0-100, up or down.");
+      case "mute": need("audioMute"); return [cmd("audioMute", /^(off|false|unmute)$/i.test(val) ? "unmute" : "mute")];
       case "input": {
         if (!val) throw new Error("Which input? e.g. HDMI1, HDMI2, TV.");
         const src = val.toUpperCase().replace(/\s+/g, "");
-        if (caps.has("samsungvd.mediaInputSource")) commands = [cmd("samsungvd.mediaInputSource", "setInputSource", [src])];
-        else { need("mediaInputSource"); commands = [cmd("mediaInputSource", "setInputSource", [src])]; }
-        break;
+        if (caps.has("samsungvd.mediaInputSource")) return [cmd("samsungvd.mediaInputSource", "setInputSource", [src])];
+        need("mediaInputSource"); return [cmd("mediaInputSource", "setInputSource", [src])];
       }
       case "app": {
         need("custom.launchapp");
         const APPS = { netflix: "3201907018807", youtube: "111299001912", "prime video": "3201910019365", "amazon prime": "3201910019365", "disney+": "3201901017640", disney: "3201901017640", spotify: "3201606009684", "apple tv": "3201807016597", "bbc iplayer": "3201602007865", iplayer: "3201602007865", itvx: "121299000089", "channel 4": "3201608010191", "now": "3201603008746", plex: "3201512006963", "internet": "org.tizen.browser", browser: "org.tizen.browser" };
         const id = APPS[val.toLowerCase()];
-        commands = [cmd("custom.launchapp", "launchApp", id ? [id, val] : [val, val])];
-        break;
+        return [cmd("custom.launchapp", "launchApp", id ? [id, val] : [val, val])];
       }
-      case "channel": need("tvChannel"); commands = [cmd("tvChannel", /up/i.test(val) ? "channelUp" : /down/i.test(val) ? "channelDown" : "setTvChannel", /up|down/i.test(val) ? [] : [val])]; break;
-      case "play": case "pause": case "stop": need("mediaPlayback"); commands = [cmd("mediaPlayback", action)]; break;
+      case "channel": need("tvChannel"); return [cmd("tvChannel", /up/i.test(val) ? "channelUp" : /down/i.test(val) ? "channelDown" : "setTvChannel", /up|down/i.test(val) ? [] : [val])];
+      case "play": case "pause": case "stop": need("mediaPlayback"); return [cmd("mediaPlayback", action)];
       case "key": {
         need("samsungvd.remoteControl");
         const k = val.toUpperCase();
         if (!/^(UP|DOWN|LEFT|RIGHT|OK|BACK|HOME|MENU|EXIT|PLAY|PAUSE|STOP|REWIND|FF|PLAY_BACK)$/.test(k)) throw new Error("Key must be one of UP, DOWN, LEFT, RIGHT, OK, BACK, HOME, MENU, EXIT, PLAY, PAUSE, STOP, REWIND, FF.");
-        commands = [cmd("samsungvd.remoteControl", "send", [k])];
-        break;
+        return [cmd("samsungvd.remoteControl", "send", [k])];
+      }
+      case "brightness": {
+        need("switchLevel");
+        let n;
+        if (/^\d+%?$/.test(val)) n = Number(val.replace("%", ""));
+        else if (/up|brighter/i.test(val) || /down|dimmer|dim/i.test(val)) {
+          const cur = (await status(d)).brightness ?? 50;
+          n = cur + (/up|brighter/i.test(val) ? 20 : -20);
+        } else if (/full|max/i.test(val)) n = 100;
+        else if (/low|min/i.test(val)) n = 10;
+        else throw new Error("Brightness: a number 1-100, up, down, full or low.");
+        n = Math.max(1, Math.min(100, Math.round(n)));
+        return [cmd("switch", "on"), cmd("switchLevel", "setLevel", [n])];
+      }
+      case "white": {
+        need("colorTemperature");
+        const k = /^\d{4}k?$/i.test(val) ? Number(val.replace(/k/i, "")) : WHITES[val.toLowerCase()];
+        if (!k) throw new Error("White: warm, soft, neutral, cool, daylight or a number of kelvin (2200-6500).");
+        return [cmd("switch", "on"), cmd("colorTemperature", "setColorTemperature", [Math.max(2000, Math.min(6500, k))])];
+      }
+      case "colour": case "color": {
+        need("colorControl");
+        const c = COLOURS[val.toLowerCase()];
+        if (!c) throw new Error(`Colour: one of ${Object.keys(COLOURS).join(", ")}.`);
+        if (val.toLowerCase() === "white" && caps.has("colorTemperature")) return [cmd("switch", "on"), cmd("colorTemperature", "setColorTemperature", [4000])];
+        return [cmd("switch", "on"), cmd("colorControl", "setColor", [{ hue: c[0], saturation: c[1] }])];
       }
       default: throw new Error("Unknown action.");
     }
+  }
+
+  const ALL_LIGHTS = /^(all|all lights|all the lights|every light|everything|lights|the lights)$/i;
+
+  async function control({ device, action, value }) {
+    const val = String(value ?? "").trim();
+    if (ALL_LIGHTS.test(String(device || "").trim()) && action !== "status") {
+      const lights = (await devices()).filter(isLight);
+      if (!lights.length) throw new Error("No lights found in SmartThings.");
+      const done = [], failed = [];
+      for (const d of lights) {
+        try { await api(`/v1/devices/${d.deviceId}/commands`, { method: "POST", body: { commands: await commandsFor(d, action, val) } }); done.push(d.label || d.name); }
+        catch (e) { failed.push(`${d.label || d.name}: ${String(e.message).slice(0, 80)}`); }
+      }
+      return { ok: done.length > 0, devices: done, failed: failed.length ? failed : undefined, done: action + (val ? " " + val : "") };
+    }
+    const d = await find(device);
+    if (action === "status") return { ok: true, device: await status(d) };
+    const commands = await commandsFor(d, action, val);
     await api(`/v1/devices/${d.deviceId}/commands`, { method: "POST", body: { commands } });
-    return { ok: true, device: d.label || d.name, done: action + (val ? " " + val : ""), note: action === "on" ? "If the TV doesn't wake, enable 'Power on with mobile' (Settings > General > Network > Expert Settings) so SmartThings can turn it on from standby." : undefined };
+    return { ok: true, device: d.label || d.name, done: action + (val ? " " + val : ""), note: action === "on" && isTv(d) ? "If the TV doesn't wake, enable 'Power on with mobile' (Settings > General > Network > Expert Settings) so SmartThings can turn it on from standby." : undefined };
   }
 
   return {
