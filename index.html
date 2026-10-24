@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b0f14">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<title>Bernud</title>
+<style>
+  :root {
+    --bg: #0b0f14;
+    --panel: #121922;
+    --line: #223041;
+    --text: #e8eef5;
+    --muted: #8b9bb0;
+    --accent: #4fd1ff;
+    --accent-2: #1a7fa8;
+    --warm: #ffb547;
+    --danger: #ff6b6b;
+    --ok: #57e39b;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+  }
+  header { width: 100%; max-width: 480px; display: flex; justify-content: space-between; align-items: center; }
+  header h1 { font-size: 20px; font-weight: 600; letter-spacing: 0.08em; margin: 0; }
+  .icon-btn { background: none; border: 1px solid var(--line); color: var(--muted); border-radius: 10px; padding: 8px 12px; font: inherit; font-size: 14px; cursor: pointer; }
+  main { flex: 1; width: 100%; max-width: 480px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px; }
+
+  .orb-wrap { position: relative; width: 220px; height: 220px; display: grid; place-items: center; }
+  .orb {
+    width: 160px; height: 160px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #9be7ff 0%, var(--accent) 35%, var(--accent-2) 75%, #0d3a4f 100%);
+    box-shadow: 0 0 40px rgba(79, 209, 255, 0.35);
+    transition: transform 0.4s ease, box-shadow 0.4s ease, filter 0.4s ease;
+    border: none; cursor: pointer;
+  }
+  .ring { position: absolute; inset: 0; border-radius: 50%; border: 2px solid rgba(79, 209, 255, 0.25); opacity: 0; }
+  body[data-state="idle"] .orb { filter: grayscale(0.7) brightness(0.6); box-shadow: none; }
+  body[data-state="sleeping"] .orb { filter: brightness(0.75); }
+  body[data-state="sleeping"] .ring { animation: breathe 3.2s ease-in-out infinite; }
+  body[data-state="connecting"] .orb { animation: pulse 0.9s ease-in-out infinite; }
+  body[data-state="listening"] .orb { transform: scale(1.04); box-shadow: 0 0 70px rgba(79, 209, 255, 0.55); }
+  body[data-state="speaking"] .orb {
+    background: radial-gradient(circle at 35% 30%, #ffe2a8 0%, var(--warm) 40%, #b8721a 80%, #4a2c06 100%);
+    box-shadow: 0 0 80px rgba(255, 181, 71, 0.55);
+    animation: speak 0.6s ease-in-out infinite alternate;
+  }
+  @keyframes breathe { 0%,100% { transform: scale(0.85); opacity: 0; } 50% { transform: scale(1.05); opacity: 1; } }
+  @keyframes pulse { 0%,100% { transform: scale(0.96); } 50% { transform: scale(1.04); } }
+  @keyframes speak { from { transform: scale(1.0); } to { transform: scale(1.08); } }
+  @media (prefers-reduced-motion: reduce) { .orb, .ring { animation: none !important; } }
+
+  .status { text-align: center; min-height: 72px; }
+  .status .big { font-size: 22px; font-weight: 600; margin: 0 0 4px; }
+  .status .small { color: var(--muted); margin: 0; font-size: 15px; }
+
+  .controls { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+  .btn { border: none; border-radius: 12px; padding: 14px 22px; font: inherit; font-weight: 600; cursor: pointer; min-width: 140px; }
+  .btn.primary { background: var(--accent); color: #04202c; }
+  .btn.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); }
+  .btn.danger { background: var(--danger); color: #2a0606; }
+  .btn[hidden] { display: none; }
+
+  .panel { width: 100%; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 20px; }
+  .panel h2 { margin: 0 0 6px; font-size: 18px; }
+  .panel p { margin: 0 0 16px; color: var(--muted); font-size: 14px; }
+  label { display: block; font-size: 14px; color: var(--muted); margin: 14px 0 6px; }
+  input[type="text"], input[type="password"] {
+    width: 100%; padding: 12px; border-radius: 10px; border: 1px solid var(--line);
+    background: var(--bg); color: var(--text); font: inherit;
+  }
+  input[type="file"] { width: 100%; color: var(--muted); font-size: 14px; }
+  .row { display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
+  .note { font-size: 13px; color: var(--muted); margin-top: 12px; }
+  .err { color: var(--danger); font-size: 14px; margin-top: 10px; min-height: 1em; }
+  .ok { color: var(--ok); }
+  [hidden] { display: none !important; }
+  footer { color: var(--muted); font-size: 12px; text-align: center; }
+</style>
+</head>
+<body data-state="idle">
+  <header>
+    <h1>BERNUD</h1>
+    <button class="icon-btn" id="settingsBtn" type="button">Settings</button>
+  </header>
+
+  <main>
+    <section id="home">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:28px">
+        <div class="orb-wrap">
+          <span class="ring" aria-hidden="true"></span>
+          <button class="orb" id="orb" type="button" aria-label="Talk to Bernud"></button>
+        </div>
+        <div class="status" aria-live="polite">
+          <p class="big" id="statusBig">Tap to start</p>
+          <p class="small" id="statusSmall">Bernud needs your microphone to hear you.</p>
+        </div>
+        <div class="controls">
+          <button class="btn primary" id="startBtn" type="button">Start listening</button>
+          <button class="btn ghost" id="talkBtn" type="button" hidden>Talk now</button>
+          <button class="btn danger" id="hangupBtn" type="button" hidden>Hang up</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="settings" class="panel" hidden>
+      <h2>Wake word setup</h2>
+      <p>Enter your Picovoice AccessKey and upload your "Hey Bernud" wake word file (Web / WASM). Both stay on this device only.</p>
+      <label for="keyInput">Picovoice AccessKey</label>
+      <input id="keyInput" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your AccessKey">
+      <label for="ppnInput">"Hey Bernud" wake word file (.ppn)</label>
+      <input id="ppnInput" type="file" accept=".ppn">
+      <div class="note" id="ppnStatus"></div>
+      <label for="sensInput">Sensitivity: <span id="sensVal"></span></label>
+      <input id="sensInput" type="range" min="0.3" max="0.9" step="0.05" style="width:100%">
+      <div class="note">Higher wakes more easily but may trigger by mistake.</div>
+      <div class="err" id="settingsErr"></div>
+      <div class="row">
+        <button class="btn primary" id="saveBtn" type="button">Save</button>
+        <button class="btn ghost" id="closeSettingsBtn" type="button">Close</button>
+      </div>
+      <div class="row">
+        <button class="btn ghost" id="clearBtn" type="button">Clear saved setup</button>
+      </div>
+    </section>
+  </main>
+
+  <footer>Keep this page open and the screen on for "Hey Bernud" to work.</footer>
+
+<script type="module">
+  const AGENT_ID = "agent_0501m5q6cc15eqcrnamk2e1w84xc";
+  const MODEL_URL = "https://cdn.jsdelivr.net/gh/Picovoice/porcupine@v3.0/lib/common/porcupine_params.pv";
+  const STORE = { key: "bernud.pvKey", ppn: "bernud.ppn", ppnName: "bernud.ppnName", sens: "bernud.sens" };
+
+  const $ = (id) => document.getElementById(id);
+  const ui = {
+    body: document.body, orb: $("orb"), big: $("statusBig"), small: $("statusSmall"),
+    start: $("startBtn"), talk: $("talkBtn"), hangup: $("hangupBtn"),
+    home: $("home"), settings: $("settings"), settingsBtn: $("settingsBtn"),
+    keyInput: $("keyInput"), ppnInput: $("ppnInput"), ppnStatus: $("ppnStatus"),
+    sensInput: $("sensInput"), sensVal: $("sensVal"), settingsErr: $("settingsErr"),
+    save: $("saveBtn"), close: $("closeSettingsBtn"), clear: $("clearBtn"),
+  };
+
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); return true; } catch { return false; } },
+    del(k) { try { localStorage.removeItem(k); } catch {} },
+  };
+
+  let porcupine = null;
+  let wvp = null;
+  let conversation = null;
+  let wakeLock = null;
+  let armed = false;      // user has pressed Start, so we should keep listening for the wake word
+  let busy = false;       // a conversation is starting or running
+  let pendingPpnB64 = null;
+
+  function setState(state, big, small) {
+    ui.body.dataset.state = state;
+    if (big !== undefined) ui.big.textContent = big;
+    if (small !== undefined) ui.small.textContent = small;
+    const inCall = state === "connecting" || state === "listening" || state === "speaking";
+    ui.hangup.hidden = !inCall;
+    ui.talk.hidden = inCall || !armed;
+    ui.start.hidden = armed;
+  }
+
+  function hasWakeSetup() {
+    return Boolean(store.get(STORE.key) && store.get(STORE.ppn));
+  }
+
+  // ---------- Screen wake lock ----------
+  async function keepAwake() {
+    try {
+      if ("wakeLock" in navigator && !wakeLock) {
+        wakeLock = await navigator.wakeLock.request("screen");
+        wakeLock.addEventListener("release", () => { wakeLock = null; });
+      }
+    } catch { /* not supported or refused: page still works while screen is on */ }
+  }
+  document.addEventListener("visibilitychange", async () => {
+    if (document.visibilityState === "visible" && armed) {
+      await keepAwake();
+      if (!busy) await startWakeWord();
+    }
+  });
+
+  // ---------- Wake word (Porcupine, runs on this device) ----------
+  async function loadPicovoice() {
+    if (porcupine) return true;
+    const key = store.get(STORE.key);
+    const ppn = store.get(STORE.ppn);
+    if (!key || !ppn) return false;
+    const sens = parseFloat(store.get(STORE.sens) || "0.6");
+    const [{ PorcupineWorker }, { WebVoiceProcessor }] = await Promise.all([
+      import("https://esm.sh/@picovoice/porcupine-web@3"),
+      import("https://esm.sh/@picovoice/web-voice-processor@4"),
+    ]);
+    wvp = WebVoiceProcessor;
+    porcupine = await PorcupineWorker.create(
+      key,
+      [{ label: "Hey Bernud", base64: ppn, sensitivity: sens }],
+      (detection) => { if (detection && !busy) onWake(); },
+      { publicPath: MODEL_URL, customWritePath: "bernud_porcupine_v3", forceWrite: true },
+    );
+    return true;
+  }
+
+  async function startWakeWord() {
+    if (!hasWakeSetup()) {
+      setState("idle", "Tap the orb to talk", "Add your wake word in Settings to use \"Hey Bernud\".");
+      return;
+    }
+    try {
+      await loadPicovoice();
+      await wvp.subscribe(porcupine);
+      setState("sleeping", "Say \"Hey Bernud\"", "Listening for the wake word on this device only.");
+    } catch (err) {
+      console.error(err);
+      setState("idle", "Wake word unavailable", friendlyPicovoiceError(err));
+    }
+  }
+
+  async function stopWakeWord() {
+    try { if (wvp && porcupine) await wvp.unsubscribe(porcupine); } catch {}
+  }
+
+  function friendlyPicovoiceError(err) {
+    const msg = String(err && (err.message || err)).toLowerCase();
+    if (msg.includes("activation") || msg.includes("accesskey") || msg.includes("access key")) return "Picovoice rejected the AccessKey. Check it in Settings.";
+    if (msg.includes("keyword") || msg.includes("ppn")) return "The wake word file didn't load. Make sure it's the Web (WASM) version.";
+    if (msg.includes("permission") || msg.includes("notallowed")) return "Microphone access was blocked. Allow it in your browser settings.";
+    return "Something went wrong starting the wake word. You can still tap the orb to talk.";
+  }
+
+  // ---------- Conversation (ElevenLabs agent) ----------
+  async function onWake() {
+    if (busy) return;
+    if (navigator.vibrate) navigator.vibrate(60);
+    await startConversation();
+  }
+
+  async function startConversation() {
+    if (busy) return;
+    busy = true;
+    await stopWakeWord();
+    setState("connecting", "Connecting…", "One moment.");
+    try {
+      await navigator.mediaDevices.getUserMedia({ audio: true });
+      const { Conversation } = await import("https://esm.sh/@elevenlabs/client");
+      conversation = await Conversation.startSession({
+        agentId: AGENT_ID,
+        connectionType: "webrtc",
+        onConnect: () => setState("listening", "Bernud is listening", "Say \"goodbye\" or tap Hang up when you're done."),
+        onDisconnect: () => onConversationEnded(),
+        onError: (e) => { console.error("ElevenLabs error", e); },
+        onModeChange: ({ mode }) => {
+          if (!busy) return;
+          if (mode === "speaking") setState("speaking", "Bernud is speaking", "Interrupt any time.");
+          else setState("listening", "Bernud is listening", "Say \"goodbye\" or tap Hang up when you're done.");
+        },
+      });
+    } catch (err) {
+      console.error(err);
+      const msg = String(err && (err.message || err)).toLowerCase();
+      const why = msg.includes("permission") || msg.includes("notallowed")
+        ? "Microphone access was blocked. Allow it in your browser settings."
+        : "Couldn't reach Bernud. Check your connection and try again.";
+      busy = false;
+      conversation = null;
+      setState("idle", "Couldn't connect", why);
+      if (armed) setTimeout(startWakeWord, 2500);
+    }
+  }
+
+  async function endConversation() {
+    if (conversation) {
+      try { await conversation.endSession(); } catch {}
+    } else {
+      onConversationEnded();
+    }
+  }
+
+  async function onConversationEnded() {
+    conversation = null;
+    busy = false;
+    if (armed) {
+      setState("sleeping", "Back on standby", "Say \"Hey Bernud\" when you need me.");
+      // Small pause so the mic is released before the wake word listener reclaims it.
+      setTimeout(startWakeWord, 800);
+    } else {
+      setState("idle", "Tap to start", "Bernud needs your microphone to hear you.");
+    }
+  }
+
+  // ---------- Buttons ----------
+  ui.start.addEventListener("click", async () => {
+    armed = true;
+    await keepAwake();
+    try {
+      // Ask for mic once, up front, from a tap.
+      const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+      s.getTracks().forEach((t) => t.stop());
+    } catch {
+      armed = false;
+      setState("idle", "Microphone blocked", "Allow microphone access for this site, then tap Start again.");
+      return;
+    }
+    await startWakeWord();
+    if (!hasWakeSetup()) setState("idle", "Tap the orb to talk", "Add your wake word in Settings to use \"Hey Bernud\".");
+  });
+
+  ui.orb.addEventListener("click", () => { if (busy) endConversation(); else startConversation(); });
+  ui.talk.addEventListener("click", () => startConversation());
+  ui.hangup.addEventListener("click", () => endConversation());
+
+  // ---------- Settings ----------
+  function openSettings() {
+    ui.home.hidden = true; ui.settings.hidden = false;
+    ui.keyInput.value = store.get(STORE.key) || "";
+    const name = store.get(STORE.ppnName);
+    ui.ppnStatus.innerHTML = "";
+    if (name) { ui.ppnStatus.className = "note ok"; ui.ppnStatus.textContent = "Saved: " + name; }
+    const sens = store.get(STORE.sens) || "0.6";
+    ui.sensInput.value = sens; ui.sensVal.textContent = sens;
+    ui.settingsErr.textContent = "";
+    pendingPpnB64 = null;
+  }
+  function closeSettings() { ui.settings.hidden = true; ui.home.hidden = false; }
+
+  ui.settingsBtn.addEventListener("click", () => (ui.settings.hidden ? openSettings() : closeSettings()));
+  ui.close.addEventListener("click", closeSettings);
+  ui.sensInput.addEventListener("input", () => { ui.sensVal.textContent = ui.sensInput.value; });
+  ui.keyInput.addEventListener("input", () => { ui.settingsErr.textContent = ""; });
+
+  ui.ppnInput.addEventListener("change", async () => {
+    ui.settingsErr.textContent = "";
+    const file = ui.ppnInput.files && ui.ppnInput.files[0];
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith(".ppn")) {
+      ui.settingsErr.textContent = "That isn't a .ppn file. Download the Web (WASM) version from Picovoice.";
+      return;
+    }
+    const buf = new Uint8Array(await file.arrayBuffer());
+    let bin = "";
+    for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]);
+    pendingPpnB64 = btoa(bin);
+    ui.ppnStatus.className = "note ok";
+    ui.ppnStatus.textContent = "Ready to save: " + file.name;
+    store.set(STORE.ppnName + ".pending", file.name);
+  });
+
+  ui.save.addEventListener("click", async () => {
+    const key = ui.keyInput.value.trim();
+    const hasPpn = pendingPpnB64 || store.get(STORE.ppn);
+    if (!key) { ui.settingsErr.textContent = "Enter your Picovoice AccessKey first."; return; }
+    if (!hasPpn) { ui.settingsErr.textContent = "Choose your \"Hey Bernud\" .ppn file first."; return; }
+    store.set(STORE.key, key);
+    store.set(STORE.sens, ui.sensInput.value);
+    if (pendingPpnB64) {
+      if (!store.set(STORE.ppn, pendingPpnB64)) { ui.settingsErr.textContent = "Couldn't save the wake word file on this device."; return; }
+      store.set(STORE.ppnName, store.get(STORE.ppnName + ".pending") || "wake word");
+    }
+    // Rebuild the detector with the new setup.
+    await stopWakeWord();
+    try { if (porcupine) { await porcupine.release(); porcupine.terminate && porcupine.terminate(); } } catch {}
+    porcupine = null;
+    closeSettings();
+    if (armed && !busy) await startWakeWord();
+    else setState("idle", "Wake word saved", "Tap Start listening, then say \"Hey Bernud\".");
+  });
+
+  ui.clear.addEventListener("click", async () => {
+    Object.values(STORE).forEach((k) => store.del(k));
+    await stopWakeWord();
+    porcupine = null;
+    ui.keyInput.value = ""; ui.ppnInput.value = ""; ui.ppnStatus.textContent = "";
+    ui.settingsErr.textContent = "";
+  });
+
+  // ---------- Install as an app ----------
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("sw.js").catch(() => {});
+  }
+
+  setState("idle",
+    hasWakeSetup() ? "Tap Start listening" : "Tap to start",
+    hasWakeSetup() ? "Then just say \"Hey Bernud\"." : "Add your wake word in Settings, or tap the orb to talk.");
+</script>
+</body>
+</html>
