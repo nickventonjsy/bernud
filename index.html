@@ -440,6 +440,20 @@
 <div class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="setTitle">
   <div class="panel">
     <div class="p-head"><div class="p-title" id="setTitle">Settings</div><button class="btn" type="button" id="closeSettings">Close</button></div>
+    <p><b style="color:var(--text)">Microphone.</b> Pick the mic Bernard should listen on, then press Test and speak: the bar should move.</p>
+    <label for="micSelect">Microphone</label>
+    <select id="micSelect" style="width:100%;padding:10px;background:transparent;color:var(--text);border:1px solid var(--line, #5a1a1f);border-radius:8px"></select>
+    <div style="display:flex;gap:10px;align-items:center;margin-top:10px">
+      <button class="btn" type="button" id="micTestBtn">Test</button>
+      <div style="flex:1;height:10px;border:1px solid var(--line, #5a1a1f);border-radius:6px;overflow:hidden"><div id="micBar" style="height:100%;width:0;background:var(--accent, #ff3b4a);transition:width .08s"></div></div>
+    </div>
+    <div class="note" id="micNote"></div>
+    <label for="connSelect">Connection</label>
+    <select id="connSelect" style="width:100%;padding:10px;background:transparent;color:var(--text);border:1px solid var(--line, #5a1a1f);border-radius:8px">
+      <option value="webrtc">Standard (WebRTC)</option>
+      <option value="websocket">Compatibility (WebSocket): try this if Bernard can't hear you</option>
+    </select>
+    <hr style="border:0;border-top:1px solid var(--line, #5a1a1f);margin:16px 0">
     <p><b style="color:var(--text)">"Hey Bernard" wake word.</b> Press the grid button left of the ask bar to put Bernard on standby. He listens using Chrome's speech recognition (on-device where your computer supports it).</p>
     <p>Optional: for a private wake word, add a Picovoice AccessKey and your "Hey Bernud" file (Web / WASM). Both stay on this device only.</p>
     <label for="keyInput">Picovoice AccessKey</label>
@@ -462,7 +476,7 @@
   const AGENT_ID = "agent_0501m5q6cc15eqcrnamk2e1w84xc";
   const SERVER = "https://bernud-server.onrender.com";
   const MODEL_URL = "https://cdn.jsdelivr.net/gh/Picovoice/porcupine@v3.0/lib/common/porcupine_params.pv";
-  const STORE = { key: "bernud.pvKey", ppn: "bernud.ppn", ppnName: "bernud.ppnName", sens: "bernud.sens", topic: "bernud.topic" };
+  const STORE = { key: "bernud.pvKey", ppn: "bernud.ppn", ppnName: "bernud.ppnName", sens: "bernud.sens", topic: "bernud.topic", mic: "bernud.micId", conn: "bernud.conn" };
   const TZ = "Europe/Jersey";
   const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -881,9 +895,11 @@
       const { Conversation } = await import("https://esm.sh/@elevenlabs/client@1.30.0");
       conversation = await Conversation.startSession({
         agentId: AGENT_ID,
-        connectionType: "webrtc",
+        connectionType: store.get(STORE.conn) === "websocket" ? "websocket" : "webrtc",
+        ...(store.get(STORE.mic) ? { inputDeviceId: store.get(STORE.mic) } : {}),
         onConnect: () => {
           setMode("listening", "Go ahead. Say \"goodbye\" when you're done.");
+          startMicWatch();
           if (pendingPhoto) { const p = pendingPhoto; pendingPhoto = null; setTimeout(() => sendPhoto(p.blob, p.text), 400); }
           else if (pendingText) { const t = pendingText; pendingText = null; setTimeout(() => sendText(t), 400); }
         },
@@ -921,7 +937,24 @@
     else onConversationEnded();
   }
 
+  // If no sound at all reaches Bernard for 10s, say so instead of failing silently.
+  let micWatch = null;
+  function startMicWatch() {
+    clearInterval(micWatch);
+    let heard = false; const t0 = Date.now();
+    micWatch = setInterval(() => {
+      if (!conversation) { clearInterval(micWatch); return; }
+      let v = 0; try { v = conversation.getInputVolume ? conversation.getInputVolume() : 0; } catch {}
+      if (v > 0.02) { heard = true; clearInterval(micWatch); return; }
+      if (!heard && Date.now() - t0 > 10000) {
+        clearInterval(micWatch);
+        $("subline").textContent = "I'm not getting any sound from your microphone. Open Settings (gear) to pick the right mic and test it, or type instead.";
+      }
+    }, 250);
+  }
+
   function onConversationEnded() {
+    clearInterval(micWatch);
     conversation = null; busy = false;
     if (armed) { setMode("standby", "Say \"Hey Bernard\" when you need me."); setTimeout(startWakeWord, 800); }
     else setMode("idle", "Tap the core or the microphone to talk.");
@@ -1095,13 +1128,54 @@
   let pendingPpn = null;
   function openSettings() {
     $("drawer").classList.add("open");
+    loadMics(); $("connSelect").value = store.get(STORE.conn) === "websocket" ? "websocket" : "webrtc";
     $("keyInput").value = store.get(STORE.key) || "";
     const n = store.get(STORE.ppnName); $("ppnStatus").textContent = n ? "Saved: " + n : "";
     const s = store.get(STORE.sens) || "0.6"; $("sensInput").value = s; $("sensVal").textContent = s;
     $("settingsErr").textContent = ""; pendingPpn = null;
     $("diag").textContent = `Speech recognition: ${SpeechRec ? "supported" : "not supported"} · On-device: ${useLocalSpeech ? "yes" : "no"} · Picovoice: ${hasPico() ? "set up" : "not set up"}`;
   }
-  const closeSettings = () => $("drawer").classList.remove("open");
+  async function loadMics() {
+    const sel = $("micSelect");
+    try {
+      let devs = await navigator.mediaDevices.enumerateDevices();
+      if (devs.some((d) => d.kind === "audioinput" && !d.label)) { const st = await navigator.mediaDevices.getUserMedia({ audio: true }); st.getTracks().forEach((t) => t.stop()); devs = await navigator.mediaDevices.enumerateDevices(); }
+      const mics = devs.filter((d) => d.kind === "audioinput");
+      const saved = store.get(STORE.mic) || "";
+      sel.innerHTML = "";
+      const def = document.createElement("option"); def.value = ""; def.textContent = "System default"; sel.appendChild(def);
+      for (const m of mics) { if (m.deviceId === "default" || m.deviceId === "communications") continue; const o = document.createElement("option"); o.value = m.deviceId; o.textContent = m.label || "Microphone"; sel.appendChild(o); }
+      sel.value = [...sel.options].some((o) => o.value === saved) ? saved : "";
+      $("micNote").textContent = mics.length ? `${mics.length} microphone(s) found.` : "No microphones found. Check Windows sound settings.";
+    } catch (e) { $("micNote").textContent = "Microphone access is blocked for this site. Click the padlock in the address bar and allow the microphone."; }
+  }
+  let micTest = null;
+  async function stopMicTest() { if (micTest) { cancelAnimationFrame(micTest.raf); micTest.stream.getTracks().forEach((t) => t.stop()); micTest.ctx.close().catch(() => {}); micTest = null; $("micBar").style.width = "0"; $("micTestBtn").textContent = "Test"; } }
+  $("micTestBtn").addEventListener("click", async () => {
+    if (micTest) return stopMicTest();
+    try {
+      const id = $("micSelect").value;
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: id ? { deviceId: { exact: id } } : true });
+      const ctx = new AudioContext(); const an = ctx.createAnalyser(); an.fftSize = 512; ctx.createMediaStreamSource(stream).connect(an);
+      const buf = new Uint8Array(an.fftSize); let peak = 0; const t0 = Date.now();
+      micTest = { stream, ctx, raf: 0 }; $("micTestBtn").textContent = "Stop";
+      const loop = () => {
+        an.getByteTimeDomainData(buf); let sum = 0; for (const b of buf) { const x = (b - 128) / 128; sum += x * x; }
+        const rms = Math.sqrt(sum / buf.length); peak = Math.max(peak, rms);
+        $("micBar").style.width = Math.min(100, rms * 400) + "%";
+        if (Date.now() - t0 > 4000) $("micNote").textContent = peak > 0.02 ? "This microphone is working. Save to use it." : "No sound from this microphone. Try another one in the list, or check it isn't muted in Windows.";
+        if (micTest) micTest.raf = requestAnimationFrame(loop);
+      };
+      loop();
+    } catch (e) { $("micNote").textContent = "Couldn't open that microphone: " + (e.message || e.name); }
+  });
+  const closeSettings = () => {
+    if (!$("drawer").classList.contains("open")) return;
+    stopMicTest();
+    if ($("micSelect").options.length) { if ($("micSelect").value) store.set(STORE.mic, $("micSelect").value); else store.del(STORE.mic); }
+    store.set(STORE.conn, $("connSelect").value);
+    $("drawer").classList.remove("open");
+  };
   $("settingsBtn").addEventListener("click", openSettings);
   $("closeSettings").addEventListener("click", closeSettings);
   $("drawer").addEventListener("click", (e) => { if (e.target === $("drawer")) closeSettings(); });
