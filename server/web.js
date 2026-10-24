@@ -38,7 +38,8 @@ export function htmlToText(html) {
     .replace(/<li[^>]*>/gi, "\n• ")
     .replace(/<[^>]+>/g, " ");
   const dec = (s) => s.replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&pound;/g, "£").replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)));
-  const text = dec(body).replace(/[ \t ]+/g, " ").replace(/ *\n */g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+  const text = dec(body).replace(/\r\n?/g, "\n").replace(/[ \t\u00a0]+/g, " ").replace(/ *\n */g, "\n")
+    .split("\n").filter((l, i, a) => l !== "•" && !(l === "" && a[i - 1] === "")).join("\n").replace(/\n{3,}/g, "\n\n").trim();
   return { title: dec(title).trim(), text };
 }
 

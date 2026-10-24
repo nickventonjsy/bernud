@@ -10,6 +10,7 @@ await assert.rejects(checkUrl("https://evil.example", async () => [{ address: "1
 await assert.rejects(checkUrl("https://user:pw@example.com", pub), /embedded/);
 assert.equal((await checkUrl("example.com/menu", pub)).href, "https://example.com/menu");
 const h = htmlToText("<html><title>Menu &amp; prices</title><style>.x{}</style><script>alert(1)</script><h1>Starters</h1><ul><li>Soup &pound;6.50</li><li>Bread</li></ul><p>Call 01534 123456</p></html>");
+const junk = htmlToText("<ul><li></li><li> </li></ul>\r\n\r\n\r\n<p>Hello</p>"); assert.equal(junk.text, "Hello");
 assert.equal(h.title, "Menu & prices"); assert.match(h.text, /• Soup £6\.50/); assert.doesNotMatch(h.text, /alert/);
 // read: direct page, redirect to private blocked, find filter, extractor fallback
 const pages = {
