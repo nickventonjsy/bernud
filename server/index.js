@@ -101,6 +101,8 @@ const googleAccounts = { ccp: gmail, personal: personalGoogle };
 export const notify = (text, opts) => devices.ntfyPublish(NTFY_TOPIC, text, opts);
 const { createReminders } = await import("./reminders.js");
 export const reminders = createReminders({ kv: db.kv, notify });
+const { createYouTube } = await import("./youtube.js");
+export const youtube = createYouTube({ web, pc, notify, zw: { url: (process.env.ZW_URL || "https://zentrawire.onrender.com").replace(/\/+$/, ""), key: process.env.ZW_ASSISTANT_KEY || "" } });
 const { createSmartThings } = await import("./smartthings.js");
 export const smartthings = createSmartThings({ kv: db.kv, clientId: process.env.SMARTTHINGS_CLIENT_ID || "", clientSecret: process.env.SMARTTHINGS_CLIENT_SECRET || "", redirectUri: (process.env.PUBLIC_URL || "https://bernud-server.onrender.com").replace(/\/+$/, "") + "/smartthings/callback", secret: API_KEY, notify });
 export const scheduler = createScheduler({
@@ -424,6 +426,12 @@ export async function handle(req, res) {
         if (b.action === "list") return send(res, 200, { ok: true, devices: await smartthings.list() });
         return send(res, 200, await smartthings.control({ device: b.device, action: b.action, value: b.value }));
       } catch (e) { return send(res, 200, { ok: false, error: e.code || "smartthings_error", message: String(e.message).slice(0, 300) }); }
+    }
+
+    // ---------------- YouTube ----------------
+    if (path === "/youtube" && req.method === "POST") {
+      try { return send(res, 200, await youtube.handle(await readJson(req))); }
+      catch (e) { return send(res, 200, { ok: false, error: e.code || "youtube_error", message: String(e.message).slice(0, 200) }); }
     }
 
     // ---------------- Reminders and price alerts ----------------
