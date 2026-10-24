@@ -448,6 +448,11 @@
       <div style="flex:1;height:10px;border:1px solid var(--line, #5a1a1f);border-radius:6px;overflow:hidden"><div id="micBar" style="height:100%;width:0;background:var(--accent, #ff3b4a);transition:width .08s"></div></div>
     </div>
     <div class="note" id="micNote"></div>
+    <label for="boostSelect">Mic boost</label>
+    <select id="boostSelect" style="width:100%;padding:10px;background:transparent;color:var(--text);border:1px solid var(--line, #5a1a1f);border-radius:8px">
+      <option value="1">Off</option><option value="2">2× (recommended for laptops)</option><option value="3">3×</option><option value="4">4× (quiet mics)</option>
+    </select>
+    <label style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="rawMic" style="width:auto"> Laptop mic mode (turns off Chrome's voice isolation, which can cut out your voice)</label>
     <label for="connSelect">Connection</label>
     <select id="connSelect" style="width:100%;padding:10px;background:transparent;color:var(--text);border:1px solid var(--line, #5a1a1f);border-radius:8px">
       <option value="webrtc">Standard (WebRTC)</option>
@@ -476,7 +481,7 @@
   const AGENT_ID = "agent_0501m5q6cc15eqcrnamk2e1w84xc";
   const SERVER = "https://bernud-server.onrender.com";
   const MODEL_URL = "https://cdn.jsdelivr.net/gh/Picovoice/porcupine@v3.0/lib/common/porcupine_params.pv";
-  const STORE = { key: "bernud.pvKey", ppn: "bernud.ppn", ppnName: "bernud.ppnName", sens: "bernud.sens", topic: "bernud.topic", mic: "bernud.micId", conn: "bernud.conn" };
+  const STORE = { key: "bernud.pvKey", ppn: "bernud.ppn", ppnName: "bernud.ppnName", sens: "bernud.sens", topic: "bernud.topic", mic: "bernud.micId", conn: "bernud.conn", boost: "bernud.boost", raw: "bernud.rawMic" };
   const TZ = "Europe/Jersey";
   const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -486,6 +491,38 @@
     set(k, v) { try { localStorage.setItem(k, v); return true; } catch { return false; } },
     del(k) { try { localStorage.removeItem(k); } catch {} },
   };
+
+  // ---- Mic processing: optional gain boost and "laptop mic mode" for every capture (Bernard and the test) ----
+  (() => {
+    const md = navigator.mediaDevices;
+    if (!md || !md.getUserMedia || md.__bernudWrapped) return;
+    const orig = md.getUserMedia.bind(md);
+    md.__bernudWrapped = true;
+    md.getUserMedia = async (c = {}) => {
+      if (!c || !c.audio) return orig(c);
+      const win = /Windows/i.test(navigator.userAgent);   // laptop mics on Windows default to boost + laptop mode
+      const boost = Number(store.get(STORE.boost) || (win ? "2" : "1"));
+      const raw = (store.get(STORE.raw) ?? (win ? "1" : "0")) === "1";
+      let audio = c.audio === true ? {} : { ...c.audio };
+      if (raw) { delete audio.voiceIsolation; audio.echoCancellation = true; audio.noiseSuppression = false; audio.autoGainControl = true; }
+      const stream = await orig({ ...c, audio });
+      if (!(boost > 1) || c.video) return stream;
+      try {
+        const ctx = new AudioContext();
+        const src = ctx.createMediaStreamSource(stream);
+        const gain = ctx.createGain(); gain.gain.value = boost;
+        const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -6; comp.ratio.value = 12;
+        const dest = ctx.createMediaStreamDestination();
+        src.connect(gain).connect(comp).connect(dest);
+        const out = dest.stream.getAudioTracks()[0];
+        const inTrack = stream.getAudioTracks()[0];
+        const stop = out.stop.bind(out);
+        out.stop = () => { stop(); stream.getTracks().forEach((t) => t.stop()); ctx.close().catch(() => {}); };
+        const baseSettings = out.getSettings.bind(out); out.getSettings = () => ({ ...baseSettings(), deviceId: inTrack.getSettings().deviceId });
+        return new MediaStream([out]);
+      } catch { return stream; }
+    };
+  })();
 
   // =====================================================================
   //  STATE
@@ -1129,6 +1166,8 @@
   function openSettings() {
     $("drawer").classList.add("open");
     loadMics(); $("connSelect").value = store.get(STORE.conn) === "websocket" ? "websocket" : "webrtc";
+    const win = /Windows/i.test(navigator.userAgent);
+    $("boostSelect").value = store.get(STORE.boost) || (win ? "2" : "1"); $("rawMic").checked = (store.get(STORE.raw) ?? (win ? "1" : "0")) === "1";
     $("keyInput").value = store.get(STORE.key) || "";
     const n = store.get(STORE.ppnName); $("ppnStatus").textContent = n ? "Saved: " + n : "";
     const s = store.get(STORE.sens) || "0.6"; $("sensInput").value = s; $("sensVal").textContent = s;
@@ -1153,6 +1192,7 @@
   async function stopMicTest() { if (micTest) { cancelAnimationFrame(micTest.raf); micTest.stream.getTracks().forEach((t) => t.stop()); micTest.ctx.close().catch(() => {}); micTest = null; $("micBar").style.width = "0"; $("micTestBtn").textContent = "Test"; } }
   $("micTestBtn").addEventListener("click", async () => {
     if (micTest) return stopMicTest();
+    store.set(STORE.boost, $("boostSelect").value); store.set(STORE.raw, $("rawMic").checked ? "1" : "0");
     try {
       const id = $("micSelect").value;
       const stream = await navigator.mediaDevices.getUserMedia({ audio: id ? { deviceId: { exact: id } } : true });
@@ -1174,6 +1214,8 @@
     stopMicTest();
     if ($("micSelect").options.length) { if ($("micSelect").value) store.set(STORE.mic, $("micSelect").value); else store.del(STORE.mic); }
     store.set(STORE.conn, $("connSelect").value);
+    store.set(STORE.boost, $("boostSelect").value);
+    store.set(STORE.raw, $("rawMic").checked ? "1" : "0");
     $("drawer").classList.remove("open");
   };
   $("settingsBtn").addEventListener("click", openSettings);
