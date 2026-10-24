@@ -10,7 +10,7 @@
   },
   "scripts": {
     "start": "node index.js",
-    "test": "node test.js && node test-ccp.js && node test-devices.js && node test-http-devices.js && node test-gmail.js"
+    "test": "node test.js && node test-ccp.js && node test-devices.js && node test-http-devices.js && node test-gmail.js && node test-web.js"
   },
   "dependencies": {
     "pg": "^8.13.0",
