@@ -107,6 +107,7 @@
           <p class="big" id="statusBig">Tap to start</p>
           <p class="small" id="statusSmall">Bernud needs your microphone to hear you.</p>
         </div>
+        <p class="small" id="heard" style="color:var(--muted);font-size:13px;margin:-16px 0 0;min-height:1.5em;text-align:center"></p>
         <div class="controls">
           <button class="btn primary" id="startBtn" type="button">Start listening</button>
           <button class="btn ghost" id="talkBtn" type="button" hidden>Talk now</button>
@@ -137,7 +138,7 @@
     </section>
   </main>
 
-  <footer>Keep this page open and the screen on for "Hey Bernud" to work.</footer>
+  <footer>Keep this page open and the screen on for "Hey Bernud" to work. · v3</footer>
 
 <script type="module">
   const AGENT_ID = "agent_0501m5q6cc15eqcrnamk2e1w84xc";
@@ -227,6 +228,8 @@
   let recWanted = false;
   let recFailures = 0;
 
+  function showHeard(t) { const el = document.getElementById("heard"); if (el) el.textContent = t || ""; }
+
   function startSpeechWake() {
     if (!SpeechRec) return false;
     recWanted = true;
@@ -236,7 +239,11 @@
     rec.continuous = true;
     rec.interimResults = true;
     rec.maxAlternatives = 3;
+    rec.onstart = () => { showHeard("Listening…"); };
+    rec.onaudiostart = () => { showHeard("Microphone on — say \"Hey Bernud\""); };
     rec.onresult = (e) => {
+      const last = e.results[e.results.length - 1];
+      if (last && last[0]) showHeard("Heard: “" + last[0].transcript.trim() + "”");
       for (let i = e.resultIndex; i < e.results.length; i++) {
         for (let a = 0; a < e.results[i].length; a++) {
           if (WAKE_RE.test(e.results[i][a].transcript)) {
@@ -249,6 +256,7 @@
       }
     };
     rec.onerror = (e) => {
+      if (e.error !== "no-speech" && e.error !== "aborted") showHeard("Speech error: " + e.error + (e.error === "network" ? " (Chrome couldn't reach its speech service)" : e.error === "audio-capture" ? " (no microphone found — check Chrome's mic setting)" : ""));
       if (e.error === "not-allowed" || e.error === "service-not-allowed") {
         recWanted = false;
         armed = false;
@@ -319,6 +327,7 @@
     busy = true;
     await stopWakeWord();
     setState("connecting", "Connecting…", "One moment.");
+    showHeard("");
     try {
       await navigator.mediaDevices.getUserMedia({ audio: true });
       const { Conversation } = await import("https://esm.sh/@elevenlabs/client");
@@ -327,7 +336,7 @@
         connectionType: "webrtc",
         onConnect: () => setState("listening", "Bernud is listening", "Say \"goodbye\" or tap Hang up when you're done."),
         onDisconnect: () => onConversationEnded(),
-        onError: (e) => { console.error("ElevenLabs error", e); },
+        onError: (e) => { console.error("ElevenLabs error", e); showHeard("Bernud error: " + String((e && e.message) || e).slice(0, 140)); },
         onModeChange: ({ mode }) => {
           if (!busy) return;
           if (mode === "speaking") setState("speaking", "Bernud is speaking", "Interrupt any time.");
@@ -343,6 +352,7 @@
       busy = false;
       conversation = null;
       setState("idle", "Couldn't connect", why);
+      showHeard("Error: " + String(err && (err.message || err.name || err)).slice(0, 140));
       if (armed) setTimeout(startWakeWord, 2500);
     }
   }
@@ -370,14 +380,20 @@
   // ---------- Buttons ----------
   ui.start.addEventListener("click", async () => {
     armed = true;
+    setState("connecting", "Starting…", "Asking for the microphone.");
     await keepAwake();
     try {
       // Ask for mic once, up front, from a tap.
       const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const label = s.getAudioTracks()[0]?.label;
+      if (label) showHeard("Using mic: " + label);
       s.getTracks().forEach((t) => t.stop());
-    } catch {
+    } catch (err) {
       armed = false;
-      setState("idle", "Microphone blocked", "Allow microphone access for this site, then tap Start again.");
+      const name = err && err.name;
+      setState("idle", name === "NotFoundError" ? "No microphone found" : "Microphone blocked",
+        name === "NotFoundError" ? "Plug in or enable a microphone, then tap Start again." : "Allow microphone access for this site, then tap Start again.");
+      showHeard(name ? "Mic error: " + name : "");
       return;
     }
     await startWakeWord();
