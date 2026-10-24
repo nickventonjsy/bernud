@@ -20,3 +20,14 @@ The key and wake word file are stored only in that browser on that device. Nothi
 - The page must stay open with the screen on to hear "Hey Bernud" (browsers stop listening in the background). Best on a PC, or a tablet or old phone on charge.
 - On Android: open the site in Chrome, then ⋮ → **Add to Home screen / Install** to use it like an app.
 - Static site, no build step: `index.html`, `manifest.webmanifest`, `sw.js`, icons.
+
+## Backend (`server/`)
+
+Bernud's memory and news live in a small Node service on Render (`bernud-server`), backed by Render Postgres. The ElevenLabs agent calls it through webhook tools, authenticated with an `x-bernud-key` header (env var `BERNUD_KEY`, never committed).
+
+- `POST /memory/save` `{text, category}` — remember something
+- `GET /memory/search?query=` — recall (no query = most recent)
+- `POST /memory/forget` `{query}` — forget the best match
+- `GET /news?topic=uk|world|business|tech|crypto|jersey|sport|f1`
+
+Run tests locally with `cd server && node test.js` (in-memory storage, no network).
