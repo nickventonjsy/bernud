@@ -11,7 +11,11 @@ const fetchImpl = async (u, o = {}) => {
   if (u.endsWith("/gmail/v1/users/me/profile")) return res({ emailAddress: "corycarpaints@gmail.com" });
   if (u.endsWith("/calendars/primary")) return res({ id: "nickventon@gmail.com" });
   if (u.includes("/messages/orig")) return res({ id: "orig", threadId: "T1", payload: { headers: [{ name: "From", value: "Capella <orders@capella.example>" }, { name: "Subject", value: "Order 554" }, { name: "Message-ID", value: "<abc@capella>" }] } });
-  if (u.endsWith("/drafts")) return res({ id: "d1" });
+  if (u.endsWith("/drafts") && o.method === "POST") return res({ id: "d1", message: { id: "18cabc" } });
+  if (/\/drafts\?maxResults/.test(u)) return res({ drafts: [{ id: "d1" }] });
+  if (/\/drafts\/d1\?format=metadata/.test(u)) return res({ id: "d1", message: { id: "18cabc", threadId: "T9", snippet: "old", payload: { headers: [{ name: "To", value: "x@y.com" }, { name: "Subject", value: "Old subj" }, { name: "In-Reply-To", value: "<q@w>" }] } } });
+  if (/\/drafts\/d1$/.test(u) && o.method === "PUT") return res({ id: "d1", message: { id: "18cdef" } });
+  if (/\/drafts\/d1$/.test(u) && o.method === "DELETE") return { ok: true, status: 204, json: async () => ({}) };
   if (u.includes("/events?")) return res({ items: [{ id: "e1", summary: "Paint rep", start: { dateTime: "2026-10-27T10:00:00+00:00" }, end: { dateTime: "2026-10-27T11:00:00+00:00" }, htmlLink: "https://cal/e1" }, { id: "x", status: "cancelled", start: {}, end: {} }] });
   if (u.endsWith("/events") && o.method === "POST") { const b = JSON.parse(o.body); return res({ id: "new", summary: b.summary, start: b.start, end: b.end }); }
   if (/\/events\/e1$/.test(u) && (!o.method || o.method === "GET")) return res({ id: "e1", summary: "Paint rep", start: { dateTime: "2026-10-27T10:00:00Z" }, end: { dateTime: "2026-10-27T11:30:00Z" } });
@@ -47,6 +51,13 @@ const raw = Buffer.from(payload.message.raw, "base64url").toString();
 assert.match(raw, /In-Reply-To: <abc@capella>/); assert.match(raw, /From: corycarpaints@gmail.com/);
 assert.ok(!calls.some((c) => /\/send/.test(c.u)), "never sends");
 await assert.rejects(ccp.createDraft({ body: "" , to: "a@b"}), /needs some text/);
+assert.match(d.link, /#drafts\?compose=18cabc$/);
+const up = await ccp.createDraft({ draftId: "d1", body: "New text" });
+assert.equal(up.updated, true); assert.equal(up.to, "x@y.com"); assert.equal(up.subject, "Old subj"); assert.match(up.link, /compose=18cdef/);
+const put = calls.find((c) => /\/drafts\/d1$/.test(c.u) && c.o.method === "PUT"); const pb = JSON.parse(put.o.body);
+assert.equal(pb.message.threadId, "T9"); assert.match(Buffer.from(pb.message.raw, "base64url").toString(), /In-Reply-To: <q@w>/);
+const list = await ccp.listDrafts(); assert.equal(list[0].subject, "Old subj"); assert.match(list[0].link, /compose=18cabc/);
+const dd = await ccp.deleteDraft("d1"); assert.equal(dd.deleted, true); assert.equal(dd.subject, "Old subj");
 // calendar
 const ev = await per.events({ from: new Date("2026-10-27T00:00:00Z"), to: new Date("2026-10-28T00:00:00Z") });
 assert.equal(ev.length, 1); assert.match(ev[0].when, /Tue 27 Oct.*10:00 to 11:00/); assert.equal(ev[0].calendar, "nickventon@gmail.com");

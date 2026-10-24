@@ -510,7 +510,9 @@ export async function handle(req, res) {
         }
         if (path === "/gmail/draft" && req.method === "POST") {
           const b = await readJson(req);
-          return send(res, 200, { ok: true, ...(await gmail.createDraft({ to: b.to, subject: b.subject, body: b.body, replyToId: b.reply_to_id })) });
+          if (b.action === "list") return send(res, 200, { ok: true, drafts: await gmail.listDrafts() });
+          if (b.action === "delete") { if (!b.draft_id) return send(res, 400, { error: "draft_id is required" }); return send(res, 200, { ok: true, ...(await gmail.deleteDraft(b.draft_id)) }); }
+          return send(res, 200, { ok: true, ...(await gmail.createDraft({ to: b.to, subject: b.subject, body: b.body, replyToId: b.reply_to_id, draftId: b.draft_id })) });
         }
         if (path === "/gmail/disconnect" && req.method === "POST") { await gmail.disconnect(); return send(res, 200, { disconnected: true }); }
       } catch (e) {

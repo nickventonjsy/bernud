@@ -68,6 +68,7 @@ export function createGmail({ kv, clientId, clientSecret, redirectUri, account, 
 
   const header = (m, n) => (m.payload?.headers || []).find((h) => h.name.toLowerCase() === n.toLowerCase())?.value || "";
   const link = (id) => `https://mail.google.com/mail/u/?authuser=${encodeURIComponent(account)}#all/${id}`;
+  const draftLink = (messageId) => `https://mail.google.com/mail/u/?authuser=${encodeURIComponent(account)}#drafts` + (messageId ? `?compose=${messageId}` : "");
   const summary = (m, snip = 160) => ({
     id: m.id,
     thread_id: m.threadId,
@@ -183,12 +184,21 @@ export function createGmail({ kv, clientId, clientSecret, redirectUri, account, 
     },
 
     // ---------- drafts (never sends) ----------
-    async createDraft({ to, subject, body, replyToId }) {
+    async createDraft({ to, subject, body, replyToId, draftId }) {
       if (!(await hasScope(SCOPES.gmailCompose))) throw Object.assign(new Error("Drafting isn't allowed yet: corycarpaints@gmail.com needs reconnecting with the drafts permission."), { code: "needs_permission" });
       body = String(body || "").trim();
       if (!body) throw new Error("The draft needs some text.");
       const headers = [];
       let threadId;
+      if (draftId) {
+        // Updating an existing draft: keep its recipient, subject, thread and reply headers unless new ones are given.
+        const cur = await request(`${GMAIL}/drafts/${encodeURIComponent(draftId)}?format=metadata`);
+        const m = cur.message || {};
+        threadId = m.threadId;
+        to = to || header(m, "To");
+        subject = subject || header(m, "Subject");
+        for (const h of ["In-Reply-To", "References"]) { const v = header(m, h); if (v) headers.push(`${h}: ${v}`); }
+      }
       if (replyToId) {
         const m = await api(`/messages/${encodeURIComponent(replyToId)}?format=metadata&metadataHeaders=From&metadataHeaders=Reply-To&metadataHeaders=Subject&metadataHeaders=Message-ID&metadataHeaders=References`);
         threadId = m.threadId;
@@ -206,8 +216,27 @@ export function createGmail({ kv, clientId, clientSecret, redirectUri, account, 
         "MIME-Version: 1.0", "Content-Type: text/plain; charset=UTF-8", "Content-Transfer-Encoding: base64", "",
         Buffer.from(body.replace(/\r?\n/g, "\r\n")).toString("base64").replace(/(.{76})/g, "$1\r\n"),
       ].join("\r\n");
-      const d = await request(GMAIL + "/drafts", { method: "POST", body: { message: { raw: Buffer.from(raw).toString("base64url"), ...(threadId ? { threadId } : {}) } } });
-      return { draft_id: d.id, to: clean(to), subject: clean(subject), in_thread: Boolean(threadId), link: `https://mail.google.com/mail/u/?authuser=${encodeURIComponent(account)}#drafts`, note: "Saved in Drafts. It has NOT been sent; Nicholas reviews and sends it himself." };
+      const message = { raw: Buffer.from(raw).toString("base64url"), ...(threadId ? { threadId } : {}) };
+      const d = draftId
+        ? await request(`${GMAIL}/drafts/${encodeURIComponent(draftId)}`, { method: "PUT", body: { id: draftId, message } })
+        : await request(GMAIL + "/drafts", { method: "POST", body: { message } });
+      return { draft_id: d.id, updated: Boolean(draftId), to: clean(to), subject: clean(subject), in_thread: Boolean(threadId), link: draftLink(d.message && d.message.id), note: "Saved in Drafts. It has NOT been sent; Nicholas reviews and sends it himself. The link opens this draft directly." };
+    },
+    async listDrafts(max = 10) {
+      const j = await request(`${GMAIL}/drafts?maxResults=${Math.min(max, 25)}`);
+      const out = [];
+      for (const d of j.drafts || []) {
+        const full = await request(`${GMAIL}/drafts/${encodeURIComponent(d.id)}?format=metadata`).catch(() => null);
+        const m = (full && full.message) || {};
+        out.push({ draft_id: d.id, to: header(m, "To"), subject: header(m, "Subject") || "(no subject)", snippet: decodeEntities(m.snippet || "").slice(0, 120), link: draftLink(m.id) });
+      }
+      return out;
+    },
+    async deleteDraft(draftId) {
+      if (!(await hasScope(SCOPES.gmailCompose))) throw Object.assign(new Error("Drafts permission isn't granted."), { code: "needs_permission" });
+      const cur = await request(`${GMAIL}/drafts/${encodeURIComponent(draftId)}?format=metadata`);
+      await request(`${GMAIL}/drafts/${encodeURIComponent(draftId)}`, { method: "DELETE" });
+      return { deleted: true, subject: header(cur.message || {}, "Subject"), to: header(cur.message || {}, "To") };
     },
 
     // ---------- calendar ----------
