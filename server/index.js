@@ -29,6 +29,11 @@ function memoryStore() {
       if (i === -1) return null;
       return rows.splice(i, 1)[0];
     },
+    kv: (() => { const m = new Map(); return {
+      async get(k) { return m.has(k) ? m.get(k) : null; },
+      async set(k, v) { m.set(k, v); },
+      async claim(k, v) { if (m.get(k) === v) return false; m.set(k, v); return true; },
+    }; })(),
   };
 }
 
@@ -45,6 +50,16 @@ async function postgresStore(url) {
           category TEXT NOT NULL DEFAULT 'general',
           created_at TIMESTAMPTZ NOT NULL DEFAULT now()
         )`);
+      await pool.query("CREATE TABLE IF NOT EXISTS bernud_state (key TEXT PRIMARY KEY, value TEXT, updated_at TIMESTAMPTZ NOT NULL DEFAULT now())");
+    },
+    kv: {
+      async get(k) { const { rows } = await pool.query("SELECT value FROM bernud_state WHERE key = $1", [k]); return rows[0] ? rows[0].value : null; },
+      async set(k, v) { await pool.query("INSERT INTO bernud_state (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()", [k, v]); },
+      // Returns true only for the caller that changed the value (one run per day, even across restarts).
+      async claim(k, v) {
+        const { rows } = await pool.query("INSERT INTO bernud_state (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now() WHERE bernud_state.value IS DISTINCT FROM EXCLUDED.value RETURNING key", [k, v]);
+        return rows.length > 0;
+      },
     },
     async save(text, category) {
       const { rows } = await pool.query(
@@ -67,6 +82,19 @@ async function postgresStore(url) {
 const db = DATABASE_URL ? await postgresStore(DATABASE_URL) : memoryStore();
 const ccp = await import("./ccp.js");
 const DASHBOARD_KEY = process.env.DASHBOARD_KEY || "";
+const devices = await import("./devices.js");
+const { createScheduler } = await import("./scheduler.js");
+const DEVICE_KEY = process.env.DEVICE_KEY || "";
+const NTFY_TOPIC = process.env.NTFY_TOPIC || "";            // notifications to Nicholas's phone
+const PHONE_TOPIC = process.env.PHONE_CMD_TOPIC || "";      // commands to Tasker on the phone
+const PHONE_SECRET = process.env.PHONE_CMD_SECRET || "";
+export const pc = devices.createPcQueue();
+export const notify = (text, opts) => devices.ntfyPublish(NTFY_TOPIC, text, opts);
+export const scheduler = createScheduler({
+  kv: db.kv, ccp, notify,
+  agentId: process.env.AGENT_ID || "agent_0501m5q6cc15eqcrnamk2e1w84xc",
+  config: { time: process.env.BRIEF_TIME, days: process.env.BRIEF_DAYS },
+});
 
 // ---------------------------------------------------------------------------
 // Memory search: simple keyword scoring, good enough for a personal list.
@@ -255,6 +283,22 @@ export async function handle(req, res) {
     }
   }
 
+  // PC helper endpoints (device key, never the agent key).
+  if (path === "/device/pc/poll" || path === "/device/pc/result") {
+    if (!DEVICE_KEY || req.headers["x-device-key"] !== DEVICE_KEY) return send(res, 401, { error: "unauthorised" });
+    try {
+      if (req.method === "GET" && path === "/device/pc/poll") {
+        const cmd = await pc.poll({ host: url.searchParams.get("host") || null, version: url.searchParams.get("v") || null });
+        return send(res, 200, { command: cmd });
+      }
+      if (req.method === "POST" && path === "/device/pc/result") {
+        const body = await readJson(req);
+        return send(res, 200, { accepted: pc.result(String(body.id || ""), body.ok, body.output) });
+      }
+    } catch (err) { return send(res, err.status || 500, { error: err.message }); }
+    return send(res, 404, { error: "not found" });
+  }
+
   if (!API_KEY || req.headers["x-bernud-key"] !== API_KEY) return send(res, 401, { error: "unauthorised" });
 
   try {
@@ -293,6 +337,37 @@ export async function handle(req, res) {
       const items = await headlines(topic, limit);
       if (!items.length) return send(res, 200, { topic, headlines: [], note: "Couldn't fetch headlines right now." });
       return send(res, 200, { topic, headlines: items });
+    }
+
+    // ---------------- Device control ----------------
+    if (req.method === "POST" && path === "/device/pc") {
+      const body = await readJson(req);
+      const action = String(body.action || "").toLowerCase();
+      if (!devices.PC_ACTIONS.includes(action)) return send(res, 200, { ok: false, error: "unknown_action", allowed: devices.PC_ACTIONS });
+      if (action === "status") return send(res, 200, { ok: true, online: pc.online(), last_seen: pc.lastSeen(), helper: pc.info(), note: pc.online() ? undefined : "The PC helper isn't connected. The PC may be off or asleep, or the helper isn't running." });
+      if (!pc.online()) return send(res, 200, { ok: false, error: "pc_offline", message: "Nicholas's PC isn't connected right now. It may be off or asleep, or the Bernud helper isn't running.", last_seen: pc.lastSeen() });
+      return send(res, 200, await pc.send(action, body.target, body.value));
+    }
+    if (req.method === "POST" && path === "/device/phone") {
+      const body = await readJson(req);
+      const action = String(body.action || "").toLowerCase();
+      if (!devices.PHONE_ACTIONS.includes(action)) return send(res, 200, { ok: false, error: "unknown_action", allowed: devices.PHONE_ACTIONS });
+      if (!PHONE_TOPIC || !PHONE_SECRET) return send(res, 200, { ok: false, error: "not_connected", message: "Phone control isn't set up yet." });
+      const arg = [body.target, body.value].filter((x) => x !== undefined && x !== null && String(x) !== "").join(" ");
+      try {
+        await devices.ntfyPublish(PHONE_TOPIC, devices.phoneMessage(PHONE_SECRET, action, arg), { priority: 5 });
+        return send(res, 200, { ok: true, sent: true, note: "Sent to the phone. The phone doesn't report back, so you can't confirm it worked." });
+      } catch (e) { return send(res, 200, { ok: false, error: "send_failed", message: e.message }); }
+    }
+    if (path === "/notify/test" && req.method === "POST") {
+      const body = await readJson(req);
+      await notify(String(body.text || "Test notification from Bernud."), { title: String(body.title || "Bernud"), click: "https://bernud.onrender.com/" });
+      return send(res, 200, { sent: true });
+    }
+    if (path === "/schedule/status") return send(res, 200, await scheduler.status());
+    if (path === "/schedule/brief/run" && req.method === "POST") {
+      const r = scheduler.runBrief("manual test");
+      return send(res, 200, { started: true, note: "Running in the background; check /schedule/status in a couple of minutes." , _p: void r });
     }
 
     // ---------------- CCP Brain (Google Drive, read-only) ----------------
@@ -357,6 +432,7 @@ export async function handle(req, res) {
 
 await db.init();
 if (ccp.configured() && process.env.NODE_ENV !== "test") ccp.startBackgroundIndex();
+if (process.env.NODE_ENV !== "test" && NTFY_TOPIC) scheduler.start();
 
 if (process.env.NODE_ENV !== "test") {
   http.createServer((req, res) => { handle(req, res); }).listen(PORT, () => {

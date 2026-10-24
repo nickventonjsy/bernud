@@ -1,0 +1,8 @@
+{
+  "server": "https://bernud-server.onrender.com",
+  "key": "PUT-DEVICE-KEY-HERE",
+  "allow_powershell": true,
+  "scripts": {
+    "example": "echo Replace this with a command, e.g. cd /d C:\\path\\to\\bot && python main.py"
+  }
+}

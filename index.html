@@ -1157,6 +1157,8 @@
   $("passInput").addEventListener("input", () => { $("passErr").textContent = ""; });
   $("forgetPass").addEventListener("click", () => { store.del(PASS_KEY); loadBrief(); });
   $("newBriefBtn").addEventListener("click", () => { $("briefDrawer").classList.remove("open"); ask("Give me my CCP morning brief."); });
+  // Tapping the 9am phone notification opens /?open=brief straight onto the brief.
+  try { if (new URLSearchParams(location.search).get("open") === "brief") openBrief(); } catch {}
 
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
   setMode("idle", "Tap the core or the microphone to talk.");

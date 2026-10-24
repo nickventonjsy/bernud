@@ -1,0 +1,31 @@
+import assert from "node:assert/strict";
+import http from "node:http";
+process.env.NODE_ENV = "test"; process.env.BERNUD_KEY = "agentkey"; process.env.DEVICE_KEY = "devkey";
+const { handle } = await import("./index.js");
+const srv = http.createServer(handle); await new Promise((r) => srv.listen(0, r));
+const base = `http://127.0.0.1:${srv.address().port}`;
+const j = async (p, o = {}) => { const r = await fetch(base + p, o); return { s: r.status, b: await r.json() }; };
+const A = { "x-bernud-key": "agentkey", "content-type": "application/json" }, D = { "x-device-key": "devkey", "content-type": "application/json" };
+
+assert.equal((await j("/device/pc/poll", { headers: { "x-device-key": "wrong" } })).s, 401);
+assert.equal((await j("/device/pc/poll", { headers: A })).s, 401, "agent key must not work for the helper");
+assert.equal((await j("/device/pc", { method: "POST", headers: D, body: "{}" })).s, 401, "device key must not work for Bernard's endpoint");
+let r = await j("/device/pc", { method: "POST", headers: A, body: JSON.stringify({ action: "open_app", target: "chrome" }) });
+assert.equal(r.b.error, "pc_offline");
+r = await j("/device/pc", { method: "POST", headers: A, body: JSON.stringify({ action: "format_disk" }) });
+assert.equal(r.b.error, "unknown_action");
+// helper online: poll, then Bernard sends, helper answers
+const poll = j("/device/pc/poll?host=samsungbook&v=1", { headers: D });
+await new Promise((x) => setTimeout(x, 50));
+const st = await j("/device/pc", { method: "POST", headers: A, body: JSON.stringify({ action: "status" }) });
+assert.equal(st.b.online, true); assert.equal(st.b.helper.host, "samsungbook");
+const sent = j("/device/pc", { method: "POST", headers: A, body: JSON.stringify({ action: "volume", value: "30" }) });
+const cmd = (await poll).b.command;
+assert.equal(cmd.action, "volume"); assert.equal(cmd.value, "30");
+assert.equal((await j("/device/pc/result", { method: "POST", headers: D, body: JSON.stringify({ id: cmd.id, ok: true, output: "Volume 30%" }) })).b.accepted, true);
+assert.deepEqual((await sent).b, { ok: true, output: "Volume 30%" });
+r = await j("/device/phone", { method: "POST", headers: A, body: JSON.stringify({ action: "ring" }) });
+assert.equal(r.b.error, "not_connected");
+r = await j("/schedule/status", { headers: A });
+assert.match(r.b.schedule, /09:00 Europe\/London/);
+console.log("http device tests passed"); srv.close(); process.exit(0);
