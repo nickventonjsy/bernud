@@ -65,6 +65,8 @@ async function postgresStore(url) {
 }
 
 const db = DATABASE_URL ? await postgresStore(DATABASE_URL) : memoryStore();
+const ccp = await import("./ccp.js");
+const DASHBOARD_KEY = process.env.DASHBOARD_KEY || "";
 
 // ---------------------------------------------------------------------------
 // Memory search: simple keyword scoring, good enough for a personal list.
@@ -224,7 +226,21 @@ export async function handle(req, res) {
   const url = new URL(req.url, "http://x");
   const path = url.pathname.replace(/\/+$/, "") || "/";
 
+  if (req.method === "OPTIONS") {
+    const origin = req.headers.origin;
+    const ok = origin && (PUBLIC_ORIGINS.has(origin) || /^http:\/\/localhost(:\d+)?$/.test(origin));
+    res.writeHead(204, ok ? { "access-control-allow-origin": origin, "access-control-allow-headers": "x-dashboard-key", "access-control-allow-methods": "GET", "access-control-max-age": "600", vary: "origin" } : {});
+    return res.end();
+  }
+
   if (path === "/" || path === "/health") return send(res, 200, { ok: true, service: "bernud", storage: db.kind }, req);
+
+  // Latest written CCP brief for the dashboard (separate passcode, never the agent key).
+  if (req.method === "GET" && path === "/ccp/brief/latest") {
+    if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
+    const b = await ccp.latestBrief();
+    return send(res, 200, b ? { created_at: b.created_at, text: b.text } : { text: null }, req);
+  }
 
   // Headlines are public information, so the dashboard can show them without the secret key.
   if (req.method === "GET" && path === "/public/news") {
@@ -277,6 +293,58 @@ export async function handle(req, res) {
       const items = await headlines(topic, limit);
       if (!items.length) return send(res, 200, { topic, headlines: [], note: "Couldn't fetch headlines right now." });
       return send(res, 200, { topic, headlines: items });
+    }
+
+    // ---------------- CCP Brain (Google Drive, read-only) ----------------
+    if (path.startsWith("/ccp/")) {
+      if (path === "/ccp/status") {
+        return send(res, 200, {
+          configured: ccp.configured(),
+          service_account_email: ccp.serviceEmail(),
+          folder_id: process.env.CCP_FOLDER_ID || null,
+          last_index: ccp.indexState(),
+          documents_indexed: (await ccp.store.allDocs()).length,
+          note: ccp.configured() ? undefined : "Google Drive isn't connected yet: the service account key or folder id is missing.",
+        });
+      }
+      if (!ccp.configured()) return send(res, 200, { error: "not_connected", message: "Bernard can't read the CCP Drive folder yet. The Google service account hasn't been set up." });
+      try {
+        if (req.method === "POST" && path === "/ccp/index") {
+          const body = await readJson(req);
+          return send(res, 200, await ccp.refreshIndex({ force: Boolean(body.force), budgetMs: 120_000 }));
+        }
+        if (req.method === "GET" && path === "/ccp/sources") {
+          if (url.searchParams.get("refresh") === "1") await ccp.refreshIndex();
+          const docs = await ccp.store.allDocs();
+          return send(res, 200, { last_index: ccp.indexState(), count: docs.length, sources: docs.map(ccp.sourceMapEntry), conflicts: ccp.findConflicts(docs) });
+        }
+        if (req.method === "GET" && path === "/ccp/search") {
+          const q = url.searchParams.get("query") || "";
+          if (!q.trim()) return send(res, 400, { error: "query is required" });
+          if (!ccp.indexState()) await ccp.refreshIndex();
+          const results = await ccp.search(q);
+          return send(res, 200, { query: q, results, note: results.length ? undefined : "Nothing in the CCP folder matched that." });
+        }
+        if (req.method === "GET" && path === "/ccp/read") {
+          const doc = url.searchParams.get("doc") || "";
+          if (!doc) return send(res, 400, { error: "doc is required" });
+          if (!ccp.indexState()) await ccp.refreshIndex();
+          const r = await ccp.readDoc(doc, url.searchParams.get("query") || "");
+          return send(res, 200, r || { error: "not_found", message: "No document with that id or name in the CCP folder." });
+        }
+        if (req.method === "GET" && path === "/ccp/brief-context") {
+          return send(res, 200, await ccp.briefContext());
+        }
+        if (req.method === "POST" && path === "/ccp/brief") {
+          const body = await readJson(req);
+          const saved = await ccp.saveBriefText(body.brief_id, body.text);
+          return send(res, saved ? 200 : 400, saved ? { saved: true, id: saved.id } : { error: "text is required" });
+        }
+      } catch (e) {
+        console.error("ccp", e);
+        const msg = e.code === "auth_failed" ? e.message : e.status === 404 ? "The CCP folder wasn't found. Has it been shared with the service account?" : e.status === 403 ? "Google refused access. Check the folder is shared with the service account and the Drive API is enabled." : "Couldn't read the CCP folder right now.";
+        return send(res, 200, { error: "drive_error", message: msg, detail: String(e.message).slice(0, 300) });
+      }
     }
 
     return send(res, 404, { error: "not found" });

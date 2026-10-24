@@ -5,7 +5,17 @@
   "type": "module",
   "description": "Bernud's backend: long-term memory and news headlines for the ElevenLabs agent.",
   "main": "index.js",
-  "engines": { "node": ">=20" },
-  "scripts": { "start": "node index.js", "test": "node test.js" },
-  "dependencies": { "pg": "^8.13.0" }
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "test": "node test.js && node test-ccp.js"
+  },
+  "dependencies": {
+    "pg": "^8.13.0",
+    "pdf-parse": "^1.1.1",
+    "xlsx": "^0.18.5",
+    "mammoth": "^1.8.0"
+  }
 }
