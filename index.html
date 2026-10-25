@@ -1138,6 +1138,7 @@
   //  CONTROLS
   // =====================================================================
   const talkToggle = () => (busy ? endConversation() : startConversation());
+  window.bernudTalk = talkToggle; // used by the Android app's notification button and quick-settings tile
   $("core").addEventListener("click", talkToggle);
   $("core").addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); talkToggle(); } });
   $("micBtn").addEventListener("click", talkToggle);
