@@ -141,6 +141,7 @@ class MainActivity : ComponentActivity() {
         @JavascriptInterface fun conversationStarted() { runOnUiThread { WakeWord.conversationStarted() } }
         @JavascriptInterface fun conversationEnded() { runOnUiThread { WakeWord.conversationEnded() } }
         @JavascriptInterface fun wakeWordStatus(): String = WakeWord.status
+        @JavascriptInterface fun phoneStatus(): String = Bus.phoneStatus?.invoke() ?: "service not running"
         @JavascriptInterface fun setPhoneConfig(topic: String, secret: String) {
             val prefs = getSharedPreferences("bernud", MODE_PRIVATE)
             if (prefs.getString("cmdTopic", null) == topic && prefs.getString("cmdSecret", null) == secret) return

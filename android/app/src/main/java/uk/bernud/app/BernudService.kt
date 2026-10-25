@@ -44,6 +44,7 @@ class BernudService : Service() {
         if (getSharedPreferences("bernud", MODE_PRIVATE).getBoolean("wakeWord", true)) WakeWord.start(this)
         listener = CommandListener(this).also { it.start() }
         Bus.reloadCommands = { listener?.stop(); listener = CommandListener(this).also { it.start() } }
+        Bus.phoneStatus = { listener?.status ?: "not running" }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

@@ -6,4 +6,5 @@ object Bus {
     var wake: (() -> Unit)? = null   // wake word heard: start talking
     var finish: (() -> Unit)? = null
     var reloadCommands: (() -> Unit)? = null
+    var phoneStatus: (() -> String)? = null
 }

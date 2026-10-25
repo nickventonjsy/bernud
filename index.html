@@ -1375,7 +1375,10 @@
     setInterval(() => {
       if (busy || !armed) return;
       const st = appCall("wakeWordStatus") || "unknown";
-      $("subline").textContent = st.startsWith("listening") ? "Say \"Hey Bernard\" when you need me." : "Wake word: " + st;
+      const ph = appCall("phoneStatus") || "unknown";
+      const phoneNote = ph === "connected" ? "" : ph === "not linked" ? (store.get(PASS_KEY) ? " · Phone control: linking…" : " · Phone control: enter your passcode in the CCP brief to link it") : " · Phone control: " + ph;
+      $("subline").textContent = (st.startsWith("listening") ? "Say \"Hey Bernard\" when you need me." : "Wake word: " + st) + phoneNote;
+      if (ph === "not linked" && store.get(PASS_KEY)) syncPhoneLink();
     }, 2000);
   }
 </script>

@@ -9,6 +9,19 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 
+// Tell the server what happened (so problems can be diagnosed remotely).
+fun ackToServer(secret: String, event: String, action: String = "", ok: Boolean = true, detail: String = "") {
+    Thread {
+        try {
+            val c = URL("https://bernud-server.onrender.com/device/phone/ack").openConnection() as HttpURLConnection
+            c.requestMethod = "POST"; c.doOutput = true; c.connectTimeout = 10_000; c.readTimeout = 10_000
+            c.setRequestProperty("content-type", "application/json"); c.setRequestProperty("x-phone-key", secret)
+            c.outputStream.use { it.write(JSONObject().put("event", event).put("action", action).put("ok", ok).put("detail", detail).toString().toByteArray()) }
+            c.responseCode; c.disconnect()
+        } catch (_: Exception) {}
+    }.start()
+}
+
 // Listens on Bernard's private ntfy command topic and runs each command on the phone.
 // The topic and secret come from the server (via the dashboard passcode), never baked into the app.
 class CommandListener(private val ctx: Context) {
@@ -18,6 +31,7 @@ class CommandListener(private val ctx: Context) {
     private var commands: PhoneCommands? = null
     @Volatile var connected = false
         private set
+    val status: String get() = if (!running) "not linked" else if (connected) "connected" else "connecting"
 
     fun start() {
         if (running) return
@@ -25,7 +39,7 @@ class CommandListener(private val ctx: Context) {
         val topic = prefs.getString("cmdTopic", null) ?: return
         val secret = prefs.getString("cmdSecret", null) ?: return
         running = true
-        commands = PhoneCommands(ctx)
+        commands = PhoneCommands(ctx) { action, ok, detail -> ackToServer(secret, "command", action, ok, detail) }
         thread = Thread({ loop(topic, secret) }, "bernud-commands").apply { isDaemon = true; start() }
     }
 
@@ -48,6 +62,7 @@ class CommandListener(private val ctx: Context) {
                     readTimeout = 90_000   // ntfy sends keepalives every ~45s
                 }
                 BufferedReader(InputStreamReader(conn.inputStream)).use { r ->
+                    if (!connected) ackToServer(secret, "connected")
                     connected = true
                     backoff = 2_000L
                     while (running) {
@@ -64,7 +79,7 @@ class CommandListener(private val ctx: Context) {
                     }
                 }
             } catch (e: Exception) {
-                if (running) Log.w(tag, "stream: ${e.message}")
+                if (running) { Log.w(tag, "stream: ${e.message}"); ackToServer(secret, "stream_error", ok = false, detail = e.toString()) }
             } finally {
                 connected = false
                 conn?.disconnect()

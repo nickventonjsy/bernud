@@ -89,6 +89,7 @@ const NTFY_TOPIC = process.env.NTFY_TOPIC || "";            // notifications to 
 const PHONE_TOPIC = process.env.PHONE_CMD_TOPIC || "";      // commands to Tasker on the phone
 const PHONE_SECRET = process.env.PHONE_CMD_SECRET || "";
 export const pc = devices.createPcQueue();
+const phoneAcks = [];
 const { createWeb } = await import("./web.js");
 export const web = createWeb({ apiKey: process.env.TAVILY_API_KEY || "" });
 const { createGmail, SCOPES, CCP_SIGNATURE } = await import("./gmail.js");
@@ -328,6 +329,15 @@ export async function handle(req, res) {
     if (!audio) return send(res, 404, { error: "expired" }, req);
     res.writeHead(200, { "content-type": "audio/mpeg", "content-length": audio.length, "cache-control": "no-store" });
     return res.end(audio);
+  }
+
+  // The app reports back: stream connected, command run / failed. Kept in memory for diagnostics.
+  if (req.method === "POST" && path === "/device/phone/ack") {
+    if (!PHONE_SECRET || req.headers["x-phone-key"] !== PHONE_SECRET) return send(res, 401, { error: "unauthorised" });
+    const b = await readJson(req);
+    phoneAcks.unshift({ at: new Date().toISOString(), event: String(b.event || "").slice(0, 40), action: String(b.action || "").slice(0, 40), ok: b.ok !== false, detail: String(b.detail || "").slice(0, 300) });
+    phoneAcks.length = Math.min(phoneAcks.length, 30);
+    return send(res, 200, { ok: true });
   }
 
   // The Bernard Android app runs phone commands itself: it gets the private command topic via the dashboard passcode.
@@ -586,6 +596,7 @@ export async function handle(req, res) {
       if (!pc.online()) return send(res, 200, { ok: false, error: "pc_offline", message: "Nicholas's PC isn't connected right now. It may be off or asleep, or the Bernud helper isn't running.", last_seen: pc.lastSeen() });
       return send(res, 200, await pc.send(action, body.target, body.value));
     }
+    if (req.method === "GET" && path === "/device/phone/acks") return send(res, 200, { acks: phoneAcks });
     if (req.method === "POST" && path === "/device/phone") {
       const body = await readJson(req);
       const action = String(body.action || "").toLowerCase();

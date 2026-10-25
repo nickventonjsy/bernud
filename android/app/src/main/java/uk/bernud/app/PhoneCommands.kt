@@ -22,7 +22,7 @@ import java.util.Locale
 
 // Runs Bernard's phone commands natively (replaces the Tasker task).
 // Commands arrive as "<secret>|<action>|<arg>" on the private ntfy topic.
-class PhoneCommands(private val ctx: Context) {
+class PhoneCommands(private val ctx: Context, private val report: (String, Boolean, String) -> Unit = { _, _, _ -> }) {
     private val tag = "BernudPhone"
     private val main = Handler(Looper.getMainLooper())
     private val audio = ctx.getSystemService(AudioManager::class.java)
@@ -62,8 +62,10 @@ class PhoneCommands(private val ctx: Context) {
                 "wa_message" -> waMessage(arg)
                 else -> Log.w(tag, "unknown action $action")
             }
+            report(action, true, "")
         } catch (e: Exception) {
             Log.e(tag, "failed $action", e)
+            report(action, false, e.toString())
             say("Sorry, that didn't work on the phone.")
         }
     }
@@ -77,7 +79,7 @@ class PhoneCommands(private val ctx: Context) {
                 setDataSource(url)
                 setOnPreparedListener { it.start() }
                 setOnCompletionListener { it.release(); if (player === it) player = null }
-                setOnErrorListener { mp, _, _ -> mp.release(); if (player === mp) player = null; true }
+                setOnErrorListener { mp, what, extra -> report("speak_playback", false, "MediaPlayer error $what/$extra"); mp.release(); if (player === mp) player = null; true }
                 prepareAsync()
             }
         }
