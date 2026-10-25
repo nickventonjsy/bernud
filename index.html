@@ -531,6 +531,8 @@
   let conversation = null;
   let busy = false;
   let armed = false;           // standby (wake word) is on
+  const APP = window.BernudApp || null;  // inside the Bernard Android app (it runs its own offline wake word)
+  const appCall = (fn, ...a) => { try { if (APP && APP[fn]) return APP[fn](...a); } catch {} };
   let pendingText = null;      // typed message to send once connected
   let lastAgentLine = "";
   let level = 0;               // smoothed audio level 0..1 driving the core
@@ -924,6 +926,7 @@
   async function startConversation(firstText) {
     if (busy) { if (firstText && conversation) sendText(firstText); return; }
     busy = true;
+    appCall("conversationStarted");
     pendingText = firstText || null;
     await stopWakeWord();
     setMode("connecting", "One moment.");
@@ -955,6 +958,7 @@
     } catch (err) {
       console.error(err);
       busy = false; conversation = null;
+      appCall("conversationEnded");
       const msg = String(err && (err.message || err.name || err)).toLowerCase();
       setMode("idle", msg.includes("permission") || msg.includes("notallowed") ? "Microphone blocked. Allow it for this site, then try again." : "Couldn't reach Bernard. Check your connection and try again.");
       if (armed) setTimeout(startWakeWord, 2500);
@@ -992,6 +996,7 @@
 
   function onConversationEnded() {
     clearInterval(micWatch);
+    appCall("conversationEnded");
     conversation = null; busy = false;
     if (armed) { setMode("standby", "Say \"Hey Bernard\" when you need me."); setTimeout(startWakeWord, 800); }
     else setMode("idle", "Tap the core or the microphone to talk.");
@@ -1105,6 +1110,7 @@
 
   async function startWakeWord() {
     if (!armed || busy) return;
+    if (APP) { setMode("standby", "Say \"Hey Bernard\" when you need me."); return; }
     if (hasPico()) {
       try { await loadPicovoice(); await wvp.subscribe(porcupine); setMode("standby", "Say \"Hey Bernard\". Private wake word active."); return; }
       catch (err) { console.error(err); $("diag").textContent = "Picovoice failed: " + String(err.message || err).slice(0, 120); }
@@ -1119,6 +1125,11 @@
   function onWake() { if (navigator.vibrate) navigator.vibrate(60); startConversation(); }
 
   async function toggleStandby() {
+    if (APP) {
+      armed = !armed; appCall("setWakeWord", armed);
+      if (!busy) armed ? setMode("standby", "Say \"Hey Bernard\" when you need me.") : setMode("idle", "Wake word off. Tap the core to talk.");
+      return;
+    }
     if (armed) { armed = false; await stopWakeWord(); if (!busy) setMode("idle", "Standby off. Tap the core to talk."); return; }
     armed = true;
     try {
@@ -1138,7 +1149,8 @@
   //  CONTROLS
   // =====================================================================
   const talkToggle = () => (busy ? endConversation() : startConversation());
-  window.bernudTalk = talkToggle; // used by the Android app's notification button and quick-settings tile
+  window.bernudTalk = talkToggle;
+  window.bernudStart = () => startConversation(); // used by the Android app's notification button and quick-settings tile
   $("core").addEventListener("click", talkToggle);
   $("core").addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); talkToggle(); } });
   $("micBtn").addEventListener("click", talkToggle);
@@ -1318,6 +1330,7 @@
 
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
   setMode("idle", "Tap the core or the microphone to talk.");
+  if (APP) { armed = true; setMode("standby", "Say \"Hey Bernard\" when you need me."); }
 </script>
 </body>
 </html>

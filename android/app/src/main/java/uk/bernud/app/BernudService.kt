@@ -40,6 +40,7 @@ class BernudService : Service() {
         else startForeground(ID, n)
         wakeLock = (getSystemService(Context.POWER_SERVICE) as PowerManager)
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "bernud:listening").apply { setReferenceCounted(false); acquire() }
+        if (getSharedPreferences("bernud", MODE_PRIVATE).getBoolean("wakeWord", true)) WakeWord.start(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -59,6 +60,7 @@ class BernudService : Service() {
     }
 
     override fun onDestroy() {
+        WakeWord.stop()
         wakeLock?.let { if (it.isHeld) it.release() }
         super.onDestroy()
     }
@@ -71,7 +73,7 @@ class BernudService : Service() {
         return Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_notify)
             .setContentTitle("Bernard is ready")
-            .setContentText("Tap Talk to speak to him from any app")
+            .setContentText("Say \"Hey Bernard\", or tap Talk")
             .setContentIntent(open)
             .setOngoing(true)
             .addAction(Notification.Action.Builder(null, "Talk", talk).build())

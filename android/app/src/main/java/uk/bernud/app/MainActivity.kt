@@ -9,6 +9,9 @@ import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.webkit.JavascriptInterface
 import android.webkit.PermissionRequest
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
@@ -86,7 +89,12 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        web.addJavascriptInterface(Bridge(), "BernudApp")
         Bus.talk = { talk() }
+        Bus.wake = {
+            try { getSystemService(Vibrator::class.java)?.vibrate(VibrationEffect.createOneShot(60, VibrationEffect.DEFAULT_AMPLITUDE)) } catch (_: Exception) {}
+            web.evaluateJavascript("window.bernudStart && window.bernudStart()", null)
+        }
         Bus.finish = { finishAndRemoveTask() }
 
         // Back goes back inside Bernard, otherwise hides him (he keeps running) instead of closing.
@@ -118,7 +126,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        if (Bus.talk != null) { Bus.talk = null; Bus.finish = null }
+        Bus.talk = null; Bus.wake = null; Bus.finish = null
         stopService(Intent(this, BernudService::class.java))
         web.destroy()
         super.onDestroy()
@@ -126,6 +134,19 @@ class MainActivity : ComponentActivity() {
 
     private fun talk() {
         web.evaluateJavascript("window.bernudTalk ? (window.bernudTalk(), 'ok') : 'missing'", null)
+    }
+
+    // Lets the dashboard tell the app when a conversation starts and ends (the wake word gives up the mic meanwhile).
+    inner class Bridge {
+        @JavascriptInterface fun conversationStarted() { runOnUiThread { WakeWord.conversationStarted() } }
+        @JavascriptInterface fun conversationEnded() { runOnUiThread { WakeWord.conversationEnded() } }
+        @JavascriptInterface fun wakeWordStatus(): String = WakeWord.status
+        @JavascriptInterface fun setWakeWord(on: Boolean) {
+            runOnUiThread {
+                getSharedPreferences("bernud", MODE_PRIVATE).edit().putBoolean("wakeWord", on).apply()
+                if (on) WakeWord.start(this@MainActivity) else WakeWord.stop()
+            }
+        }
     }
 
     private fun has(p: String) = ContextCompat.checkSelfPermission(this, p) == PackageManager.PERMISSION_GRANTED

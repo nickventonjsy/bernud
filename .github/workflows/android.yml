@@ -15,6 +15,18 @@ jobs:
         with: { distribution: temurin, java-version: "17" }
       - uses: gradle/actions/setup-gradle@v4
         with: { gradle-version: "8.7" }
+      - name: Bundle offline wake-word model
+        run: |
+          curl -sSL -o model.zip https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
+          unzip -q model.zip
+          mkdir -p android/app/src/main/assets
+          rm -rf android/app/src/main/assets/model-en-us
+          mv vosk-model-small-en-us-0.15 android/app/src/main/assets/model-en-us
+          echo "small-en-us-0.15" > android/app/src/main/assets/model-en-us/uuid
+          W=$(find android/app/src/main/assets/model-en-us -name words.txt | head -1)
+          if [ -n "$W" ] && grep -qx bernard "$W"; then echo "VOCAB=bernard is in the model vocabulary" >> $GITHUB_ENV;
+          elif [ -n "$W" ]; then echo "VOCAB=WARNING bernard NOT in vocabulary" >> $GITHUB_ENV;
+          else echo "VOCAB=no words.txt (vocabulary not checked)" >> $GITHUB_ENV; fi
       - name: Build APK
         working-directory: android
         run: gradle --no-daemon assembleRelease
@@ -25,6 +37,6 @@ jobs:
         with:
           tag_name: android-v${{ github.run_number }}
           name: Bernard Android app (build ${{ github.run_number }})
-          body: "Install Bernard.apk on your phone. Open this page on the phone and tap Bernard.apk to download."
+          body: "Install Bernard.apk on your phone. Open this page on the phone and tap Bernard.apk to download. Wake word check: ${{ env.VOCAB }}"
           files: Bernard.apk
           make_latest: true
