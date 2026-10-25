@@ -28,15 +28,17 @@ object WakeWord : RecognitionListener {
     private var loading = false
     private val resumeIfNoConversation = Runnable { if (!inConversation) listen() }
 
-    var status: String = "starting"
-        private set
+    private var state: String = "starting"
+    private var lastHeard: String = ""
+    private var heardCount = 0
+    val status: String get() = if (state == "listening") "listening · heard ${heardCount}x" + (if (lastHeard.isNotEmpty()) " · last: \"$lastHeard\"" else "") else state
 
     fun start(ctx: Context) {
         wanted = true
         if (model != null) { listen(); return }
         if (loading) return
         loading = true
-        status = "loading"
+        state = "loading"
         StorageService.unpack(ctx.applicationContext, "model-en-us", "model",
             { m ->
                 loading = false
@@ -46,7 +48,7 @@ object WakeWord : RecognitionListener {
             },
             { e ->
                 loading = false
-                status = "error: ${e.message}"
+                state = "error: ${e.message}"
                 Log.e(TAG, "model load failed", e)
             })
     }
@@ -54,7 +56,7 @@ object WakeWord : RecognitionListener {
     fun stop() {
         wanted = false
         release()
-        status = "off"
+        state = "off"
     }
 
     // Called from the dashboard (JavaScript bridge).
@@ -76,9 +78,9 @@ object WakeWord : RecognitionListener {
         try {
             r.reset()
             service = SpeechService(r, 16000.0f).also { it.startListening(this) }
-            status = "listening"
+            state = "listening"
         } catch (e: Exception) {
-            status = "mic busy"
+            state = "mic busy"
             Log.e(TAG, "listen failed", e)
             service = null
             main.postDelayed({ listen() }, 5000)
@@ -88,11 +90,12 @@ object WakeWord : RecognitionListener {
     private fun release() {
         service?.let { try { it.stop(); it.shutdown() } catch (_: Exception) {} }
         service = null
-        if (wanted) status = if (inConversation) "paused (talking)" else "paused"
+        if (wanted) state = if (inConversation) "paused (talking)" else "paused"
     }
 
     private fun heard(json: String?, key: String) {
         val text = try { JSONObject(json ?: "{}").optString(key) } catch (_: Exception) { "" }
+        if (text.isNotBlank() && key == "text") { heardCount++; lastHeard = text.take(40) }
         if (!TRIGGER.containsMatchIn(text)) return
         main.post {
             if (inConversation || service == null) return@post
