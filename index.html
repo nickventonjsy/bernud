@@ -961,7 +961,7 @@
       const { Conversation } = await import("https://esm.sh/@elevenlabs/client@1.30.0");
       conversation = await Conversation.startSession({
         agentId: AGENT_ID,
-        dynamicVariables: { greeting: pickGreeting() },
+        overrides: { agent: { firstMessage: pickGreeting() } },
         connectionType: store.get(STORE.conn) === "websocket" ? "websocket" : "webrtc",
         ...(store.get(STORE.mic) ? { inputDeviceId: store.get(STORE.mic) } : {}),
         onConnect: () => {
