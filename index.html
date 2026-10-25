@@ -1330,7 +1330,15 @@
 
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
   setMode("idle", "Tap the core or the microphone to talk.");
-  if (APP) { armed = true; setMode("standby", "Say \"Hey Bernard\" when you need me."); }
+  if (APP) {
+    armed = true; setMode("standby", "Say \"Hey Bernard\" when you need me.");
+    // Show the app's wake-word state while idle, so problems are visible.
+    setInterval(() => {
+      if (busy || !armed) return;
+      const st = appCall("wakeWordStatus") || "unknown";
+      $("subline").textContent = st === "listening" ? "Say \"Hey Bernard\" when you need me. (wake word listening)" : "Wake word: " + st;
+    }, 2000);
+  }
 </script>
 </body>
 </html>

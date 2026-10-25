@@ -27,6 +27,32 @@ jobs:
           if [ -n "$W" ] && grep -qx bernard "$W"; then echo "VOCAB=bernard is in the model vocabulary" >> $GITHUB_ENV;
           elif [ -n "$W" ]; then echo "VOCAB=WARNING bernard NOT in vocabulary" >> $GITHUB_ENV;
           else echo "VOCAB=no words.txt (vocabulary not checked)" >> $GITHUB_ENV; fi
+      - name: Wake-word self-test
+        continue-on-error: true
+        run: |
+          sudo apt-get install -y -qq espeak-ng >/dev/null
+          pip install -q vosk
+          cat > wt.py <<'PY'
+          import json, subprocess, wave, sys
+          from vosk import Model, KaldiRecognizer, SetLogLevel
+          SetLogLevel(-1)
+          m = Model("android/app/src/main/assets/model-en-us")
+          out = []
+          for phrase in ["hey bernard","hey bernie","okay bernard","hey jarvis"]:
+              subprocess.run(["espeak-ng","-v","en-gb","-s","140","-w","p.wav",phrase], check=True)
+              subprocess.run(["ffmpeg","-y","-loglevel","error","-i","p.wav","-ar","16000","-ac","1","p16.wav"], check=True)
+              grammar = json.dumps(["hey bernard","hey bernie","hey barnard","okay bernard","bernard","hey jarvis","hey","okay","[unk]"])
+              r = KaldiRecognizer(m, 16000, grammar)
+              wf = wave.open("p16.wav","rb"); 
+              while True:
+                  d = wf.readframes(4000)
+                  if not d: break
+                  r.AcceptWaveform(d)
+              out.append(f"'{phrase}' heard as '{json.loads(r.FinalResult()).get('text','')}'")
+          print(" ; ".join(out))
+          open(sys.argv[1],"a").write("WAKETEST=" + " ; ".join(out) + "\n")
+          PY
+          python3 wt.py "$GITHUB_ENV" || echo "WAKETEST=self-test failed" >> $GITHUB_ENV
       - name: Build APK
         working-directory: android
         run: gradle --no-daemon assembleRelease
@@ -37,6 +63,6 @@ jobs:
         with:
           tag_name: android-v${{ github.run_number }}
           name: Bernard Android app (build ${{ github.run_number }})
-          body: "Install Bernard.apk on your phone. Open this page on the phone and tap Bernard.apk to download. Wake word check: ${{ env.VOCAB }}"
+          body: "Install Bernard.apk on your phone. Open this page on the phone and tap Bernard.apk to download. Wake word check: ${{ env.VOCAB }}. Self-test: ${{ env.WAKETEST }}"
           files: Bernard.apk
           make_latest: true

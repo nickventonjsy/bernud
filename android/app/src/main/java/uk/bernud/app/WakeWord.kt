@@ -16,7 +16,8 @@ import org.vosk.android.StorageService
 // It releases the mic while a conversation is running, because only one recorder can use it at a time.
 object WakeWord : RecognitionListener {
     private const val TAG = "BernudWake"
-    private val GRAMMAR = """["hey bernard", "hey", "bernard", "hello", "okay", "hey there", "[unk]"]"""
+    private val GRAMMAR = """["hey bernard", "hey bernie", "hey barnard", "hey bernhard", "okay bernard", "bernard", "hey", "hello", "okay", "hey there", "[unk]"]"""
+    private val TRIGGER = Regex("\\b(bernard|bernie|barnard|bernhard)\\b")
     private val main = Handler(Looper.getMainLooper())
 
     private var model: Model? = null
@@ -92,7 +93,7 @@ object WakeWord : RecognitionListener {
 
     private fun heard(json: String?, key: String) {
         val text = try { JSONObject(json ?: "{}").optString(key) } catch (_: Exception) { "" }
-        if (!text.contains("hey bernard")) return
+        if (!TRIGGER.containsMatchIn(text)) return
         main.post {
             if (inConversation || service == null) return@post
             release()
