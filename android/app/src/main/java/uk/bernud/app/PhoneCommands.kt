@@ -196,6 +196,8 @@ class PhoneCommands(private val ctx: Context) {
     }
 
     private fun waCall(name: String, video: Boolean): String {
+        if (ctx.checkSelfPermission(android.Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED)
+            throw Fail("The Bernard app needs the Phone permission to start WhatsApp calls. Open the Bernard app and tap Allow, or turn on Phone in Settings, Apps, Bernard, Permissions.")
         val mime = if (video) "vnd.android.cursor.item/vnd.com.whatsapp.video.call" else "vnd.android.cursor.item/vnd.com.whatsapp.voip.call"
         val id = contactRow(mime, name, ContactsContract.Data._ID) ?: throw Fail("I couldn't find $name in the phone's contacts with WhatsApp. Check how the contact is saved.")
         start(Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse("content://com.android.contacts/data/$id"), mime).setPackage("com.whatsapp"))

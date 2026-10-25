@@ -105,7 +105,7 @@ class MainActivity : ComponentActivity() {
         pendingTalk = intent?.getBooleanExtra(EXTRA_TALK, false) == true
         if (savedInstanceState != null) web.restoreState(savedInstanceState) else web.loadUrl(HOME)
 
-        val needed = mutableListOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.CAMERA, Manifest.permission.READ_CONTACTS)
+        val needed = mutableListOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.CAMERA, Manifest.permission.READ_CONTACTS, Manifest.permission.CALL_PHONE)
         if (Build.VERSION.SDK_INT >= 33) needed += Manifest.permission.POST_NOTIFICATIONS
         val missing = needed.filter { !has(it) }
         if (missing.isEmpty()) { startBackgroundService(); askBatteryOnce() } else askPermissions.launch(missing.toTypedArray())
