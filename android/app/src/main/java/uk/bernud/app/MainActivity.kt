@@ -105,7 +105,7 @@ class MainActivity : ComponentActivity() {
         pendingTalk = intent?.getBooleanExtra(EXTRA_TALK, false) == true
         if (savedInstanceState != null) web.restoreState(savedInstanceState) else web.loadUrl(HOME)
 
-        val needed = mutableListOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.CAMERA)
+        val needed = mutableListOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.CAMERA, Manifest.permission.READ_CONTACTS)
         if (Build.VERSION.SDK_INT >= 33) needed += Manifest.permission.POST_NOTIFICATIONS
         val missing = needed.filter { !has(it) }
         if (missing.isEmpty()) { startBackgroundService(); askBatteryOnce() } else askPermissions.launch(missing.toTypedArray())
@@ -141,6 +141,12 @@ class MainActivity : ComponentActivity() {
         @JavascriptInterface fun conversationStarted() { runOnUiThread { WakeWord.conversationStarted() } }
         @JavascriptInterface fun conversationEnded() { runOnUiThread { WakeWord.conversationEnded() } }
         @JavascriptInterface fun wakeWordStatus(): String = WakeWord.status
+        @JavascriptInterface fun setPhoneConfig(topic: String, secret: String) {
+            val prefs = getSharedPreferences("bernud", MODE_PRIVATE)
+            if (prefs.getString("cmdTopic", null) == topic && prefs.getString("cmdSecret", null) == secret) return
+            prefs.edit().putString("cmdTopic", topic).putString("cmdSecret", secret).apply()
+            runOnUiThread { Bus.reloadCommands?.invoke() }
+        }
         @JavascriptInterface fun setWakeWord(on: Boolean) {
             runOnUiThread {
                 getSharedPreferences("bernud", MODE_PRIVATE).edit().putBoolean("wakeWord", on).apply()
@@ -153,6 +159,37 @@ class MainActivity : ComponentActivity() {
 
     private fun startBackgroundService() {
         try { ContextCompat.startForegroundService(this, Intent(this, BernudService::class.java)) } catch (_: Exception) {}
+    }
+
+    // Phone control needs a few switches Android only lets the user flip in Settings. Ask once each, one at a time.
+    private fun askSpecialPermissions() {
+        val prefs = getSharedPreferences("bernud", MODE_PRIVATE)
+        val nm = getSystemService(android.app.NotificationManager::class.java)
+        val steps = listOf(
+            Triple("askedOverlay", !Settings.canDrawOverlays(this)) {
+                Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
+            } to "Let Bernard open apps for you (WhatsApp calls, websites, apps).\n\nOn the next screen, switch on \"Allow display over other apps\".",
+            Triple("askedDnd", !nm.isNotificationPolicyAccessGranted) {
+                Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
+            } to "Let Bernard switch Do Not Disturb on and off.\n\nOn the next screen, find Bernard and switch it on.",
+            Triple("askedWrite", !Settings.System.canWrite(this)) {
+                Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:$packageName"))
+            } to "Let Bernard change your screen brightness.\n\nOn the next screen, switch on \"Allow modifying system settings\".",
+        )
+        val next = steps.firstOrNull { (t, _) -> t.second && !prefs.getBoolean(t.first, false) } ?: return
+        val (t, message) = next
+        prefs.edit().putBoolean(t.first, true).apply()
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Bernard phone control")
+            .setMessage(message)
+            .setPositiveButton("Allow") { _, _ -> try { startActivity(t.third()) } catch (_: Exception) {} }
+            .setNegativeButton("Not now") { _, _ -> askSpecialPermissions() }
+            .show()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (has(Manifest.permission.RECORD_AUDIO)) web.postDelayed({ askSpecialPermissions() }, 1200)
     }
 
     // Samsung and others kill background apps aggressively: ask once to be left alone.

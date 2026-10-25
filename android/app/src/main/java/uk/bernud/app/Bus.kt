@@ -5,4 +5,5 @@ object Bus {
     var talk: (() -> Unit)? = null   // toggle (notification button, tile)
     var wake: (() -> Unit)? = null   // wake word heard: start talking
     var finish: (() -> Unit)? = null
+    var reloadCommands: (() -> Unit)? = null
 }

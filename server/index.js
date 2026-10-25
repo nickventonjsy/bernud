@@ -330,6 +330,13 @@ export async function handle(req, res) {
     return res.end(audio);
   }
 
+  // The Bernard Android app runs phone commands itself: it gets the private command topic via the dashboard passcode.
+  if (req.method === "GET" && path === "/device/phone/config") {
+    if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
+    if (!PHONE_TOPIC || !PHONE_SECRET) return send(res, 200, { ok: false }, req);
+    return send(res, 200, { ok: true, topic: PHONE_TOPIC, secret: PHONE_SECRET }, req);
+  }
+
   // Latest written CCP brief for the dashboard (separate passcode, never the agent key).
   if (req.method === "GET" && path === "/ccp/brief/latest") {
     if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);

@@ -25,6 +25,7 @@ class BernudService : Service() {
     }
 
     private var wakeLock: PowerManager.WakeLock? = null
+    private var listener: CommandListener? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -41,6 +42,8 @@ class BernudService : Service() {
         wakeLock = (getSystemService(Context.POWER_SERVICE) as PowerManager)
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "bernud:listening").apply { setReferenceCounted(false); acquire() }
         if (getSharedPreferences("bernud", MODE_PRIVATE).getBoolean("wakeWord", true)) WakeWord.start(this)
+        listener = CommandListener(this).also { it.start() }
+        Bus.reloadCommands = { listener?.stop(); listener = CommandListener(this).also { it.start() } }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -61,6 +64,8 @@ class BernudService : Service() {
 
     override fun onDestroy() {
         WakeWord.stop()
+        listener?.stop(); listener = null
+        Bus.reloadCommands = null
         wakeLock?.let { if (it.isHeld) it.release() }
         super.onDestroy()
     }

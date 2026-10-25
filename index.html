@@ -1346,11 +1346,23 @@
   $("passBtn").addEventListener("click", () => {
     const v = $("passInput").value.trim();
     if (!v) { $("passErr").textContent = "Enter the passcode first."; return; }
-    store.set(PASS_KEY, v); $("passInput").value = ""; $("passErr").textContent = ""; loadBrief();
+    store.set(PASS_KEY, v); $("passInput").value = ""; $("passErr").textContent = ""; loadBrief(); syncPhoneLink();
   });
   $("passInput").addEventListener("keydown", (e) => { if (e.key === "Enter") $("passBtn").click(); });
   $("passInput").addEventListener("input", () => { $("passErr").textContent = ""; });
   $("forgetPass").addEventListener("click", () => { store.del(PASS_KEY); loadBrief(); });
+  // Inside the Android app: hand it the private phone-command channel so it can run phone actions itself.
+  async function syncPhoneLink() {
+    if (!APP || !APP.setPhoneConfig) return;
+    const pass = store.get(PASS_KEY);
+    if (!pass) return;
+    try {
+      const r = await fetch(`${SERVER}/device/phone/config`, { headers: { "x-dashboard-key": pass }, cache: "no-store" });
+      const j = await r.json();
+      if (j.ok) appCall("setPhoneConfig", j.topic, j.secret);
+    } catch {}
+  }
+  syncPhoneLink();
   $("newBriefBtn").addEventListener("click", () => { $("briefDrawer").classList.remove("open"); ask("Give me my CCP morning brief."); });
   // Tapping the 9am phone notification opens /?open=brief straight onto the brief.
   try { if (new URLSearchParams(location.search).get("open") === "brief") openBrief(); } catch {}
