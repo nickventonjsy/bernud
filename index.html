@@ -1090,7 +1090,8 @@
   }
 
   const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const WAKE_RE = /\b(hey|hi|hay|a|ok|okay)[\s,.!]*(bernud|bernard|bernards|bernad|bernhard|burnard|burner|bernie|bernoud|bernudd)\b/i;
+  // Same as the phone app: "Hey Bernard", "OK Bernard", or just "Bernard" / "Bernie".
+  const WAKE_RE = /\b(?:(?:hey|hi|hay|a|ok|okay)[\s,.!]*)?(bernud|bernard|bernards|bernad|bernhard|barnard|burnard|bernie|bernoud|bernudd)\b/i;
   let rec = null, recWanted = false, recFailures = 0, useLocalSpeech = false;
 
   async function prepareLocalSpeech() {
@@ -1160,13 +1161,14 @@
       if (!busy) armed ? setMode("standby", "Say \"Hey Bernard\" when you need me.") : setMode("idle", "Wake word off. Tap the core to talk.");
       return;
     }
-    if (armed) { armed = false; await stopWakeWord(); if (!busy) setMode("idle", "Standby off. Tap the core to talk."); return; }
+    if (armed) { armed = false; try { localStorage.setItem("bernud.standby", "0"); } catch {} await stopWakeWord(); if (!busy) setMode("idle", "Standby off. Tap the core to talk."); return; }
     armed = true;
     try {
       const s = await navigator.mediaDevices.getUserMedia({ audio: true });
       s.getTracks().forEach((t) => t.stop());
     } catch { armed = false; setMode("idle", "Microphone blocked. Allow it for this site, then try again."); return; }
     if (!hasPico()) useLocalSpeech = await prepareLocalSpeech();
+    try { localStorage.setItem("bernud.standby", "1"); } catch {}
     keepAwake();
     await startWakeWord();
   }
@@ -1374,6 +1376,8 @@
 
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
   setMode("idle", "Tap the core or the microphone to talk.");
+  // On a PC/browser, switch the wake word back on automatically if it was on last time.
+  if (!APP) { let on = false; try { on = localStorage.getItem("bernud.standby") === "1"; } catch {} if (on) setTimeout(() => { if (!armed && !busy) toggleStandby(); }, 1200); }
   if (APP) {
     armed = true; setMode("standby", "Say \"Hey Bernard\" when you need me.");
     // Show the app's wake-word state while idle, so problems are visible.
