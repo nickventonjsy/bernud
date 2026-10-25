@@ -53,7 +53,7 @@ export function converse(agentId, text, { until, timeoutMs = 240_000, WS = globa
       err ? reject(Object.assign(err, { said })) : resolve(said);
     };
     const timer = setTimeout(() => finish(new Error("timed out waiting for the brief")), timeoutMs);
-    ws.addEventListener("open", () => ws.send(JSON.stringify({ type: "conversation_initiation_client_data", conversation_config_override: { conversation: { text_only: true } } })));
+    ws.addEventListener("open", () => ws.send(JSON.stringify({ type: "conversation_initiation_client_data", conversation_config_override: { conversation: { text_only: true } }, dynamic_variables: { greeting: "Good morning, Nicholas." } })));
     ws.addEventListener("message", (e) => {
       let m; try { m = JSON.parse(typeof e.data === "string" ? e.data : e.data.toString()); } catch { return; }
       if (m.type === "ping") ws.send(JSON.stringify({ type: "pong", event_id: m.ping_event?.event_id }));
