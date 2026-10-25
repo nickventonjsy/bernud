@@ -231,6 +231,12 @@ async function gget(url, as = "json") {
   return as === "json" ? res.json() : as === "text" ? res.text() : Buffer.from(await res.arrayBuffer());
 }
 
+// Who owns the CCP folder, and what the service account may do (used to set up deleting).
+export async function folderInfo(id = FOLDER_ID) {
+  const j = await gget(`${DRIVE}/files/${encodeURIComponent(id)}?fields=${encodeURIComponent("id,name,driveId,owners(emailAddress,displayName),capabilities(canTrash,canEdit)")}&supportsAllDrives=true`);
+  return { id: j.id, name: j.name, shared_drive: Boolean(j.driveId), owners: (j.owners || []).map((o) => o.emailAddress), service_account_can_edit: j.capabilities?.canEdit ?? null };
+}
+
 // ---------------------------------------------------------------------------
 // Drive listing and reading (read-only)
 // ---------------------------------------------------------------------------

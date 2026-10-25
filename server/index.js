@@ -681,6 +681,7 @@ export async function handle(req, res) {
           const r = await ccp.readDoc(doc, url.searchParams.get("query") || "");
           return send(res, 200, r || { error: "not_found", message: "No document with that id or name in the CCP folder." });
         }
+        if (req.method === "GET" && path === "/ccp/folder-info") return send(res, 200, await ccp.folderInfo());
         if (req.method === "GET" && path === "/ccp/brief-context") {
           const prevBrief = await ccp.latestBrief().catch(() => null);
           const ctx = await ccp.briefContext();
