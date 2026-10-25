@@ -31,7 +31,7 @@ jobs:
         continue-on-error: true
         run: |
           sudo apt-get update -qq >/dev/null 2>&1 || true
-          sudo apt-get install -y -qq espeak-ng >/dev/null 2>&1 || echo "WAKETEST=espeak install failed" >> $GITHUB_ENV
+          sudo apt-get install -y -qq espeak-ng ffmpeg >/dev/null 2>&1 || echo "WAKETEST=espeak install failed" >> $GITHUB_ENV
           python3 -m pip install -q --break-system-packages vosk 2>&1 | tail -2 || true
           cat > wt.py <<'PY'
           import json, subprocess, wave, sys, traceback
