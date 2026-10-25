@@ -18,7 +18,7 @@ export function waMessageArg(name, text) {
 
 const PC_ONLINE_MS = 60_000;
 
-export function createPcQueue({ resultTimeoutMs = 25_000, pollTimeoutMs = 25_000 } = {}) {
+export function createPcQueue({ resultTimeoutMs = 25_000, pollTimeoutMs = 25_000, timeoutMessage = "The PC didn't answer in time. It may be asleep or the helper may have stopped." } = {}) {
   const pending = [];          // commands not yet collected by the PC
   const waiters = [];          // open poll requests from the PC
   const results = new Map();   // id -> resolve()
@@ -66,7 +66,7 @@ export function createPcQueue({ resultTimeoutMs = 25_000, pollTimeoutMs = 25_000
           results.delete(cmd.id);
           const i = pending.indexOf(cmd);
           if (i >= 0) pending.splice(i, 1);
-          resolve({ ok: false, error: "timeout", message: "The PC didn't answer in time. It may be asleep or the helper may have stopped." });
+          resolve({ ok: false, error: "timeout", message: timeoutMessage });
         }, resultTimeoutMs);
         results.set(cmd.id, (r) => { clearTimeout(timer); resolve(r); });
         pending.push(cmd);
@@ -82,7 +82,11 @@ export function phoneMessage(secret, action, arg) {
   return `${secret}|${clean(action)}|${clean(arg)}`;
 }
 
-export async function ntfyPublish(topic, body, { title, click, tags, priority, fetchImpl = fetch } = {}) {
+export async function ntfyPublish(topic, body, opts = {}) {
+  try { return await ntfyPublishOnce(topic, body, opts); }
+  catch (e) { await new Promise((r) => setTimeout(r, 1500)); return ntfyPublishOnce(topic, body, opts); } // ntfy.sh has occasional blips
+}
+async function ntfyPublishOnce(topic, body, { title, click, tags, priority, fetchImpl = fetch } = {}) {
   if (!topic) throw new Error("ntfy topic not configured");
   const headers = { "content-type": "text/plain; charset=utf-8" };
   if (title) headers.title = title;

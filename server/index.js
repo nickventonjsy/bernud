@@ -90,6 +90,8 @@ const PHONE_TOPIC = process.env.PHONE_CMD_TOPIC || "";      // commands to Taske
 const PHONE_SECRET = process.env.PHONE_CMD_SECRET || "";
 export const pc = devices.createPcQueue();
 const phoneAcks = [];
+// The Bernard Android app long-polls this queue (like the PC helper) and reports each result.
+export const phone = devices.createPcQueue({ resultTimeoutMs: 12_000, timeoutMessage: "The phone didn't answer in time. The Bernard app may be closed, or the phone may have no signal." });
 const { createWeb } = await import("./web.js");
 export const web = createWeb({ apiKey: process.env.TAVILY_API_KEY || "" });
 const { createGmail, SCOPES, CCP_SIGNATURE } = await import("./gmail.js");
@@ -116,6 +118,7 @@ async function sayOnPhone(text) {
   if (!PHONE_TOPIC || !PHONE_SECRET) throw new Error("phone control not set up");
   let cmd = "say", arg = text;
   if (speech.enabled()) { try { arg = await speech.clip(text); cmd = "speak"; } catch (e) { console.log("phone speech: " + e.message); } }
+  if (phone.online()) { phone.send(cmd, arg); return; }
   await devices.ntfyPublish(PHONE_TOPIC, devices.phoneMessage(PHONE_SECRET, cmd, arg), { priority: 5 });
 }
 const { createHome } = await import("./home.js");
@@ -415,6 +418,14 @@ export async function handle(req, res) {
     return send(res, 404, { error: "not found" });
   }
 
+  // The Bernard app on the phone collects commands here and posts results back.
+  if (path === "/device/phone/poll" || path === "/device/phone/result") {
+    if (!PHONE_SECRET || req.headers["x-phone-key"] !== PHONE_SECRET) return send(res, 401, { error: "unauthorised" });
+    if (req.method === "GET" && path === "/device/phone/poll") return send(res, 200, { command: await phone.poll({ v: url.searchParams.get("v") || null }) });
+    if (req.method === "POST" && path === "/device/phone/result") { const b = await readJson(req); return send(res, 200, { accepted: phone.result(String(b.id || ""), b.ok, b.output) }); }
+    return send(res, 404, { error: "not found" });
+  }
+
   // Phone (Tasker) reports joining / leaving the home Wi-Fi. Uses the phone's own shared secret.
   if (req.method === "POST" && path === "/home/event") {
     if (!PHONE_SECRET || req.headers["x-phone-key"] !== PHONE_SECRET) return send(res, 401, { error: "unauthorised" });
@@ -611,6 +622,10 @@ export async function handle(req, res) {
       if (action === "say" && speech.enabled()) {
         // Speak in Bernard's own voice: the phone downloads and plays the clip. Falls back to the phone's voice.
         try { cmdArg = await speech.clip(arg); cmd = "speak"; } catch (e) { console.log("phone speech: " + e.message); }
+      }
+      if (phone.online()) {
+        const r = await phone.send(cmd, cmdArg);
+        return send(res, 200, r.ok ? { ok: true, done: r.output || "Done on the phone." } : { ok: false, error: r.error || "phone_failed", message: r.message || r.output || "The phone couldn't do that." });
       }
       try {
         await devices.ntfyPublish(PHONE_TOPIC, devices.phoneMessage(PHONE_SECRET, cmd, cmdArg), { priority: 5 });
