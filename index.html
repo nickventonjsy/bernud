@@ -990,6 +990,12 @@
       busy = false; conversation = null;
       appCall("conversationEnded");
       const msg = String(err && (err.message || err.name || err)).toLowerCase();
+      if (msg.includes("quota") || msg.includes("credits")) {
+        // Out of ElevenLabs credits: say so once and stop the wake word retrying in a loop.
+        armed = false; await stopWakeWord();
+        setMode("idle", "Bernard is out of ElevenLabs credits, so he can't talk until they're topped up or renew.");
+        return;
+      }
       setMode("idle", msg.includes("permission") || msg.includes("notallowed") ? "Microphone blocked. Allow it for this site, then try again." : "Couldn't reach Bernard. Check your connection and try again.");
       if (armed) setTimeout(startWakeWord, 2500);
     }
