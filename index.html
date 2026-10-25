@@ -1336,7 +1336,7 @@
     setInterval(() => {
       if (busy || !armed) return;
       const st = appCall("wakeWordStatus") || "unknown";
-      $("subline").textContent = st.startsWith("listening") ? "Say \"Hey Bernard\" when you need me. (wake word " + st + ")" : "Wake word: " + st;
+      $("subline").textContent = st.startsWith("listening") ? "Say \"Hey Bernard\" when you need me." : "Wake word: " + st;
     }, 2000);
   }
 </script>
