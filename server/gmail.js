@@ -8,6 +8,7 @@ export const SCOPES = {
   gmailRead: "https://www.googleapis.com/auth/gmail.readonly",
   gmailCompose: "https://www.googleapis.com/auth/gmail.compose",
   calendar: "https://www.googleapis.com/auth/calendar.events",
+  drive: "https://www.googleapis.com/auth/drive",   // only used to move CCP files to the Bin when Nicholas asks
 };
 const GMAIL = "https://gmail.googleapis.com/gmail/v1/users/me";
 const CAL = "https://www.googleapis.com/calendar/v3";
@@ -129,7 +130,7 @@ export function createGmail({ kv, clientId, clientSecret, redirectUri, account, 
     name, account, scopes,
     configured() { return Boolean(clientId && clientSecret && redirectUri); },
     async connected() { return Boolean(await refreshToken().catch(() => null)); },
-    hasScope, grantedScopes,
+    hasScope, grantedScopes, request,
 
     // A short-lived one-time link Nicholas opens to grant access (no keys in the URL).
     connectLink() {

@@ -98,7 +98,7 @@ const { createGmail, SCOPES, CCP_SIGNATURE } = await import("./gmail.js");
 const { londonToDate } = await import("./reminders.js");
 const PUBLIC_URL = (process.env.PUBLIC_URL || "https://bernud-server.onrender.com").replace(/\/+$/, "");
 const googleBase = { kv: db.kv, clientId: process.env.GOOGLE_OAUTH_CLIENT_ID || "", clientSecret: process.env.GOOGLE_OAUTH_CLIENT_SECRET || "", redirectUri: PUBLIC_URL + "/google/callback", secret: API_KEY };
-export const gmail = createGmail({ ...googleBase, name: "ccp", account: process.env.GMAIL_ADDRESS || "corycarpaints@gmail.com", kvKey: "gmail_refresh_token", scopes: [SCOPES.gmailRead, SCOPES.gmailCompose, SCOPES.calendar], signature: CCP_SIGNATURE });
+export const gmail = createGmail({ ...googleBase, name: "ccp", account: process.env.GMAIL_ADDRESS || "corycarpaints@gmail.com", kvKey: "gmail_refresh_token", scopes: [SCOPES.gmailRead, SCOPES.gmailCompose, SCOPES.calendar, SCOPES.drive], signature: CCP_SIGNATURE });
 export const personalGoogle = createGmail({ ...googleBase, name: "personal", account: process.env.PERSONAL_GOOGLE_ADDRESS || "nickventon@gmail.com", kvKey: "google_personal_refresh_token", scopes: [SCOPES.calendar] });
 const googleAccounts = { ccp: gmail, personal: personalGoogle };
 export const notify = (text, opts) => devices.ntfyPublish(NTFY_TOPIC, text, opts);
@@ -109,6 +109,8 @@ export const smartthings = createSmartThings({ kv: db.kv, clientId: process.env.
 const { createGovee, createLights } = await import("./govee.js");
 export const govee = createGovee({ apiKey: process.env.GOVEE_API_KEY || "" });
 export const lights = createLights({ smartthings, govee });
+const { createCcpDelete } = await import("./ccpdelete.js");
+export const ccpDelete = createCcpDelete({ owner: gmail, rootId: process.env.CCP_FOLDER_ID || "", driveScope: SCOPES.drive, kv: db.kv, onChange: () => ccp.refreshIndex({ force: true }).catch(() => {}) });
 const { createOrders } = await import("./orders.js");
 export const orders = createOrders({ kv: db.kv, gmail, notify });
 const { createSpeech } = await import("./speech.js");
@@ -499,6 +501,10 @@ export async function handle(req, res) {
     // ---------------- Reminders and price alerts ----------------
     if (path === "/reminders" && req.method === "POST") return send(res, 200, await reminders.reminder(await readJson(req)));
     if (path === "/alerts" && req.method === "POST") return send(res, 200, await reminders.alert(await readJson(req)));
+    if (path === "/ccp/delete" && req.method === "POST") {
+      try { return send(res, 200, await ccpDelete.handle(await readJson(req))); }
+      catch (e) { return send(res, 200, { ok: false, error: e.code || "error", message: String(e.message).slice(0, 300), connect_link: e.link }); }
+    }
     if (path === "/home/settings" && req.method === "POST") return send(res, 200, await home.settings(await readJson(req)));
     if (path === "/orders" && req.method === "POST") {
       try { return send(res, 200, await orders.handle(await readJson(req))); }
