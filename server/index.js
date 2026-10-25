@@ -103,6 +103,9 @@ const { createReminders } = await import("./reminders.js");
 export const reminders = createReminders({ kv: db.kv, notify });
 const { createSmartThings } = await import("./smartthings.js");
 export const smartthings = createSmartThings({ kv: db.kv, clientId: process.env.SMARTTHINGS_CLIENT_ID || "", clientSecret: process.env.SMARTTHINGS_CLIENT_SECRET || "", redirectUri: (process.env.PUBLIC_URL || "https://bernud-server.onrender.com").replace(/\/+$/, "") + "/smartthings/callback", secret: API_KEY, notify });
+const { createGovee, createLights } = await import("./govee.js");
+export const govee = createGovee({ apiKey: process.env.GOVEE_API_KEY || "" });
+export const lights = createLights({ smartthings, govee });
 const { createOrders } = await import("./orders.js");
 export const orders = createOrders({ kv: db.kv, gmail, notify });
 const { createSpeech } = await import("./speech.js");
@@ -115,7 +118,7 @@ async function sayOnPhone(text) {
   await devices.ntfyPublish(PHONE_TOPIC, devices.phoneMessage(PHONE_SECRET, cmd, arg), { priority: 5 });
 }
 const { createHome } = await import("./home.js");
-export const home = createHome({ kv: db.kv, smartthings, sayOnPhone, todayEvents: async () => (await calendarForBrief()).events });
+export const home = createHome({ kv: db.kv, smartthings: lights, sayOnPhone, todayEvents: async () => (await calendarForBrief()).events });
 const { createYouTube } = await import("./youtube.js");
 export const youtube = createYouTube({ web, pc, notify, smartthings, zw: { url: (process.env.ZW_URL || "https://zentrawire.onrender.com").replace(/\/+$/, ""), key: process.env.ZW_ASSISTANT_KEY || "" } });
 export const scheduler = createScheduler({
@@ -450,12 +453,12 @@ export async function handle(req, res) {
       return send(res, 200, { link: smartthings.connectLink(), expires_in_minutes: 15 });
     }
     if (path === "/tv") {
-      if (!smartthings.configured() || !(await smartthings.connected())) return send(res, 200, { ok: false, error: "not_connected", message: "SmartThings isn't connected yet, so the TVs can't be controlled." });
+      if (!(await lights.connected())) return send(res, 200, { ok: false, error: "not_connected", message: "SmartThings isn't connected yet, so the TVs and lights can't be controlled." });
       try {
-        if (req.method === "GET") return send(res, 200, { ok: true, devices: await smartthings.list() });
+        if (req.method === "GET") return send(res, 200, { ok: true, devices: await lights.list() });
         const b = await readJson(req);
-        if (b.action === "list") return send(res, 200, { ok: true, devices: await smartthings.list() });
-        return send(res, 200, await smartthings.control({ device: b.device, action: b.action, value: b.value }));
+        if (b.action === "list") return send(res, 200, { ok: true, devices: await lights.list() });
+        return send(res, 200, await lights.control({ device: b.device, action: b.action, value: b.value }));
       } catch (e) { return send(res, 200, { ok: false, error: e.code || "smartthings_error", message: String(e.message).slice(0, 300) }); }
     }
 
