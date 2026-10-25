@@ -103,6 +103,8 @@ const { createReminders } = await import("./reminders.js");
 export const reminders = createReminders({ kv: db.kv, notify });
 const { createSmartThings } = await import("./smartthings.js");
 export const smartthings = createSmartThings({ kv: db.kv, clientId: process.env.SMARTTHINGS_CLIENT_ID || "", clientSecret: process.env.SMARTTHINGS_CLIENT_SECRET || "", redirectUri: (process.env.PUBLIC_URL || "https://bernud-server.onrender.com").replace(/\/+$/, "") + "/smartthings/callback", secret: API_KEY, notify });
+const { createOrders } = await import("./orders.js");
+export const orders = createOrders({ kv: db.kv, gmail, notify });
 const { createSpeech } = await import("./speech.js");
 export const speech = createSpeech({ apiKey: process.env.ELEVENLABS_API_KEY || "", publicUrl: PUBLIC_URL });
 const { createYouTube } = await import("./youtube.js");
@@ -448,6 +450,10 @@ export async function handle(req, res) {
     // ---------------- Reminders and price alerts ----------------
     if (path === "/reminders" && req.method === "POST") return send(res, 200, await reminders.reminder(await readJson(req)));
     if (path === "/alerts" && req.method === "POST") return send(res, 200, await reminders.alert(await readJson(req)));
+    if (path === "/orders" && req.method === "POST") {
+      try { return send(res, 200, await orders.handle(await readJson(req))); }
+      catch (e) { return send(res, 200, { ok: false, error: e.code === "not_connected" ? "The CCP Gmail isn't connected." : e.message }); }
+    }
 
     // ---------------- Web ----------------
     if (path === "/web/search" || path === "/web/read") {
@@ -621,6 +627,7 @@ export async function handle(req, res) {
           const ctx = await ccp.briefContext();
           ctx.email = await emailForBrief(prevBrief && prevBrief.created_at);
           ctx.calendar_today = await calendarForBrief();
+          try { const r = await orders.summary(); if (r.length) ctx.reorder_list = r; } catch {}
           if (ctx.email.connected) ctx.not_connected = (ctx.not_connected || []).filter((x) => x !== "email");
           return send(res, 200, ctx);
         }
@@ -645,7 +652,7 @@ export async function handle(req, res) {
 
 await db.init();
 if (ccp.configured() && process.env.NODE_ENV !== "test") ccp.startBackgroundIndex();
-if (process.env.NODE_ENV !== "test" && NTFY_TOPIC) { scheduler.start(); reminders.start(); }
+if (process.env.NODE_ENV !== "test" && NTFY_TOPIC) { scheduler.start(); reminders.start(); orders.start(); }
 if (process.env.NODE_ENV !== "test") smartthings.startKeepAlive();
 
 if (process.env.NODE_ENV !== "test") {
