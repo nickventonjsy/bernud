@@ -253,7 +253,10 @@
     .quick { gap: 10px; }
     .qbtn { min-width: 0; flex: 1 1 100%; }
     .qbtn .kbd { display: none; }
-    .askrow .tools, .askrow > .sq { display: none; }
+    .askrow { flex-wrap: wrap; }
+    .askrow .tools { display: flex; width: 100%; justify-content: space-between; gap: 8px; }
+    .askrow .tools .sq { flex: 1 1 0; width: auto; height: 48px; }
+    .askrow > .sq { display: none; }
     .ask { min-height: 58px; padding-left: 16px; }
     .ask input { font-size: 17px; letter-spacing: 0.06em; }
     .temp { font-size: 52px; }
