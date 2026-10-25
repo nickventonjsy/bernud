@@ -923,6 +923,32 @@
   // =====================================================================
   //  CONVERSATION
   // =====================================================================
+  // A different opening line each time, so Bernard doesn't sound like a recording.
+  const GREETINGS = {
+    any: [
+      "Yes, Nicholas?", "At your service, Nicholas.", "Nicholas. What can I do for you?", "I'm listening.",
+      "You rang, sir?", "Go ahead, Nicholas.", "Bernud here. What do you need?", "Right here, Nicholas.",
+      "What's on your mind?", "How can I help?", "Ready when you are.", "Nicholas. Fire away.",
+      "All ears, Nicholas.", "Reporting for duty.", "What are we doing, Nicholas?", "Mm? What can I do?",
+      "Standing by. What's the plan?", "Your wish, my command. Within reason.", "Yes, sir. What'll it be?",
+      "Hello again, Nicholas.", "Talk to me.", "I'm here. Go on.",
+    ],
+    morning: ["Morning, Nicholas. What's first?", "Good morning. Coffee first, or straight to business?", "Morning. How can I help?", "Good morning, Nicholas. What do you need?"],
+    afternoon: ["Afternoon, Nicholas. What can I do?", "Good afternoon. What's next?", "Afternoon. Go ahead."],
+    evening: ["Evening, Nicholas. What can I do for you?", "Good evening. What do you need?", "Evening. Still at it, are we?"],
+    late: ["Burning the midnight oil, Nicholas?", "Still up? What can I do?", "Late one tonight. How can I help?"],
+  };
+  function pickGreeting() {
+    const h = new Date().getHours();
+    const part = h < 5 ? "late" : h < 12 ? "morning" : h < 18 ? "afternoon" : h < 23 ? "evening" : "late";
+    const pool = Math.random() < 0.35 ? GREETINGS[part] : GREETINGS.any;
+    let last = []; try { last = JSON.parse(localStorage.getItem("bernud.lastGreetings") || "[]"); } catch {}
+    const fresh = pool.filter((g) => !last.includes(g));
+    const g = (fresh.length ? fresh : pool)[Math.floor(Math.random() * (fresh.length || pool.length))];
+    try { localStorage.setItem("bernud.lastGreetings", JSON.stringify([g, ...last].slice(0, 8))); } catch {}
+    return g;
+  }
+
   async function startConversation(firstText) {
     if (busy) { if (firstText && conversation) sendText(firstText); return; }
     busy = true;
@@ -935,6 +961,7 @@
       const { Conversation } = await import("https://esm.sh/@elevenlabs/client@1.30.0");
       conversation = await Conversation.startSession({
         agentId: AGENT_ID,
+        dynamicVariables: { greeting: pickGreeting() },
         connectionType: store.get(STORE.conn) === "websocket" ? "websocket" : "webrtc",
         ...(store.get(STORE.mic) ? { inputDeviceId: store.get(STORE.mic) } : {}),
         onConnect: () => {
