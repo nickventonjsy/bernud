@@ -30,11 +30,15 @@ jobs:
       - name: Wake-word self-test
         continue-on-error: true
         run: |
-          sudo apt-get install -y -qq espeak-ng >/dev/null
-          pip install -q vosk
+          sudo apt-get update -qq >/dev/null 2>&1 || true
+          sudo apt-get install -y -qq espeak-ng >/dev/null 2>&1 || echo "WAKETEST=espeak install failed" >> $GITHUB_ENV
+          python3 -m pip install -q --break-system-packages vosk 2>&1 | tail -2 || true
           cat > wt.py <<'PY'
-          import json, subprocess, wave, sys
-          from vosk import Model, KaldiRecognizer, SetLogLevel
+          import json, subprocess, wave, sys, traceback
+          try:
+            from vosk import Model, KaldiRecognizer, SetLogLevel
+          except Exception as e:
+            open(sys.argv[1],"a").write("WAKETEST=vosk import failed: " + str(e)[:150].replace("\n"," ") + "\n"); sys.exit(0)
           SetLogLevel(-1)
           m = Model("android/app/src/main/assets/model-en-us")
           out = []
@@ -52,7 +56,7 @@ jobs:
           print(" ; ".join(out))
           open(sys.argv[1],"a").write("WAKETEST=" + " ; ".join(out) + "\n")
           PY
-          python3 wt.py "$GITHUB_ENV" || echo "WAKETEST=self-test failed" >> $GITHUB_ENV
+          python3 wt.py "$GITHUB_ENV" 2> wt.err || echo "WAKETEST=self-test failed: $(tail -c 200 wt.err | tr '\n' ' ')" >> $GITHUB_ENV
       - name: Build APK
         working-directory: android
         run: gradle --no-daemon assembleRelease
