@@ -584,7 +584,11 @@ export async function handle(req, res) {
       const action = String(body.action || "").toLowerCase();
       if (!devices.PHONE_ACTIONS.includes(action)) return send(res, 200, { ok: false, error: "unknown_action", allowed: devices.PHONE_ACTIONS });
       if (!PHONE_TOPIC || !PHONE_SECRET) return send(res, 200, { ok: false, error: "not_connected", message: "Phone control isn't set up yet." });
-      const arg = [body.target, body.value].filter((x) => x !== undefined && x !== null && String(x) !== "").join(" ");
+      let arg = [body.target, body.value].filter((x) => x !== undefined && x !== null && String(x) !== "").join(" ");
+      try {
+        if (action === "wa_message") arg = devices.waMessageArg(body.target, body.value);
+        if (action === "wa_call" || action === "wa_video") { arg = devices.cleanContactName(body.target); if (!arg) throw new Error("Who should I call?"); }
+      } catch (e) { return send(res, 200, { ok: false, error: "bad_request", message: e.message }); }
       let cmd = action, cmdArg = arg;
       if (action === "say" && speech.enabled()) {
         // Speak in Bernard's own voice: the phone downloads and plays the clip. Falls back to the phone's voice.

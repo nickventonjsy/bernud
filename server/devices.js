@@ -4,7 +4,17 @@
 import { randomUUID } from "node:crypto";
 
 export const PC_ACTIONS = ["status", "open_app", "close_app", "open_url", "media", "volume", "power", "run_script", "list_scripts", "list_windows", "type_text", "say", "powershell", "system_info"];
-export const PHONE_ACTIONS = ["ring", "stop_ring", "torch", "volume", "media", "dnd", "open_url", "open_app", "wifi", "bluetooth", "brightness", "say"];
+export const PHONE_ACTIONS = ["ring", "stop_ring", "torch", "volume", "media", "dnd", "open_url", "open_app", "wifi", "bluetooth", "brightness", "say", "wa_message", "wa_call", "wa_video"];
+
+export const cleanContactName = (name) => String(name || "").replace(/['"]/g, "_").replace(/[|:\r\n%]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 60);
+// WhatsApp message for Tasker: "<contact name>::<url-encoded text>" (Tasker splits on "::" and builds a wa.me link).
+export function waMessageArg(name, text) {
+  const n = cleanContactName(name);
+  if (!n) throw new Error("Who should the message go to?");
+  const t = String(text || "").trim().slice(0, 1000);
+  if (!t) throw new Error("What should the message say?");
+  return `${n}::${encodeURIComponent(t)}`;
+}
 
 const PC_ONLINE_MS = 60_000;
 
@@ -68,7 +78,7 @@ export function createPcQueue({ resultTimeoutMs = 25_000, pollTimeoutMs = 25_000
 
 // Phone commands: "<secret>|<action>|<arg>" so Tasker can split on "|".
 export function phoneMessage(secret, action, arg) {
-  const clean = (s) => String(s ?? "").replace(/[|\r\n]+/g, " ").trim().slice(0, 300);
+  const clean = (s) => String(s ?? "").replace(/[|\r\n]+/g, " ").trim().slice(0, 3200);
   return `${secret}|${clean(action)}|${clean(arg)}`;
 }
 
