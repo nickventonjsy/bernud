@@ -107,6 +107,15 @@ const { createOrders } = await import("./orders.js");
 export const orders = createOrders({ kv: db.kv, gmail, notify });
 const { createSpeech } = await import("./speech.js");
 export const speech = createSpeech({ apiKey: process.env.ELEVENLABS_API_KEY || "", publicUrl: PUBLIC_URL });
+// Speak on the phone in Bernard's own voice (falls back to the phone's voice).
+async function sayOnPhone(text) {
+  if (!PHONE_TOPIC || !PHONE_SECRET) throw new Error("phone control not set up");
+  let cmd = "say", arg = text;
+  if (speech.enabled()) { try { arg = await speech.clip(text); cmd = "speak"; } catch (e) { console.log("phone speech: " + e.message); } }
+  await devices.ntfyPublish(PHONE_TOPIC, devices.phoneMessage(PHONE_SECRET, cmd, arg), { priority: 5 });
+}
+const { createHome } = await import("./home.js");
+export const home = createHome({ kv: db.kv, smartthings, sayOnPhone, todayEvents: async () => (await calendarForBrief()).events });
 const { createYouTube } = await import("./youtube.js");
 export const youtube = createYouTube({ web, pc, notify, smartthings, zw: { url: (process.env.ZW_URL || "https://zentrawire.onrender.com").replace(/\/+$/, ""), key: process.env.ZW_ASSISTANT_KEY || "" } });
 export const scheduler = createScheduler({
@@ -386,6 +395,15 @@ export async function handle(req, res) {
     return send(res, 404, { error: "not found" });
   }
 
+  // Phone (Tasker) reports joining / leaving the home Wi-Fi. Uses the phone's own shared secret.
+  if (req.method === "POST" && path === "/home/event") {
+    if (!PHONE_SECRET || req.headers["x-phone-key"] !== PHONE_SECRET) return send(res, 401, { error: "unauthorised" });
+    const ev = String(url.searchParams.get("e") || "");
+    if (ev === "arrive") return send(res, 200, await home.arrive());
+    if (ev === "leave") return send(res, 200, await home.leave());
+    return send(res, 400, { error: "e must be arrive or leave" });
+  }
+
   if (!API_KEY || req.headers["x-bernud-key"] !== API_KEY) return send(res, 401, { error: "unauthorised" });
 
   try {
@@ -450,6 +468,7 @@ export async function handle(req, res) {
     // ---------------- Reminders and price alerts ----------------
     if (path === "/reminders" && req.method === "POST") return send(res, 200, await reminders.reminder(await readJson(req)));
     if (path === "/alerts" && req.method === "POST") return send(res, 200, await reminders.alert(await readJson(req)));
+    if (path === "/home/settings" && req.method === "POST") return send(res, 200, await home.settings(await readJson(req)));
     if (path === "/orders" && req.method === "POST") {
       try { return send(res, 200, await orders.handle(await readJson(req))); }
       catch (e) { return send(res, 200, { ok: false, error: e.code === "not_connected" ? "The CCP Gmail isn't connected." : e.message }); }
