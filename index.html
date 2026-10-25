@@ -1180,7 +1180,9 @@
   // =====================================================================
   const talkToggle = () => (busy ? endConversation() : startConversation());
   window.bernudTalk = talkToggle;
-  window.bernudStart = () => startConversation(); // used by the Android app's notification button and quick-settings tile
+  window.bernudStart = () => startConversation();
+  // Ends the conversation after Bernard has had ~1.5s to say a short line (used before a WhatsApp call starts).
+  window.bernudEnd = () => setTimeout(() => { if (busy) endConversation(); }, 1500); // used by the Android app's notification button and quick-settings tile
   $("core").addEventListener("click", talkToggle);
   $("core").addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); talkToggle(); } });
   $("micBtn").addEventListener("click", talkToggle);

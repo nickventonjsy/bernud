@@ -7,4 +7,5 @@ object Bus {
     var finish: (() -> Unit)? = null
     var reloadCommands: (() -> Unit)? = null
     var phoneStatus: (() -> String)? = null
+    var endTalk: (() -> Unit)? = null   // end Bernard's conversation (frees mic and speaker)
 }

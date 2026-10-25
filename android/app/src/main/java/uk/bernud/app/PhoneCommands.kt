@@ -200,8 +200,13 @@ class PhoneCommands(private val ctx: Context) {
             throw Fail("The Bernard app needs the Phone permission to start WhatsApp calls. Open the Bernard app and tap Allow, or turn on Phone in Settings, Apps, Bernard, Permissions.")
         val mime = if (video) "vnd.android.cursor.item/vnd.com.whatsapp.video.call" else "vnd.android.cursor.item/vnd.com.whatsapp.voip.call"
         val id = contactRow(mime, name, ContactsContract.Data._ID) ?: throw Fail("I couldn't find $name in the phone's contacts with WhatsApp. Check how the contact is saved.")
-        start(Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse("content://com.android.contacts/data/$id"), mime).setPackage("com.whatsapp"))
-        return "WhatsApp ${if (video) "video" else "voice"} call to $name started."
+        if (!Settings.canDrawOverlays(ctx)) throw Fail("The Bernard app needs 'Display over other apps' switched on to open apps and calls. It's in Settings, Apps, Bernard.")
+        val intent = Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse("content://com.android.contacts/data/$id"), mime).setPackage("com.whatsapp")
+        // Bernard's own conversation holds the mic and speaker: end it and free the mic before the call starts,
+        // otherwise WhatsApp connects with no sound.
+        main.post { WakeWord.holdForCall(); Bus.endTalk?.invoke() }
+        main.postDelayed({ try { start(intent) } catch (e: Exception) { Log.e(tag, "call start failed", e) } }, 2500)
+        return "Starting the WhatsApp ${if (video) "video" else "voice"} call to $name in two seconds. Our conversation ends now so the call gets the microphone: just say a very short goodbye like 'Calling $name now.'"
     }
 
     private fun waMessage(arg: String): String {

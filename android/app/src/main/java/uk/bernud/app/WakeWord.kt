@@ -1,6 +1,7 @@
 package uk.bernud.app
 
 import android.content.Context
+import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -33,8 +34,38 @@ object WakeWord : RecognitionListener {
     private var heardCount = 0
     val status: String get() = if (state == "listening") "listening · heard ${heardCount}x" + (if (lastHeard.isNotEmpty()) " · last: \"$lastHeard\"" else "") else state
 
+    private var audio: AudioManager? = null
+    private var holdUntil = 0L   // keep quiet until then (a call is being started)
+
+    // Another app is on a call (phone, WhatsApp...) when the audio mode says so and we're not talking ourselves.
+    private fun callInProgress(): Boolean {
+        val m = audio?.mode ?: return false
+        return !inConversation && (m == AudioManager.MODE_IN_CALL || m == AudioManager.MODE_IN_COMMUNICATION || m == AudioManager.MODE_RINGTONE || m == AudioManager.MODE_CALL_SCREENING)
+    }
+
+    // Checks every few seconds: gives the mic up the moment a call starts, takes it back after it ends.
+    private val callWatch = object : Runnable {
+        override fun run() {
+            if (!wanted) return
+            val busy = callInProgress() || System.currentTimeMillis() < holdUntil
+            if (busy && service != null) { release(); state = "paused (call in progress)" }
+            else if (!busy && service == null && !inConversation && !loading && recognizer != null) listen()
+            main.postDelayed(this, 3000)
+        }
+    }
+
+    // Called just before Bernard starts a WhatsApp call: release the mic and stay quiet for a while.
+    fun holdForCall(ms: Long = 20_000) {
+        holdUntil = System.currentTimeMillis() + ms
+        release()
+        state = "paused (call in progress)"
+    }
+
     fun start(ctx: Context) {
         wanted = true
+        audio = ctx.applicationContext.getSystemService(AudioManager::class.java)
+        main.removeCallbacks(callWatch)
+        main.postDelayed(callWatch, 3000)
         if (model != null) { listen(); return }
         if (loading) return
         loading = true
@@ -55,6 +86,7 @@ object WakeWord : RecognitionListener {
 
     fun stop() {
         wanted = false
+        main.removeCallbacks(callWatch)
         release()
         state = "off"
     }
@@ -75,6 +107,7 @@ object WakeWord : RecognitionListener {
     private fun listen() {
         val r = recognizer ?: return
         if (!wanted || inConversation || service != null) return
+        if (callInProgress() || System.currentTimeMillis() < holdUntil) { state = "paused (call in progress)"; return }
         try {
             r.reset()
             service = SpeechService(r, 16000.0f).also { it.startListening(this) }

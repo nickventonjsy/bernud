@@ -96,6 +96,7 @@ class MainActivity : ComponentActivity() {
             web.evaluateJavascript("window.bernudStart && window.bernudStart()", null)
         }
         Bus.finish = { finishAndRemoveTask() }
+        Bus.endTalk = { web.evaluateJavascript("window.bernudEnd && window.bernudEnd()", null) }
 
         // Back goes back inside Bernard, otherwise hides him (he keeps running) instead of closing.
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
@@ -126,7 +127,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        Bus.talk = null; Bus.wake = null; Bus.finish = null
+        Bus.talk = null; Bus.wake = null; Bus.finish = null; Bus.endTalk = null
         stopService(Intent(this, BernudService::class.java))
         web.destroy()
         super.onDestroy()
