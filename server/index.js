@@ -103,6 +103,8 @@ const { createReminders } = await import("./reminders.js");
 export const reminders = createReminders({ kv: db.kv, notify });
 const { createSmartThings } = await import("./smartthings.js");
 export const smartthings = createSmartThings({ kv: db.kv, clientId: process.env.SMARTTHINGS_CLIENT_ID || "", clientSecret: process.env.SMARTTHINGS_CLIENT_SECRET || "", redirectUri: (process.env.PUBLIC_URL || "https://bernud-server.onrender.com").replace(/\/+$/, "") + "/smartthings/callback", secret: API_KEY, notify });
+const { createSpeech } = await import("./speech.js");
+export const speech = createSpeech({ apiKey: process.env.ELEVENLABS_API_KEY || "", publicUrl: PUBLIC_URL });
 const { createYouTube } = await import("./youtube.js");
 export const youtube = createYouTube({ web, pc, notify, smartthings, zw: { url: (process.env.ZW_URL || "https://zentrawire.onrender.com").replace(/\/+$/, ""), key: process.env.ZW_ASSISTANT_KEY || "" } });
 export const scheduler = createScheduler({
@@ -304,6 +306,15 @@ export async function handle(req, res) {
   }
 
   if (path === "/" || path === "/health") return send(res, 200, { ok: true, service: "bernud", storage: db.kind }, req);
+
+  // Short-lived spoken clips in Bernard's voice, fetched by Tasker on the phone (unguessable id, 10-minute life).
+  const audioMatch = req.method === "GET" && path.match(/^\/phone\/audio\/([a-f0-9]{32})\.mp3$/);
+  if (audioMatch) {
+    const audio = speech.get(audioMatch[1]);
+    if (!audio) return send(res, 404, { error: "expired" }, req);
+    res.writeHead(200, { "content-type": "audio/mpeg", "content-length": audio.length, "cache-control": "no-store" });
+    return res.end(audio);
+  }
 
   // Latest written CCP brief for the dashboard (separate passcode, never the agent key).
   if (req.method === "GET" && path === "/ccp/brief/latest") {
@@ -546,8 +557,13 @@ export async function handle(req, res) {
       if (!devices.PHONE_ACTIONS.includes(action)) return send(res, 200, { ok: false, error: "unknown_action", allowed: devices.PHONE_ACTIONS });
       if (!PHONE_TOPIC || !PHONE_SECRET) return send(res, 200, { ok: false, error: "not_connected", message: "Phone control isn't set up yet." });
       const arg = [body.target, body.value].filter((x) => x !== undefined && x !== null && String(x) !== "").join(" ");
+      let cmd = action, cmdArg = arg;
+      if (action === "say" && speech.enabled()) {
+        // Speak in Bernard's own voice: the phone downloads and plays the clip. Falls back to the phone's voice.
+        try { cmdArg = await speech.clip(arg); cmd = "speak"; } catch (e) { console.log("phone speech: " + e.message); }
+      }
       try {
-        await devices.ntfyPublish(PHONE_TOPIC, devices.phoneMessage(PHONE_SECRET, action, arg), { priority: 5 });
+        await devices.ntfyPublish(PHONE_TOPIC, devices.phoneMessage(PHONE_SECRET, cmd, cmdArg), { priority: 5 });
         return send(res, 200, { ok: true, sent: true, note: "Sent to the phone. The phone doesn't report back, so you can't confirm it worked." });
       } catch (e) { return send(res, 200, { ok: false, error: "send_failed", message: e.message }); }
     }

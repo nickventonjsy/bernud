@@ -1,0 +1,15 @@
+import assert from "node:assert/strict";
+import { createSpeech } from "./speech.js";
+const calls = [];
+const fake = async (url, opts) => { calls.push(JSON.parse(opts.body).model_id); const ok = calls.length > 1; return { ok, status: ok ? 200 : 400, text: async () => "bad model", arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer }; };
+let t = 0;
+const s = createSpeech({ apiKey: "k", publicUrl: "https://x", fetchImpl: fake, now: () => t });
+const url = await s.clip("Hello Nicholas");
+assert.match(url, /^https:\/\/x\/phone\/audio\/[a-f0-9]{32}\.mp3$/);
+assert.deepEqual(calls, ["eleven_v4_turbo", "eleven_turbo_v2_5"]);
+const id = url.match(/([a-f0-9]{32})/)[1];
+assert.equal(s.get(id).length, 3);
+t = 11 * 60_000; assert.equal(s.get(id), null);
+assert.equal(createSpeech({ apiKey: "", publicUrl: "" }).enabled(), false);
+await assert.rejects(createSpeech({ apiKey: "k", publicUrl: "", fetchImpl: async () => ({ ok: false, status: 401, text: async () => "no" }) }).clip("hi"), /401/);
+console.log("speech tests passed");
