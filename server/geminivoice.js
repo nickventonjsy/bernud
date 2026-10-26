@@ -49,8 +49,8 @@ export function createGeminiVoice({ apiKey, models = ["gemini-3.8-flash-tts", "g
       if (!r.ok) throw new Error(j.error?.message || `voices ${r.status}`);
       british = (j.voices || []).filter((v) => v.id).map((v) => ({
         id: v.id, name: v.display_name || v.displayName || v.id,
-        description: [v.gender, v.accent, v.pitch, v.description].filter(Boolean).join(", ").slice(0, 140), source: "british",
-      }));
+        gender: v.gender || "", description: [v.gender, v.accent, v.pitch && `${v.pitch} voice`].filter(Boolean).join(", ").slice(0, 80), source: "british",
+      })).sort((a, b) => (a.gender === "male" ? 0 : 1) - (b.gender === "male" ? 0 : 1) || a.description.localeCompare(b.description));
     } catch (e) { log.error?.("gemini voices", e.message); }
     library = [...british, ...PREBUILT]; libraryAt = Date.now();
     if (!british.length) libraryAt = Date.now() - 23 * 3600_000; // retry the British list within the hour
