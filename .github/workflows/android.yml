@@ -29,6 +29,7 @@ jobs:
           else echo "VOCAB=no words.txt (vocabulary not checked)" >> $GITHUB_ENV; fi
       - name: Wake-word self-test
         continue-on-error: true
+        timeout-minutes: 4
         run: |
           sudo apt-get update -qq >/dev/null 2>&1 || true
           sudo apt-get install -y -qq espeak-ng ffmpeg >/dev/null 2>&1 || echo "WAKETEST=espeak install failed" >> $GITHUB_ENV
