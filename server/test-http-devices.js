@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import http from "node:http";
-process.env.NODE_ENV = "test"; process.env.BERNUD_KEY = "agentkey"; process.env.DEVICE_KEY = "devkey";
+process.env.NODE_ENV = "test"; process.env.BERNUD_KEY = "agentkey"; process.env.DEVICE_KEY = "devkey"; process.env.DASHBOARD_KEY = "dash";
 const { handle } = await import("./index.js");
 const srv = http.createServer(handle); await new Promise((r) => srv.listen(0, r));
 const base = `http://127.0.0.1:${srv.address().port}`;
@@ -28,4 +28,23 @@ r = await j("/device/phone", { method: "POST", headers: A, body: JSON.stringify(
 assert.equal(r.b.error, "not_connected");
 r = await j("/schedule/status", { headers: A });
 assert.match(r.b.schedule, /09:00 Europe\/London/);
+// Work laptop: its own key, its own queue, restricted helper; set-up line behind the dashboard passcode.
+const { createHmac } = await import("node:crypto");
+const WK = createHmac("sha256", "work-laptop:devkey").update("v1").digest("hex").slice(0, 32);
+const W = { "x-device-key": WK, "content-type": "application/json" };
+r = await j("/device/pc/work-setup", { headers: { "x-dashboard-key": "dash" } });
+assert.equal(r.b.ok, true); assert.ok(r.b.command.includes(WK) && r.b.command.includes("setup-work.ps1"));
+assert.equal((await j("/device/pc/work-setup", { headers: A })).s, 401);
+r = await j("/ccp/document", { method: "POST", headers: A, body: JSON.stringify({ action: "printers", device: "work" }) });
+assert.equal(r.b.error, "offline");
+const wpoll = j("/device/pc/poll?host=WORKLAPTOP&v=1.1&role=work", { headers: W });
+await new Promise((x) => setTimeout(x, 50));
+r = await j("/device/pc", { method: "POST", headers: A, body: JSON.stringify({ action: "status", device: "work laptop" }) });
+assert.equal(r.b.online, true); assert.equal(r.b.device, "work laptop"); assert.equal(r.b.helper.host, "WORKLAPTOP");
+const pr = j("/ccp/document", { method: "POST", headers: A, body: JSON.stringify({ action: "printers" }) });
+const wcmd = (await wpoll).b.command;
+assert.equal(wcmd.action, "list_printers");
+assert.equal((await j("/device/pc/result", { method: "POST", headers: W, body: JSON.stringify({ id: wcmd.id, ok: true, output: "HP LaserJet (default)" }) })).b.accepted, true);
+assert.deepEqual((await pr).b, { device: "work laptop", ok: true, output: "HP LaserJet (default)" });
+assert.equal((await j("/files/0123456789abcdef0123456789abcdef.pdf")).s, 404);
 console.log("http device tests passed"); srv.close(); process.exit(0);

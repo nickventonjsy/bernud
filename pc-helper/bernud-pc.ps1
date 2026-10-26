@@ -4,13 +4,16 @@
 # Log: %LOCALAPPDATA%\Bernud\bernud-pc.log    Stop it: run uninstall.cmd, or end "powershell" in Task Manager.
 
 $ErrorActionPreference = 'Stop'
-$Version = '1.0'
+$Version = '1.1'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 $Dir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Config = Get-Content (Join-Path $Dir 'config.json') -Raw | ConvertFrom-Json
 $Server = ($Config.server).TrimEnd('/')
 $Headers = @{ 'x-device-key' = $Config.key }
+# "home" (full control) or "work" (printing, opening documents and status only).
+$Role = if ($Config.role) { [string]$Config.role } else { 'home' }
+$WorkActions = @('print', 'list_printers', 'open_url', 'system_info', 'status')
 $LogFile = Join-Path $Dir 'bernud-pc.log'
 
 # Only one copy at a time.
@@ -186,9 +189,55 @@ function List-Windows {
   if ($w) { return ($w -join "`n") } else { return 'No open windows.' }
 }
 
+# ---------------- Printing (CCP documents from Bernud's server) ----------------
+function Find-Sumatra {
+  $paths = @("$env:LOCALAPPDATA\SumatraPDF\SumatraPDF.exe", "$env:ProgramFiles\SumatraPDF\SumatraPDF.exe", "${env:ProgramFiles(x86)}\SumatraPDF\SumatraPDF.exe")
+  foreach ($p in $paths) { if ($p -and (Test-Path $p)) { return $p } }
+  $cmd = Get-Command SumatraPDF.exe -ErrorAction SilentlyContinue
+  if ($cmd) { return $cmd.Source }
+  return $null
+}
+function List-Printers {
+  $list = Get-CimInstance Win32_Printer | ForEach-Object { if ($_.Default) { "$($_.Name) (default)" } else { $_.Name } }
+  if ($list) { return ($list -join "`n") } else { return 'No printers found.' }
+}
+function Print-Document([string]$url, [string]$opts) {
+  if ($url -notmatch '^https://bernud-server\.onrender\.com/files/[0-9a-f]{32}\.pdf$') { throw 'Only documents sent by Bernud can be printed.' }
+  $parts = $opts -split '\|', 2
+  $copies = [math]::Max(1, [math]::Min(20, [int]("0" + ($parts[0] -replace '[^0-9]', '')) ))
+  $printer = if ($parts.Count -gt 1) { $parts[1].Trim() } else { '' }
+  $file = Join-Path $env:TEMP ("bernud-print-" + [guid]::NewGuid().ToString('N') + ".pdf")
+  Invoke-WebRequest -Uri $url -OutFile $file -UseBasicParsing -TimeoutSec 60
+  try {
+    $sumatra = Find-Sumatra
+    if ($printer) {
+      $match = Get-CimInstance Win32_Printer | Where-Object { $_.Name -like "*$printer*" } | Select-Object -First 1
+      if (-not $match) { throw "No printer called '$printer'. Printers: $((Get-CimInstance Win32_Printer | ForEach-Object Name) -join ', ')" }
+      $printer = $match.Name
+    }
+    if ($sumatra) {
+      $sa = @()
+      if ($printer) { $sa += @('-print-to', "`"$printer`"") } else { $sa += '-print-to-default' }
+      $sa += @('-print-settings', "`"${copies}x`"", '-silent', '-exit-when-done', "`"$file`"")
+      $p = Start-Process -FilePath $sumatra -ArgumentList $sa -PassThru -WindowStyle Hidden
+      if (-not $p.WaitForExit(120000)) { try { $p.Kill() } catch {}; throw 'Printing took too long.' }
+    } else {
+      if ($printer -or $copies -gt 1) { throw 'Install SumatraPDF to choose a printer or print several copies.' }
+      Start-Process -FilePath $file -Verb Print -WindowStyle Hidden | Out-Null
+      Start-Sleep -Seconds 15
+    }
+    $where = if ($printer) { $printer } else { ((Get-CimInstance Win32_Printer | Where-Object Default | Select-Object -First 1).Name) }
+    return "Sent $copies cop$(if ($copies -eq 1) {'y'} else {'ies'}) to $where."
+  } finally { Start-Sleep -Seconds 2; Remove-Item $file -Force -ErrorAction SilentlyContinue }
+}
+
 function Do-BernudCommand([object]$c) {
   $t = [string]$c.target; $v = [string]$c.value
+  if ($Role -eq 'work' -and $WorkActions -notcontains $c.action) { throw "Not allowed on the work laptop (only printing, opening documents and status)." }
   switch ($c.action) {
+    'print'        { return Print-Document $t $v }
+    'list_printers' { return List-Printers }
+    'status'       { return "Online: $env:COMPUTERNAME ($Role)" }
     'open_app'     { return Open-App $t }
     'close_app'    { return Close-App $t }
     'open_url'     { $u = if ($t) { $t } else { $v }; if ($u -notmatch '^https?://') { $u = "https://$u" }; Start-Process $u; return "Opened $u." }
@@ -213,7 +262,7 @@ function Post-Result($id, [bool]$ok, [string]$output) {
 
 # ---------------- Main loop ----------------
 Log "Bernud PC helper $Version started on $env:COMPUTERNAME"
-$pollUrl = "$Server/device/pc/poll?host=$([uri]::EscapeDataString($env:COMPUTERNAME))&v=$Version"
+$pollUrl = "$Server/device/pc/poll?host=$([uri]::EscapeDataString($env:COMPUTERNAME))&v=$Version&role=$Role"
 $backoff = 5
 while ($true) {
   try {

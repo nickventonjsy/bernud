@@ -490,6 +490,11 @@
     </div>
     <div class="note" id="engineNote"></div>
     <hr style="border:0;border-top:1px solid var(--line, #5a1a1f);margin:16px 0">
+    <p><b style="color:var(--text)">Work laptop (printing).</b> Lets Bernard print and open CCP documents on your work laptop, and nothing else. On the work laptop: open this page, enter your passcode, press the button, copy the line, then paste it into <b>Windows PowerShell</b> and press Enter.</p>
+    <div class="btnrow"><button class="btn" type="button" id="workSetupBtn">Show set-up line</button><button class="btn" type="button" id="workCopyBtn" style="display:none">Copy</button></div>
+    <textarea id="workSetup" readonly rows="4" style="display:none;width:100%;margin-top:8px;padding:10px;background:transparent;color:var(--text);border:1px solid var(--line, #5a1a1f);border-radius:8px;font:12px ui-monospace,monospace"></textarea>
+    <div class="note" id="workNote"></div>
+    <hr style="border:0;border-top:1px solid var(--line, #5a1a1f);margin:16px 0">
     <p><b style="color:var(--text)">"Hey Bernard" wake word.</b> Press the grid button left of the ask bar to put Bernard on standby. He listens using Chrome's speech recognition (on-device where your computer supports it).</p>
     <p>Optional: for a private wake word, add a Picovoice AccessKey and your "Hey Bernud" file (Web / WASM). Both stay on this device only.</p>
     <label for="keyInput">Picovoice AccessKey</label>
@@ -1526,6 +1531,24 @@
     }
     if (APP) { setTimeout(() => appCall("speak", line), 150); return; }
     speechSynthesis.cancel(); speechSynthesis.speak(pcUtterance(line));
+  });
+
+  // ---- Work laptop set-up line (behind the dashboard passcode) ----
+  $("workSetupBtn").addEventListener("click", async () => {
+    const pass = store.get("bernud.dashKey");
+    if (!pass) { $("workNote").textContent = "Enter your passcode in the CCP brief first."; return; }
+    $("workNote").textContent = "Getting it…";
+    try {
+      const r = await fetch(`${SERVER}/device/pc/work-setup`, { headers: { "x-dashboard-key": pass } });
+      const j = await r.json();
+      if (!j.ok) { $("workNote").textContent = j.error || "Couldn't get the set-up line."; return; }
+      $("workSetup").value = j.command; $("workSetup").style.display = ""; $("workCopyBtn").style.display = "";
+      $("workNote").textContent = j.online ? "The work laptop is already connected." : "Not connected yet. Run the line on the work laptop. Keep it private: it lets Bernard print on that laptop.";
+    } catch { $("workNote").textContent = "Couldn't reach Bernard's server."; }
+  });
+  $("workCopyBtn").addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText($("workSetup").value); $("workNote").textContent = "Copied. Paste it into Windows PowerShell on the work laptop."; }
+    catch { $("workSetup").select(); $("workNote").textContent = "Select the text and copy it (Ctrl+C)."; }
   });
 
   async function loadMics() {

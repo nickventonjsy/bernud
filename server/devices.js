@@ -3,7 +3,7 @@
 // Phone: commands are published to a private ntfy topic; Tasker on the phone picks them up.
 import { randomUUID } from "node:crypto";
 
-export const PC_ACTIONS = ["status", "open_app", "close_app", "open_url", "media", "volume", "power", "run_script", "list_scripts", "list_windows", "type_text", "say", "powershell", "system_info"];
+export const PC_ACTIONS = ["status", "open_app", "close_app", "open_url", "media", "volume", "power", "run_script", "list_scripts", "list_windows", "type_text", "say", "powershell", "system_info", "print", "list_printers"];
 export const PHONE_ACTIONS = ["ring", "stop_ring", "torch", "volume", "media", "dnd", "open_url", "open_app", "wifi", "bluetooth", "brightness", "say", "wa_message", "wa_call", "wa_video"];
 
 export const cleanContactName = (name) => String(name || "").replace(/['"]/g, "_").replace(/[|:\r\n%]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 60);
@@ -50,9 +50,9 @@ export function createPcQueue({ resultTimeoutMs = 25_000, pollTimeoutMs = 25_000
     },
 
     result(id, ok, output) {
-      lastSeen = Date.now();
       const r = results.get(id);
       if (!r) return false;
+      lastSeen = Date.now();
       results.delete(id);
       r({ ok: Boolean(ok), output: String(output ?? "").slice(0, 4000) });
       return true;

@@ -650,4 +650,24 @@ export async function saveBriefText(id, text) {
 
 export async function latestBrief() { return store.latestWithText(); }
 
+// A CCP document as a PDF for printing. Only files in the CCP index (i.e. inside the CCP folder) can be fetched.
+export async function documentPdf(idOrName) {
+  const docs = await store.allDocs();
+  const q = String(idOrName || "").toLowerCase().trim();
+  const d = docs.find((x) => x.id === idOrName) || docs.find((x) => x.name.toLowerCase() === q) || docs.find((x) => q && x.name.toLowerCase().includes(q));
+  if (!d) throw Object.assign(new Error("That file isn't in the CCP folder."), { code: "not_found" });
+  const mime = d.mime || "";
+  let buf;
+  if (mime === "application/pdf") buf = await gget(`${DRIVE}/files/${d.id}?alt=media&supportsAllDrives=true`, "buffer");
+  else if (/^application\/vnd\.google-apps\.(document|spreadsheet|presentation|drawing)$/.test(mime)) buf = await gget(`${DRIVE}/files/${d.id}/export?mimeType=application%2Fpdf`, "buffer");
+  else throw Object.assign(new Error(`"${d.name}" isn't a PDF or Google Doc, so Bernud can't print it directly. Open it instead.`), { code: "unsupported", link: d.link });
+  if (buf.subarray(0, 4).toString() !== "%PDF") throw Object.assign(new Error("Google didn't return a PDF for that file."), { code: "not_pdf" });
+  return { id: d.id, name: d.name, link: d.link, pdf: buf };
+}
+export async function documentInfo(idOrName) {
+  const docs = await store.allDocs();
+  const q = String(idOrName || "").toLowerCase().trim();
+  return docs.find((x) => x.id === idOrName) || docs.find((x) => x.name.toLowerCase() === q) || docs.find((x) => q && x.name.toLowerCase().includes(q)) || null;
+}
+
 await store.init();

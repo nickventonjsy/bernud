@@ -89,6 +89,18 @@ const NTFY_TOPIC = process.env.NTFY_TOPIC || "";            // notifications to 
 const PHONE_TOPIC = process.env.PHONE_CMD_TOPIC || "";      // commands to Tasker on the phone
 const PHONE_SECRET = process.env.PHONE_CMD_SECRET || "";
 export const pc = devices.createPcQueue();
+// Nicholas's work laptop runs a restricted helper (print, open documents, status). It has its own key.
+export const workPc = devices.createPcQueue({ resultTimeoutMs: 90_000, timeoutMessage: "The work laptop didn't answer in time. It may be asleep or the helper may have stopped." });
+const WORK_KEY = DEVICE_KEY || process.env.DASHBOARD_KEY ? (await import("node:crypto")).createHmac("sha256", "work-laptop:" + (DEVICE_KEY || process.env.DASHBOARD_KEY)).update("v1").digest("hex").slice(0, 32) : "";
+const pcFor = (device) => (/work|office|laptop|shop/i.test(String(device || "")) ? workPc : pc);
+// Short-lived files for the PC helpers to download (documents to print). Unguessable id, 10-minute life.
+const tempFiles = new Map();
+function putTempFile(buf) {
+  const id = (globalThis.crypto?.randomUUID?.() || String(Math.random())).replace(/[^0-9a-f]/g, "").padEnd(32, "0").slice(0, 32);
+  tempFiles.set(id, { buf, exp: Date.now() + 10 * 60_000 });
+  for (const [k, v] of tempFiles) if (v.exp < Date.now()) tempFiles.delete(k);
+  return `${(process.env.PUBLIC_URL || "https://bernud-server.onrender.com").replace(/\/+$/, "")}/files/${id}.pdf`;
+}
 const phoneAcks = [];
 // The Bernard Android app long-polls this queue (like the PC helper) and reports each result.
 export const phone = devices.createPcQueue({ resultTimeoutMs: 12_000, timeoutMessage: "The phone didn't answer in time. The Bernard app may be closed, or the phone may have no signal." });
@@ -375,6 +387,20 @@ export async function handle(req, res) {
     return;
   }
 
+  // Documents waiting to be printed by a PC helper.
+  if (req.method === "GET" && /^\/files\/[0-9a-f]{32}\.pdf$/.test(path)) {
+    const f = tempFiles.get(path.slice(7, 39));
+    if (!f || f.exp < Date.now()) return send(res, 404, { error: "gone" });
+    res.writeHead(200, { "content-type": "application/pdf", "content-length": f.buf.length, "cache-control": "no-store" });
+    return res.end(f.buf);
+  }
+  // Set-up line for the work laptop (dashboard passcode).
+  if (req.method === "GET" && path === "/device/pc/work-setup") {
+    if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
+    if (!WORK_KEY) return send(res, 200, { ok: false, error: "No device key is configured on the server." }, req);
+    return send(res, 200, { ok: true, online: workPc.online(), last_seen: workPc.lastSeen(), command: `$k='${WORK_KEY}'; irm https://raw.githubusercontent.com/nickventonjsy/bernud/main/pc-helper/setup-work.ps1 | iex` }, req);
+  }
+
   // Camera video relay: passes Imou's live stream through this server (signed, time-limited, Imou hosts only),
   // so browsers and the TV can play it without cross-site restrictions.
   if (req.method === "GET" && path === "/camera/relay") {
@@ -520,15 +546,19 @@ export async function handle(req, res) {
 
   // PC helper endpoints (device key, never the agent key).
   if (path === "/device/pc/poll" || path === "/device/pc/result") {
-    if (!DEVICE_KEY || req.headers["x-device-key"] !== DEVICE_KEY) return send(res, 401, { error: "unauthorised" });
+    const key = req.headers["x-device-key"];
+    const isWork = WORK_KEY && key === WORK_KEY;
+    if (!isWork && (!DEVICE_KEY || key !== DEVICE_KEY)) return send(res, 401, { error: "unauthorised" });
+    const q = isWork || url.searchParams.get("role") === "work" ? workPc : pc;
     try {
       if (req.method === "GET" && path === "/device/pc/poll") {
-        const cmd = await pc.poll({ host: url.searchParams.get("host") || null, version: url.searchParams.get("v") || null });
+        const cmd = await q.poll({ host: url.searchParams.get("host") || null, version: url.searchParams.get("v") || null, role: q === workPc ? "work" : "home" });
         return send(res, 200, { command: cmd });
       }
       if (req.method === "POST" && path === "/device/pc/result") {
         const body = await readJson(req);
-        return send(res, 200, { accepted: pc.result(String(body.id || ""), body.ok, body.output) });
+        // Results go to whichever queue is waiting for that command id.
+        return send(res, 200, { accepted: workPc.result(String(body.id || ""), body.ok, body.output) || pc.result(String(body.id || ""), body.ok, body.output) });
       }
     } catch (err) { return send(res, err.status || 500, { error: err.message }); }
     return send(res, 404, { error: "not found" });
@@ -623,6 +653,26 @@ export async function handle(req, res) {
       const b = await readJson(req);
       try { return send(res, 200, b.action === "settings" || b.action === "set" ? await routines.settings(b) : await routines.goodnight(b)); }
       catch (e) { return send(res, 200, { ok: false, message: String(e.message).slice(0, 300) }); }
+    }
+    // Open or print a CCP document on the work laptop (or home PC).
+    if (path === "/ccp/document" && req.method === "POST") {
+      const b = await readJson(req);
+      const action = String(b.action || "print");
+      const q = /home|house/i.test(String(b.device || "")) ? pc : /work|office|laptop/i.test(String(b.device || "")) ? workPc : (workPc.online() ? workPc : pc);
+      const which = q === workPc ? "work laptop" : "home PC";
+      try {
+        if (!q.online()) return send(res, 200, { ok: false, error: "offline", message: `The ${which} isn't connected right now${q === workPc ? " (is it on, and is the Bernud helper set up on it?)" : ""}.` });
+        if (action === "printers") return send(res, 200, { device: which, ...(await q.send("list_printers", "", "")) });
+        if (action === "open") {
+          const d = await ccp.documentInfo(b.file_id || b.name);
+          if (!d) return send(res, 200, { ok: false, error: "not_found", message: "That file isn't in the CCP folder." });
+          return send(res, 200, { device: which, file: d.name, ...(await q.send("open_url", d.link, "")) });
+        }
+        const doc = await ccp.documentPdf(b.file_id || b.name);
+        const copies = Math.min(Math.max(Number(b.copies) || 1, 1), 20);
+        const r = await q.send("print", putTempFile(doc.pdf), `${copies}|${String(b.printer || "").replace(/[|"]/g, "").slice(0, 80)}`);
+        return send(res, 200, { device: which, file: doc.name, copies, ...r });
+      } catch (e) { return send(res, 200, { ok: false, error: e.code || "error", message: String(e.message).slice(0, 300), link: e.link }); }
     }
     if (path === "/camera" && req.method === "POST") {
       const b = await readJson(req);
@@ -742,9 +792,11 @@ export async function handle(req, res) {
       const body = await readJson(req);
       const action = String(body.action || "").toLowerCase();
       if (!devices.PC_ACTIONS.includes(action)) return send(res, 200, { ok: false, error: "unknown_action", allowed: devices.PC_ACTIONS });
-      if (action === "status") return send(res, 200, { ok: true, online: pc.online(), last_seen: pc.lastSeen(), helper: pc.info(), note: pc.online() ? undefined : "The PC helper isn't connected. The PC may be off or asleep, or the helper isn't running." });
-      if (!pc.online()) return send(res, 200, { ok: false, error: "pc_offline", message: "Nicholas's PC isn't connected right now. It may be off or asleep, or the Bernud helper isn't running.", last_seen: pc.lastSeen() });
-      return send(res, 200, await pc.send(action, body.target, body.value));
+      const q = pcFor(body.device);
+      const which = q === workPc ? "work laptop" : "PC";
+      if (action === "status") return send(res, 200, { ok: true, device: which, online: q.online(), last_seen: q.lastSeen(), helper: q.info(), work_laptop_online: workPc.online(), note: q.online() ? undefined : `The ${which} helper isn't connected. It may be off or asleep, or the helper isn't running.` });
+      if (!q.online()) return send(res, 200, { ok: false, error: "pc_offline", message: `Nicholas's ${which} isn't connected right now. It may be off or asleep, or the Bernud helper isn't running.`, last_seen: q.lastSeen() });
+      return send(res, 200, await q.send(action, body.target, body.value));
     }
     if (req.method === "GET" && path === "/device/phone/acks") return send(res, 200, { acks: phoneAcks });
     if (req.method === "POST" && path === "/device/phone") {
