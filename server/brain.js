@@ -121,10 +121,11 @@ const estTokens = (x) => Math.ceil(JSON.stringify(x).length / 3.6);
 
 export function createBrain({ geminiKey, groqKey = "", elevenKey, agentId, kv, port, bernudKey, zwKey,
   models = (process.env.GEMINI_MODELS || "gemini-3.6-flash,gemini-3.8-flash,gemini-3.5-flash-lite").split(",").map((m) => m.trim()).filter(Boolean),
-  groqModels = (process.env.GROQ_MODELS || "openai/gpt-oss-120b,openai/gpt-oss-20b").split(",").map((m) => m.trim()).filter(Boolean),
+  groqModels = (process.env.GROQ_MODELS || "openai/gpt-oss-120b,openai/gpt-oss-20b,qwen/qwen3.8-27b").split(",").map((m) => m.trim()).filter(Boolean),
   groqMaxTokens = 7000, fetchImpl = fetch, now = () => new Date(), log = console }) {
   let cfg = null, cfgAt = 0;
   const sessions = new Map();
+  let lastSwitch = { name: "", at: 0 }; // last thing an instant command switched, for "turn it off"
 
   async function config() {
     if (cfg && Date.now() - cfgAt < 10 * 60_000) return cfg;
@@ -258,20 +259,39 @@ export function createBrain({ geminiKey, groqKey = "", elevenKey, agentId, kv, p
     if (!r.ok) throw Object.assign(new Error(j.error?.message || `Groq ${r.status}`), { status: r.status, code: j.error?.code });
     return j;
   }
+  const waitFor = (msg) => { const m = String(msg).match(/try again in ([\d.]+)(ms|s)/i); return m ? Math.ceil(parseFloat(m[1]) * (m[2] === "ms" ? 1 : 1000)) + 250 : null; };
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  // One Groq request; if Groq says "try again in a few seconds" (per-minute limit), wait that long once.
+  async function groqOnce(model, body) {
+    try { return await groq(model, body); }
+    catch (e) {
+      if (e.status === 400 && /reasoning/i.test(e.message) && body.reasoning_effort) { delete body.reasoning_effort; return groq(model, body); }
+      const w = e.status === 429 ? waitFor(e.message) : null;
+      if (w !== null && w <= 7000) { await sleep(w); return groq(model, body); }
+      throw e;
+    }
+  }
   async function runGroq({ system, turns, text, tools, byName, used }) {
     const messages = [{ role: "system", content: system }, ...turns.flatMap((t) => [{ role: "user", content: t.user }, { role: "assistant", content: t.reply }]), { role: "user", content: text }];
     const oaTools = tools.map(toOpenAiTool);
-    const model = groqModels.find((m) => !cooling("groq:" + m));
-    if (!model) throw Object.assign(new Error("Groq resting"), { status: 429 });
+    let model = null, lastErr = null;
     for (let step = 0; step < 5; step++) {
       const body = { messages, ...(oaTools.length ? { tools: oaTools, tool_choice: "auto" } : {}), temperature: 0.3, max_completion_tokens: 1024, reasoning_effort: "low" };
       if (estTokens(body) > groqMaxTokens) throw Object.assign(new Error("too big for Groq's free allowance"), { status: 413 });
-      let j;
-      try { j = await groq(model, body); }
-      catch (e) {
-        if (e.status === 400 && /reasoning/i.test(e.message)) { delete body.reasoning_effort; j = await groq(model, body); }
-        else throw Object.assign(e, { model });
+      let j = null;
+      // Before anything has been done, any Groq model will do; after a tool ran, stay with the same model.
+      const candidates = model ? [model] : groqModels.filter((m) => !cooling("groq:" + m));
+      for (const m of candidates) {
+        try { j = await groqOnce(m, { ...body }); model = m; break; }
+        catch (e) {
+          lastErr = Object.assign(e, { model: m });
+          log.error?.("groq", m, e.status, String(e.message).slice(0, 160));
+          if (e.status === 429) cooldown.set("groq:" + m, Date.now() + (/per day|TPD|RPD/i.test(e.message) ? 60 : Math.max(0.5, (waitFor(e.message) || 30000) / 60000)) * 60_000);
+          if (e.status === 401 || e.status === 403) groqModels.forEach((x) => cooldown.set("groq:" + x, Date.now() + 60 * 60_000));
+          if (model) break;
+        }
       }
+      if (!j) throw lastErr || Object.assign(new Error("Groq resting"), { status: 429 });
       const msg = j.choices?.[0]?.message || {};
       const calls = msg.tool_calls || [];
       if (!calls.length) return { reply: String(msg.content || "").trim() || "Done.", model: "groq:" + model };
@@ -300,11 +320,15 @@ export function createBrain({ geminiKey, groqKey = "", elevenKey, agentId, kv, p
     const remember = (reply, model, groups = s.groups) => { s.turns = [...s.turns, { user: text, reply }].slice(-6); s.groups = groups; return reply; };
 
     // 1. Instant commands: no AI needed.
-    const q = matchQuick(text);
+    const q = matchQuick(text, lastSwitch.at > Date.now() - 30 * 60_000 ? lastSwitch.name : "");
     if (q && byName.has(q.tool)) {
       const result = await callTool(byName, q.tool, q.args, used);
       const reply = q.reply(result);
-      if (reply) { remember(reply, "instant", pickGroups(text)); return { ok: true, reply, tools: used, model: "instant", ms: Date.now() - t0 }; }
+      if (reply) {
+        const dev = q.tool === "tv_control" ? "tv" : q.tool === "phone_control" && q.args.action === "torch" ? "torch" : q.args.device;
+        if (dev) lastSwitch = { name: dev, at: Date.now() };
+        remember(reply, "instant", pickGroups(text)); return { ok: true, reply, tools: used, model: "instant", ms: Date.now() - t0 };
+      }
       used.length = 0; // didn't work as a quick command: let the AI handle it (and explain any problem)
     }
 
@@ -319,9 +343,6 @@ export function createBrain({ geminiKey, groqKey = "", elevenKey, agentId, kv, p
     if (groqKey && groqModels.some((m) => !cooling("groq:" + m))) {
       try { out = await runGroq(job); }
       catch (e) {
-        log.error?.("groq", e.model || "", e.status, String(e.message).slice(0, 200));
-        if (e.status === 429) cooldown.set("groq:" + (e.model || groqModels[0]), Date.now() + (/per day|TPD|RPD/i.test(e.message) ? 60 : 1.2) * 60_000);
-        if (e.status === 401 || e.status === 403) cooldown.set("groq:" + (e.model || groqModels[0]), Date.now() + 60 * 60_000);
         // Never repeat actions: if Groq already did something before failing, say so instead of starting again.
         if (used.length) out = { reply: "That's done, though I couldn't put together a proper answer.", model: "groq" };
       }

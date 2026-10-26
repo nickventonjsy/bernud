@@ -95,6 +95,11 @@ let r = await brain.chat({ session: "s1", text: "turn the lamp on" });
 assert.equal(r.model, "instant"); assert.equal(r.reply, "Lamp on."); assert.equal(gemBodies.length, 0);
 assert.deepEqual(JSON.parse(calls[0].o.body), { kind: "light", action: "on", device: "lamp", value: "" });
 
+// "turn it off" remembers what was just switched (even in a new conversation).
+r = await brain.chat({ session: "s9", text: "now turn it off" });
+assert.equal(r.model, "instant"); assert.deepEqual(JSON.parse(calls.at(-1).o.body), { kind: "light", action: "off", device: "lamp", value: "" });
+assert.equal(matchQuick("switch them back on", "lamp").args.action, "on");
+
 // Gemini path with a tool, slimmed: weather question doesn't get the email tool or email rules.
 r = await brain.chat({ session: "s1", text: "what's the weather" });
 assert.equal(r.reply, "Twelve degrees, Nicholas."); assert.deepEqual(r.tools, ["get_weather"]);
@@ -117,15 +122,23 @@ r = await brain.chat({ session: "g1", text: "what's the weather" });
 assert.equal(r.reply, "Groq says twelve degrees."); assert.match(r.model, /^groq:/); assert.equal(gemBodies.length, gBefore);
 assert.equal(groqBodies[0].tools[0].function.parameters.type, "object");
 assert.equal(groqBodies[1].messages.at(-1).role, "tool");
-// Groq rate-limited before doing anything: falls back to Gemini, and rests.
+// Groq rate-limited before doing anything: tries the other Groq models, then Gemini; then rests.
 groqMode = "429";
+const nG0 = groqBodies.length;
 r = await brain.chat({ session: "g2", text: "hello there" });
 assert.equal(r.reply, "Hello Nicholas."); assert.ok(!/^groq/.test(r.model));
-const nGroq = groqBodies.length;
+assert.equal(groqBodies.length, nG0 + 3); assert.equal(new Set(groqBodies.slice(nG0).map((b) => b.model)).size, 3);
 r = await brain.chat({ session: "g2", text: "hello again" });
-assert.equal(groqBodies.length, nGroq + 1); assert.notEqual(groqBodies.at(-1).model, groqBodies.at(-2).model); // first Groq model rests, the second is tried
-r = await brain.chat({ session: "g2", text: "and again" });
-assert.equal(groqBodies.length, nGroq + 1); // both resting now
+assert.equal(groqBodies.length, nG0 + 3); // all resting now
+// "Try again in 1.2s": waits and retries the same model instead of giving up.
+let waits = 0;
+const bw = mk({ groqKey: "GQ", fetchImpl: async (u, o) => {
+  if (String(u).includes("api.groq.com") && waits++ === 0) return { ok: false, status: 429, json: async () => ({ error: { message: "Rate limit reached on tokens per minute (TPM): Limit 8000, Used 7000. Please try again in 1.2s." } }) };
+  return fetchImpl(u, o);
+} });
+groqMode = "ok";
+const tw = Date.now(); r = await bw.chat({ session: "w1", text: "hello there" });
+assert.equal(r.reply, "Groq hello."); assert.ok(Date.now() - tw >= 1200);
 // Groq fails after already running a tool: no repeat on Gemini.
 groqMode = "ok";
 const b2 = mk({ groqKey: "GQ", fetchImpl: async (u, o) => {

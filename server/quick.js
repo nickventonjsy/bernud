@@ -22,6 +22,7 @@ const lightName = (d) => {
 const NOT_LIGHTS = /\b(?:music|spotify|song|phone|pc|computer|laptop|do not disturb|dnd|wifi|bluetooth|heating|kettle|alarm|volume|radio|youtube|netflix)\b/;
 
 function switchCommand(device, onOff) {
+  device = device.replace(/^(?:the|my) /, "");
   if (isTorch(device)) return { tool: "phone_control", args: { action: "torch", target: onOff, value: "" }, reply: (r) => (r.ok === false ? null : `Torch ${onOff}.`) };
   if (isTv(device)) {
     const name = device.replace(/^(?:the|my) /, "").replace(/\b(?:tv|telly|television)\b/, "").trim();
@@ -56,8 +57,13 @@ function goodnightReply(r) {
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
 // Returns { tool, args, reply(result) } or null. reply() returns null when the result needs the AI to explain it.
-export function matchQuick(text) {
-  const t = clean(text);
+// lastDevice: what the previous instant command switched (so "turn it off" works).
+export function matchQuick(text, lastDevice = "") {
+  let t = clean(text)
+    .replace(/^(?:and |now |ok |okay |right |then )+/, "")
+    .replace(/ (?:now|again|for me|thanks|thank you)$/, "")
+    .replace(/ back (on|off)$/, " $1").replace(/^(turn|switch|put) (on|off) back /, "$1 $2 ");
+  if (lastDevice) t = t.replace(/\b(?:it|them|that|those)\b/, lastDevice);
   if (!t || t.length > 60) return null;
   let m;
 
