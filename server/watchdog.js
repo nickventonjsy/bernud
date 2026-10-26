@@ -30,7 +30,7 @@ export function createWatchdog({ kv, notify, checks, now = () => new Date(), log
     await kv.set("watchdog_state", JSON.stringify(next)).catch(() => {});
     if (broke.length) await notify(broke.map((r) => `• ${r.name}: ${r.detail || "not working"}`).join("\n") + "\n\nAsk Bernard \"is everything working?\" for a full check.", { title: `Bernard: ${broke.length === 1 ? broke[0].name + " isn't working" : broke.length + " things aren't working"}`, tags: "warning", priority: 4 }).catch((e) => log("watchdog notify: " + e.message));
     if (fixed.length) await notify(fixed.map((r) => `• ${r.name}`).join("\n"), { title: "Bernard: back to normal", tags: "white_check_mark" }).catch(() => {});
-    log(`watchdog: ${results.filter((r) => r.ok).length}/${results.length} ok${broke.length ? ", alerted " + broke.map((r) => r.name).join(", ") : ""}`);
+    log(`watchdog: ${results.filter((r) => r.ok).length}/${results.length} ok; failing: ${results.filter((r) => !r.ok).map((r) => r.name + " (" + r.detail + ")").join("; ") || "none"}${broke.length ? ", alerted " + broke.map((r) => r.name).join(", ") : ""}`);
     return { results, broke, fixed };
   }
 
