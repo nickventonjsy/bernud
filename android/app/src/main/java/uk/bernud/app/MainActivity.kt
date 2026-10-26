@@ -139,8 +139,8 @@ class MainActivity : ComponentActivity() {
 
     // Lets the dashboard tell the app when a conversation starts and ends (the wake word gives up the mic meanwhile).
     inner class Bridge {
-        @JavascriptInterface fun conversationStarted() { runOnUiThread { WakeWord.conversationStarted() } }
-        @JavascriptInterface fun conversationEnded() { runOnUiThread { WakeWord.conversationEnded() } }
+        @JavascriptInterface fun conversationStarted() { runOnUiThread { WakeWord.conversationStarted(); AudioRoute.conversationStarted(this@MainActivity) } }
+        @JavascriptInterface fun conversationEnded() { runOnUiThread { WakeWord.conversationEnded(); AudioRoute.conversationEnded(this@MainActivity) } }
         @JavascriptInterface fun wakeWordStatus(): String = WakeWord.status
         @JavascriptInterface fun phoneStatus(): String = Bus.phoneStatus?.invoke() ?: "service not running"
         @JavascriptInterface fun setPhoneConfig(topic: String, secret: String) {
