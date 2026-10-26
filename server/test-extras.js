@@ -83,3 +83,23 @@ const coins = await cp.usd();
 assert.equal(fmtUsd(67250.4), "$67,250"); assert.equal(fmtUsd(0.5123), "$0.5123"); assert.equal(fmtUsd(2.4), "$2.40");
 assert.equal(spokenCrypto(coins), "Crypto in dollars: Bitcoin $67,250, up 1.2 percent; Ethereum $2,510, down 0.6 percent; Solana $150, flat; XRP $0.5123, up 2 percent.");
 console.log("crypto ok");
+
+// Michelle's Echo
+const q1 = matchQuick("Play Michelle's oldies on Michelle's Echo");
+assert.equal(q1.tool, "spotify_play_on"); assert.deepEqual(q1.args, { device: "michelle's echo", query: "michelle's oldies" });
+assert.deepEqual(matchQuick("play something for a friday evening on the echo").args, { device: "michelle's echo", mood: "a friday evening" });
+assert.deepEqual(matchQuick("move the music to michelle's echo").args, { device: "michelle's echo" });
+assert.deepEqual(matchQuick("play it on the echo").args, { device: "michelle's echo" });
+const { createSpeakers } = await import("./speakers.js");
+const calls2 = [];
+const sp = createSpeakers({ zw: { url: "https://zw", key: "k" }, dj: { mix: async (o) => ({ ok: true, title: "Mix", ...o }) }, fetchImpl: async (u, o = {}) => {
+  calls2.push([u, o.body && JSON.parse(o.body)]);
+  if (u.includes("what=devices")) return { json: async () => ({ devices: [{ id: "p1", name: "Nicholas's S24", type: "Smartphone" }, { id: "e1", name: "Michelle's Echo Dot", type: "Speaker" }] }) };
+  if (u.includes("what=shortcuts")) return { json: async () => ({ shortcuts: [{ label: "Michelle", name: "Michelle Shelley's oldies", uri: "spotify:playlist:abc" }] }) };
+  return { json: async () => ({ ok: true }) };
+} });
+const r1 = await sp.playOn({ device: "michelle's echo", query: "michelle's oldies" });
+assert.equal(r1.device, "Michelle's Echo Dot"); assert.equal(r1.playing, "Michelle Shelley's oldies");
+assert.deepEqual(calls2.at(-1)[1], { action: "play", uri: "spotify:playlist:abc", device_id: "e1" });
+const r2 = await sp.playOn({ device: "michelle's echo" }); assert.equal(r2.moved, true); assert.deepEqual(calls2.at(-1)[1], { action: "transfer", value: "e1" });
+console.log("echo ok");

@@ -166,6 +166,8 @@ const { createBrain } = await import("./brain.js");
 export const brain = createBrain({ briefHandler: (text) => briefForBrain(text), dayLog, geminiKey: (process.env.GEMINI_API_KEY || "").trim(), groqKey: (process.env.GROQ_API_KEY || "").trim(), elevenKey: process.env.ELEVENLABS_API_KEY || "", agentId: process.env.AGENT_ID || "agent_0501m5q6cc15eqcrnamk2e1w84xc", kv: db.kv, port: PORT, bernudKey: API_KEY, zwKey: process.env.ZW_ASSISTANT_KEY || "" });
 const { createDJ } = await import("./dj.js");
 export const dj = createDJ({ zw: { url: (process.env.ZW_URL || "https://zentrawire.onrender.com").replace(/\/+$/, ""), key: process.env.ZW_ASSISTANT_KEY || "" }, complete: (o) => brain.complete(o) });
+const { createSpeakers } = await import("./speakers.js");
+export const speakers = createSpeakers({ zw: { url: (process.env.ZW_URL || "https://zentrawire.onrender.com").replace(/\/+$/, ""), key: process.env.ZW_ASSISTANT_KEY || "" }, dj });
 
 // Goodnight: Bernard's verdict on the day, from what Nicholas asked him (free mode and voice mode) and his calendar.
 const VERDICT_SYSTEM = `You are Bernud, Nicholas's AI butler: calm, polished and quietly witty, with a dry British sense of humour.
@@ -693,6 +695,10 @@ export async function handle(req, res) {
     if (path === "/ccp/delete" && req.method === "POST") {
       try { return send(res, 200, await ccpDelete.handle(await readJson(req))); }
       catch (e) { return send(res, 200, { ok: false, error: e.code || "error", message: String(e.message).slice(0, 300), connect_link: e.link }); }
+    }
+    if (path === "/music/play-on" && req.method === "POST") {
+      try { return send(res, 200, await speakers.playOn(await readJson(req))); }
+      catch (e) { return send(res, 200, { ok: false, error: "speaker_error", message: String(e.message).slice(0, 300) }); }
     }
     if (path === "/music/dj" && req.method === "POST") {
       try { return send(res, 200, await dj.mix(await readJson(req))); }

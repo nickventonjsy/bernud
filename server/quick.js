@@ -90,6 +90,16 @@ export function matchQuick(text, lastDevice = "") {
     return { tool: "lights", args: { action: "brightness", device: name, value: "30" }, reply: (r) => (r.ok === false || r.error ? null : `${cap(name === "all lights" ? "the lights" : name)} dimmed.`) };
   }
 
+  // A Spotify speaker by name: "play Michelle's oldies on Michelle's Echo", "move the music to the Echo".
+  if ((m = t.match(/^(?:play|put on|stick on|put) (.+?) (?:on|through|in) (?:the |michelle'?s |michelles )?(echo|alexa)(?: speaker| dot)?$/))) {
+    let what = m[1].replace(/^(?:some |a bit of )/, "");
+    const dj = what.match(/^(?:something|some music|music|a mix|a playlist) (?:for|to suit|that suits|while i'?m|while i|to) (.+)$/);
+    const args = dj ? { device: "michelle's echo", mood: dj[1] } : /^(?:it|this|that|the music|my music|music|spotify|something)$/.test(what) ? { device: "michelle's echo" } : { device: "michelle's echo", query: what };
+    return { tool: "spotify_play_on", args, reply: (r) => (r.ok === false ? null : r.title ? `Playing ${r.title} on ${r.device}.` : r.moved ? `Moved the music to ${r.device}.` : `Playing ${r.playing} on ${r.device}.`) };
+  }
+  if ((m = t.match(/^(?:move|switch|send|transfer|put) (?:the |my )?(?:music|song|spotify|it|this) (?:on ?)?to (?:the |michelle'?s |michelles )?(echo|alexa)$/))) {
+    return { tool: "spotify_play_on", args: { device: "michelle's echo" }, reply: (r) => (r.ok === false ? null : `Moved the music to ${r.device}.`) };
+  }
   // Spotify DJ: "play something for a Friday evening", "make me a mix for a long drive".
   if ((m = t.match(/^(?:(?:play|put on)(?: me)? (?:something|some (?:music|songs|tunes)|a mix|music|a playlist)|(?:make|build|do)(?: me)? (?:a )?(?:mix|playlist)|dj(?: me)?(?: something)?) (?:for|to suit|that suits|that fits|that'?s good for|good for|while i'?m|while i|to) (.{3,60})$/))) {
     const mood = m[1].replace(/ on spotify$/, "");

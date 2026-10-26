@@ -55,7 +55,7 @@ export function toDeclaration(t) {
 export const GROUPS = {
   cameras: { tools: ["camera"], re: /\b(cameras?|cctv|doorbell|front door|driveway|garden|garage|imou|shop|car ?park|living room|bedroom|anyone|anybody|someone|motion|movement|alerts?|intruder|security|overnight|last night|snapshot|footage)\b/ },
   home: { tools: ["lights", "tv_control", "goodnight", "home_arrival", "youtube"], re: /\b(lights?|lamps?|bulbs?|bright|dim|colou?r|ceiling|govee|hue|tv|telly|television|netflix|youtube|video|watch|good ?night|bed|arriv|home|leave|leaving)\b/ },
-  music: { tools: ["spotify_info", "spotify_control", "spotify_dj"], re: /\b(spotify|music|songs?|play|playing|playlist|tracks?|album|artist|pause|resume|skip|next|previous|shuffle|repeat|louder|quieter|volume|speaker|dj|mix|tunes|vibe|mood)\b/ },
+  music: { tools: ["spotify_info", "spotify_control", "spotify_dj", "spotify_play_on"], re: /\b(echo|alexa|spotify|music|songs?|play|playing|playlist|tracks?|album|artist|pause|resume|skip|next|previous|shuffle|repeat|louder|quieter|volume|speaker|dj|mix|tunes|vibe|mood)\b/ },
   meals: { tools: ["send_to_phone"], re: /\b(cook|cooking|recipes?|meals?|dinner|lunch|breakfast|supper|tea tonight|eat|hungry|ingredients|fridge|cupboard|make with|bake|baking)\b/ },
   devices: { tools: ["pc_control", "phone_control"], re: /\b(pc|computer|laptop|desktop|phone|mobile|torch|flash|ring|whatsapp|call|ring|text|message|brightness|do not disturb|dnd|open|app|lock|shut ?down|restart|sleep|volume|script|powershell|window|type)\b/ },
   markets: { tools: ["zentrawire", "get_crypto_prices", "price_alert"], re: /\b(crypto|bitcoin|btc|eth|ethereum|coins?|xrp|ripple|solana|doge|market|markets|watchlist|zentrawire|signals?|stocks?|shares|nvidia|tesla|moving|movers)\b/ },
@@ -71,7 +71,7 @@ const ALWAYS = ["recall", "remember", "forget"];
 const DEFAULT_GROUPS = ["web", "weather", "calendar", "reminders"];
 // Which prompt sections go with which tools. Sections not listed here (identity, speaking, safety…) are always sent.
 const SECTION_TOOLS = [
-  [/^Samsung TVs/, ["tv_control"]], [/^ZentraWire/, ["zentrawire"]], [/^Spotify/, ["spotify_control", "spotify_info", "spotify_dj"]], [/^Meal ideas/, "meals"],
+  [/^Samsung TVs/, ["tv_control"]], [/^ZentraWire/, ["zentrawire"]], [/^Spotify/, ["spotify_control", "spotify_info", "spotify_dj", "spotify_play_on"]], [/^Meal ideas/, "meals"],
   [/^Calendar/, ["calendar"]], [/^Reminders/, ["reminder", "price_alert"]], [/^Photos/, []], [/^The web/, ["web_search"]],
   [/^Ordering food/, "food"], [/^CCP email/, ["gmail_search", "gmail_draft"]], [/^Controlling his PC/, ["pc_control", "phone_control"]],
   [/^The CCP Brain/, ["ccp_search", "ccp_delete"]], [/^CCP morning brief/, ["ccp_brief_context"]], [/^CCP pricing/, ["ccp_search"]],
@@ -366,7 +366,7 @@ export function createBrain({ briefHandler = null, dayLog = null, geminiKey, gro
     const t0 = Date.now();
     const remember = (reply, model, groups = s.groups) => { s.turns = [...s.turns, { user: text, reply }].slice(-6); s.groups = groups; return reply; };
     // Michelle: always the same verdict, in slightly different words (not when he just wants her playlist).
-    if (/\bmichelle\b/i.test(text) && !/\b(play|playlist|spotify|music|songs?|oldies|shuffle|put on)\b/i.test(text)) {
+    if (/\bmichelle\b/i.test(text) && !/\b(play|playlist|spotify|music|songs?|oldies|shuffle|put on|echo|alexa|speaker)\b/i.test(text)) {
       const reply = MICHELLE[Math.floor(Math.random() * MICHELLE.length)];
       remember(reply, "instant", s.groups);
       return { ok: true, reply, tools: [], model: "instant", ms: Date.now() - t0 };
