@@ -128,6 +128,18 @@ export const home = createHome({ kv: db.kv, smartthings: lights, sayOnPhone, tod
 const { createYouTube } = await import("./youtube.js");
 const { createRoutines } = await import("./routines.js");
 export const routines = createRoutines({ kv: db.kv, lights, smartthings, phone, pc, zw: { url: (process.env.ZW_URL || "https://zentrawire.onrender.com").replace(/\/+$/, ""), key: process.env.ZW_ASSISTANT_KEY || "" }, events: async () => (await calendarForBrief()).events });
+const { createImou, STREAM_HOST, rewritePlaylist } = await import("./imou.js");
+export const imou = createImou({ appId: (process.env.IMOU_APP_ID || "").trim(), appSecret: (process.env.IMOU_APP_SECRET || "").trim() });
+const { createHmac } = await import("node:crypto");
+// Short-lived signature so the video player (which can't send headers) can use the camera relay.
+const relaySig = (exp) => createHmac("sha256", "relay:" + DASHBOARD_KEY).update(String(exp)).digest("hex").slice(0, 32);
+const relayUrl = (u, exp) => `${PUBLIC_URL}/camera/relay?e=${exp}&s=${relaySig(exp)}&u=${encodeURIComponent(u)}`;
+async function cameraShow(name, quality = "HD") {
+  const cam = await imou.find(name);
+  const { url, quality: q } = await imou.stream(cam, quality);
+  const exp = Date.now() + 2 * 3600_000;
+  return { camera: { id: cam.id, name: cam.name, online: cam.online, guessed: !!cam.guessed }, quality: q, url: relayUrl(url, exp), direct: url };
+}
 const { createGeminiVoice } = await import("./geminivoice.js");
 export const geminiVoice = createGeminiVoice({ apiKey: process.env.GEMINI_API_KEY || "" });
 const { createBrain } = await import("./brain.js");
@@ -333,6 +345,28 @@ export async function handle(req, res) {
 
   if (path === "/" || path === "/health") return send(res, 200, { ok: true, service: "bernud", storage: db.kind }, req);
 
+  // Camera video relay: passes Imou's live stream through this server (signed, time-limited, Imou hosts only),
+  // so browsers and the TV can play it without cross-site restrictions.
+  if (req.method === "GET" && path === "/camera/relay") {
+    const exp = Number(url.searchParams.get("e")), sig = url.searchParams.get("s") || "";
+    let target; try { target = new URL(url.searchParams.get("u") || ""); } catch { return send(res, 400, { error: "bad url" }); }
+    if (!DASHBOARD_KEY || !(exp > Date.now()) || sig !== relaySig(exp) || !/^https?:$/.test(target.protocol) || !STREAM_HOST.test(target.hostname)) return send(res, 403, { error: "forbidden" });
+    try {
+      const up = await fetch(target, { signal: AbortSignal.timeout(20_000) });
+      const type = up.headers.get("content-type") || "";
+      const cors = { "access-control-allow-origin": "*", "cache-control": "no-store" };
+      if (/mpegurl|m3u8/i.test(type) || /\.m3u8$/i.test(target.pathname)) {
+        const text = rewritePlaylist(await up.text(), target.href, (u) => relayUrl(u, exp));
+        res.writeHead(up.status, { ...cors, "content-type": "application/vnd.apple.mpegurl" });
+        return res.end(text);
+      }
+      res.writeHead(up.status, { ...cors, "content-type": type || "video/mp2t", ...(up.headers.get("content-length") ? { "content-length": up.headers.get("content-length") } : {}) });
+      if (!up.body) return res.end();
+      const { Readable } = await import("node:stream");
+      return Readable.fromWeb(up.body).on("error", () => res.end()).pipe(res);
+    } catch (e) { return send(res, 502, { error: String(e.message).slice(0, 120) }); }
+  }
+
   // Short-lived spoken clips in Bernard's voice, fetched by Tasker on the phone (unguessable id, 10-minute life).
   const audioMatch = req.method === "GET" && path.match(/^\/phone\/audio\/([a-f0-9]{32})\.mp3$/);
   if (audioMatch) {
@@ -380,6 +414,23 @@ export async function handle(req, res) {
       return res.end(wav);
     } catch (e) { return send(res, e.status === 429 ? 429 : 502, { ok: false, error: String(e.message).slice(0, 200) }, req); }
   }
+  // ---- Imou cameras (dashboard passcode) ----
+  if (path === "/camera/list" && req.method === "GET") {
+    if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
+    try { return send(res, 200, { ok: true, cameras: await imou.cameras(url.searchParams.get("refresh") === "1") }, req); }
+    catch (e) { return send(res, 200, { ok: false, code: e.code, error: String(e.message).slice(0, 200) }, req); }
+  }
+  if (path === "/camera/stream" && req.method === "GET") {
+    if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
+    try { return send(res, 200, { ok: true, ...(await cameraShow(url.searchParams.get("camera") || "", url.searchParams.get("quality") || "HD")) }, req); }
+    catch (e) { return send(res, 200, { ok: false, code: e.code, error: String(e.message).slice(0, 200) }, req); }
+  }
+  if (path === "/camera/snapshot" && req.method === "GET") {
+    if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
+    try { const cam = await imou.find(url.searchParams.get("camera") || ""); return send(res, 200, { ok: true, camera: cam, url: await imou.snapshot(cam) }, req); }
+    catch (e) { return send(res, 200, { ok: false, code: e.code, error: String(e.message).slice(0, 200) }, req); }
+  }
+
   if (path === "/brain/status" && req.method === "GET") {
     if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
     return send(res, 200, await brain.status(), req);
@@ -542,6 +593,18 @@ export async function handle(req, res) {
       const b = await readJson(req);
       try { return send(res, 200, b.action === "settings" || b.action === "set" ? await routines.settings(b) : await routines.goodnight(b)); }
       catch (e) { return send(res, 200, { ok: false, message: String(e.message).slice(0, 300) }); }
+    }
+    if (path === "/camera" && req.method === "POST") {
+      const b = await readJson(req);
+      try {
+        const action = String(b.action || "show");
+        if (action === "list") return send(res, 200, { ok: true, cameras: (await imou.cameras()).map((c) => ({ name: c.name, online: c.online })) });
+        if (action === "snapshot") { const cam = await imou.find(b.camera); return send(res, 200, { ok: true, camera: cam.name, image_url: await imou.snapshot(cam) }); }
+        const cam = await imou.find(b.camera);
+        const tv = /tv|telly|television/i.test(String(b.screen || ""));
+        return send(res, 200, { ok: true, show_camera: { id: cam.id, name: cam.name, screen: tv ? "tv" : "here" }, camera: cam.name, online: cam.online,
+          note: tv ? "Bernard can't put video on the TV by himself: on the TV, open the bookmarked page bernud.onrender.com/camera.html in its web browser." : cam.guessed ? `No camera matched that name, so showing ${cam.name}.` : `Showing ${cam.name} on Nicholas's screen now.` });
+      } catch (e) { return send(res, 200, { ok: false, error: e.code || "error", message: String(e.message).slice(0, 200) }); }
     }
     if (path === "/home/settings" && req.method === "POST") return send(res, 200, await home.settings(await readJson(req)));
     if (path === "/orders" && req.method === "POST") {
@@ -758,6 +821,7 @@ await db.init();
 if (ccp.configured() && process.env.NODE_ENV !== "test") ccp.startBackgroundIndex();
 if (process.env.NODE_ENV !== "test" && NTFY_TOPIC) { scheduler.start(); reminders.start(); orders.start(); }
 if (process.env.NODE_ENV !== "test") setTimeout(async () => { const s = await brain.status(); console.log("brain status", JSON.stringify(s)); if (s.ok && s.configured) console.log("brain selftest", JSON.stringify(await brain.selfTest()));
+  if (imou.configured()) { try { const c = await imou.cameras(true); console.log("imou cameras", JSON.stringify(c.map((x) => ({ name: x.name, online: x.online })))); } catch (e) { console.log("imou failed", e.code, e.message); } }
   }, 5000);
 if (process.env.NODE_ENV !== "test") smartthings.startKeepAlive();
 

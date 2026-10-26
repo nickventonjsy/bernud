@@ -1,0 +1,31 @@
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { createImou, rewritePlaylist, STREAM_HOST } from "./imou.js";
+const seen = [];
+let liveExists = false;
+const im = createImou({ appId: "AID", appSecret: "SEC", log: { error() {} }, fetchImpl: async (url, o) => {
+  const b = JSON.parse(o.body); const api = String(url).split("/").pop(); seen.push({ url: String(url), api, b });
+  assert.equal(b.system.sign, createHash("md5").update(`time:${b.system.time},nonce:${b.system.nonce},appSecret:SEC`).digest("hex"));
+  const ok = (data) => ({ ok: true, status: 200, json: async () => ({ result: { code: "0", msg: "ok", data } }) });
+  if (api === "accessToken") return ok({ accessToken: "At_1", expireTime: 7200, currentDomain: "https://openapi-fk.easy4ip.com:443" });
+  assert.equal(b.params.token, "At_1"); assert.match(String(url), /^https:\/\/openapi-fk\.easy4ip\.com\/openapi\//);
+  if (api === "deviceBaseList") return ok({ deviceList: [{ deviceId: "D1", channels: [{ channelId: "0", channelName: "D1-1" }] }, { deviceId: "D2", channels: [{ channelId: "0" }] }] });
+  if (api === "deviceBaseDetailList") return ok({ deviceList: [{ deviceId: "D1", name: "Front Door", channels: [{ channelId: "0", status: "online" }] }, { deviceId: "D2", name: "Garage", channels: [{ channelId: "0", status: "offline" }] }] });
+  if (api === "getLiveStreamInfo") return liveExists ? ok({ streams: [{ streamId: 0, hls: "http://x.lechange.com/a.m3u8", status: "1" }, { streamId: 0, hls: "https://x.lechange.com:8890/a.m3u8?proto=https", status: "1", liveToken: "L" }] }) : { ok: true, status: 200, json: async () => ({ result: { code: "LV1002", msg: "no live" } }) };
+  if (api === "bindDeviceLive") { liveExists = true; return ok({ liveToken: "L", streams: [] }); }
+  if (api === "setDeviceSnapEnhanced") return ok({ url: "https://snap.aliyuncs.com/x.jpg" });
+  throw new Error(api);
+} });
+const cams = await im.cameras();
+assert.deepEqual(cams.map((c) => [c.name, c.online]), [["Front Door", true], ["Garage", false]]);
+assert.equal((await im.find("the garage camera")).id, "D2");
+assert.equal((await im.find("")).id, "D1");
+assert.equal((await im.find("back garden")).guessed, true);
+const st = await im.stream(await im.find("front door"));
+assert.equal(st.url, "https://x.lechange.com:8890/a.m3u8?proto=https");
+assert.ok(seen.some((x) => x.api === "bindDeviceLive"));
+assert.equal(await im.snapshot(cams[0]), "https://snap.aliyuncs.com/x.jpg");
+assert.ok(STREAM_HOST.test("cmgw-vpc.lechange.com") && !STREAM_HOST.test("evil.com"));
+const pl = rewritePlaylist("#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"key.bin\"\nseg1.ts\nhttps://y.lechange.com/seg2.ts\n", "https://x.lechange.com/live/a.m3u8", (u) => "R(" + u + ")");
+assert.equal(pl, "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"R(https://x.lechange.com/live/key.bin)\"\nR(https://x.lechange.com/live/seg1.ts)\nR(https://y.lechange.com/seg2.ts)\n");
+console.log("imou ok");

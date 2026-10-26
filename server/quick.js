@@ -67,6 +67,10 @@ export function matchQuick(text, lastDevice = "") {
   if (!t || t.length > 60) return null;
   let m;
 
+  if ((m = t.match(/^(?:show|open|let me see|can i see|bring up|pull up|check)(?: me)?(?: (?:the|my))? ?(.*?) ?(?:camera|cam|cctv)s?(?: feed)?(?: (?:on|to) (?:the |my )?(tv|telly|television|phone|laptop|pc|computer|screen))?$/))) {
+    const name = m[1] || "", screen = m[2] || "";
+    return { tool: "camera", args: { action: "show", camera: name, screen }, reply: (r) => (r.ok === false ? null : /tv|telly|television/.test(screen) ? `Here's the ${r.camera} camera on this screen. For the TV, open Bernard's camera page in the TV's browser.` : `Here's the ${r.camera} camera.`) };
+  }
   if (/^(?:good ?night|night night|nighty night|i'?m (?:off|going) to bed|bedtime)$/.test(t)) return { tool: "goodnight", args: { action: "run" }, reply: goodnightReply, end: true };
 
   if ((m = t.match(/^(?:turn |switch |put )?(?:do not disturb|dnd) (on|off)$|^(?:turn|switch|put) (on|off) (?:do not disturb|dnd)$/))) {

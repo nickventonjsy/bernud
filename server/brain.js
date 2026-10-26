@@ -47,7 +47,7 @@ export function toDeclaration(t) {
 // ---- Slimming: only the instructions and tools a question needs ----
 // Tool groups and the words that bring them in. Tools not listed in any group (added later in ElevenLabs) are always sent.
 export const GROUPS = {
-  home: { tools: ["lights", "tv_control", "goodnight", "home_arrival", "youtube"], re: /\b(lights?|lamps?|bulbs?|bright|dim|colou?r|ceiling|govee|hue|tv|telly|television|netflix|youtube|video|watch|good ?night|bed|arriv|home|leave|leaving)\b/ },
+  home: { tools: ["lights", "tv_control", "goodnight", "home_arrival", "youtube", "camera"], re: /\b(cameras?|cctv|doorbell|front door|driveway|garden|garage|imou|lights?|lamps?|bulbs?|bright|dim|colou?r|ceiling|govee|hue|tv|telly|television|netflix|youtube|video|watch|good ?night|bed|arriv|home|leave|leaving)\b/ },
   music: { tools: ["spotify_info", "spotify_control"], re: /\b(spotify|music|songs?|play|playing|playlist|tracks?|album|artist|pause|resume|skip|next|previous|shuffle|repeat|louder|quieter|volume|speaker)\b/ },
   devices: { tools: ["pc_control", "phone_control"], re: /\b(pc|computer|laptop|desktop|phone|mobile|torch|flash|ring|whatsapp|call|ring|text|message|brightness|do not disturb|dnd|open|app|lock|shut ?down|restart|sleep|volume|script|powershell|window|type)\b/ },
   markets: { tools: ["zentrawire", "get_crypto_prices", "price_alert"], re: /\b(crypto|bitcoin|btc|eth|ethereum|coins?|xrp|ripple|solana|doge|market|markets|watchlist|zentrawire|signals?|stocks?|shares|nvidia|tesla|moving|movers)\b/ },
@@ -171,8 +171,11 @@ export function createBrain({ geminiKey, groqKey = "", elevenKey, agentId, kv, p
   async function callTool(byName, name, args, used) {
     used.push(name);
     const t = byName.get(name);
-    try { return t ? await runTool(t, args || {}) : { error: "unknown tool" }; }
-    catch (e) { return { error: String(e.message || e).slice(0, 300) }; }
+    try {
+      const out = t ? await runTool(t, args || {}) : { error: "unknown tool" };
+      if (out && out.show_camera) used.ui = { camera: out.show_camera }; // tells the screen to open the camera
+      return out;
+    } catch (e) { return { error: String(e.message || e).slice(0, 300) }; }
   }
 
   // ---------------- Gemini (hedged across models) ----------------
@@ -327,7 +330,7 @@ export function createBrain({ geminiKey, groqKey = "", elevenKey, agentId, kv, p
       if (reply) {
         const dev = q.tool === "tv_control" ? "tv" : q.tool === "phone_control" && q.args.action === "torch" ? "torch" : q.args.device;
         if (dev) lastSwitch = { name: dev, at: Date.now() };
-        remember(reply, "instant", pickGroups(text)); return { ok: true, reply, tools: used, model: "instant", ms: Date.now() - t0 };
+        remember(reply, "instant", pickGroups(text)); return { ok: true, reply, tools: used, ui: used.ui, model: "instant", ms: Date.now() - t0 };
       }
       used.length = 0; // didn't work as a quick command: let the AI handle it (and explain any problem)
     }
@@ -352,7 +355,7 @@ export function createBrain({ geminiKey, groqKey = "", elevenKey, agentId, kv, p
       out = await runGemini(job);
     }
     remember(out.reply, out.model, groups);
-    return { ok: true, reply: out.reply, tools: used, model: out.model, ms: Date.now() - t0, groups, config: c.source };
+    return { ok: true, reply: out.reply, tools: used, ui: used.ui, model: out.model, ms: Date.now() - t0, groups, config: c.source };
   }
 
   // Startup self-test: which models answer, and how fast (logged for diagnosis).
