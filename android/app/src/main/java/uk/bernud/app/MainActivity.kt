@@ -32,6 +32,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private lateinit var web: WebView
+    private lateinit var free: FreeVoice
     private var pendingTalk = false
     private var fileCallback: ValueCallback<Array<Uri>>? = null
 
@@ -89,6 +90,7 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        free = FreeVoice(this) { code -> runOnUiThread { web.evaluateJavascript(code, null) } }
         web.addJavascriptInterface(Bridge(), "BernudApp")
         Bus.talk = { talk() }
         Bus.wake = {
@@ -129,6 +131,7 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         Bus.talk = null; Bus.wake = null; Bus.finish = null; Bus.endTalk = null
         stopService(Intent(this, BernudService::class.java))
+        free.destroy()
         web.destroy()
         super.onDestroy()
     }
@@ -141,6 +144,13 @@ class MainActivity : ComponentActivity() {
     inner class Bridge {
         @JavascriptInterface fun conversationStarted() { runOnUiThread { WakeWord.conversationStarted(); AudioRoute.conversationStarted(this@MainActivity) } }
         @JavascriptInterface fun conversationEnded() { runOnUiThread { WakeWord.conversationEnded(); AudioRoute.conversationEnded(this@MainActivity) } }
+        // Free mode: phone listens and speaks itself; the wake word just gives up the mic meanwhile.
+        @JavascriptInterface fun freeStarted() { runOnUiThread { WakeWord.conversationStarted() } }
+        @JavascriptInterface fun freeEnded() { runOnUiThread { free.stopListening(); free.stopSpeaking(); WakeWord.conversationEnded() } }
+        @JavascriptInterface fun listenOnce() { free.listenOnce() }
+        @JavascriptInterface fun stopListening() { free.stopListening() }
+        @JavascriptInterface fun speak(text: String) { free.speak(text) }
+        @JavascriptInterface fun stopSpeaking() { free.stopSpeaking() }
         @JavascriptInterface fun wakeWordStatus(): String = WakeWord.status
         @JavascriptInterface fun phoneStatus(): String = Bus.phoneStatus?.invoke() ?: "service not running"
         @JavascriptInterface fun setPhoneConfig(topic: String, secret: String) {

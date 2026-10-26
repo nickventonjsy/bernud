@@ -128,6 +128,8 @@ export const home = createHome({ kv: db.kv, smartthings: lights, sayOnPhone, tod
 const { createYouTube } = await import("./youtube.js");
 const { createRoutines } = await import("./routines.js");
 export const routines = createRoutines({ kv: db.kv, lights, smartthings, phone, pc, zw: { url: (process.env.ZW_URL || "https://zentrawire.onrender.com").replace(/\/+$/, ""), key: process.env.ZW_ASSISTANT_KEY || "" }, events: async () => (await calendarForBrief()).events });
+const { createBrain } = await import("./brain.js");
+export const brain = createBrain({ geminiKey: process.env.GEMINI_API_KEY || "", elevenKey: process.env.ELEVENLABS_API_KEY || "", agentId: process.env.AGENT_ID || "agent_0501m5q6cc15eqcrnamk2e1w84xc", kv: db.kv, port: PORT, bernudKey: API_KEY, zwKey: process.env.ZW_ASSISTANT_KEY || "" });
 export const youtube = createYouTube({ web, pc, notify, smartthings, zw: { url: (process.env.ZW_URL || "https://zentrawire.onrender.com").replace(/\/+$/, ""), key: process.env.ZW_ASSISTANT_KEY || "" } });
 export const scheduler = createScheduler({
   kv: db.kv, ccp, notify,
@@ -323,7 +325,7 @@ export async function handle(req, res) {
   if (req.method === "OPTIONS") {
     const origin = req.headers.origin;
     const ok = origin && (PUBLIC_ORIGINS.has(origin) || /^http:\/\/localhost(:\d+)?$/.test(origin));
-    res.writeHead(204, ok ? { "access-control-allow-origin": origin, "access-control-allow-headers": "x-dashboard-key", "access-control-allow-methods": "GET", "access-control-max-age": "600", vary: "origin" } : {});
+    res.writeHead(204, ok ? { "access-control-allow-origin": origin, "access-control-allow-headers": "x-dashboard-key, content-type", "access-control-allow-methods": "GET, POST", "access-control-max-age": "600", vary: "origin" } : {});
     return res.end();
   }
 
@@ -352,6 +354,18 @@ export async function handle(req, res) {
     if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
     if (!PHONE_TOPIC || !PHONE_SECRET) return send(res, 200, { ok: false }, req);
     return send(res, 200, { ok: true, topic: PHONE_TOPIC, secret: PHONE_SECRET }, req);
+  }
+
+  // Bernard's free text brain (Gemini) for push-to-talk and "free mode" on the dashboard and the app.
+  if (path === "/brain/chat" && req.method === "POST") {
+    if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
+    const b = await readJson(req);
+    try { return send(res, 200, await brain.chat({ session: String(b.session || "default").slice(0, 64), text: b.text }), req); }
+    catch (e) { console.error("brain", e.message); return send(res, 200, { ok: false, code: e.code || "error", reply: e.code === "quota" || e.code === "no_config" ? e.message : "Sorry, my free brain hit a problem: " + String(e.message).slice(0, 160) }, req); }
+  }
+  if (path === "/brain/status" && req.method === "GET") {
+    if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
+    return send(res, 200, await brain.status(), req);
   }
 
   // Latest written CCP brief for the dashboard (separate passcode, never the agent key).

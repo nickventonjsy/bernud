@@ -462,6 +462,18 @@
       <option value="websocket">Compatibility (WebSocket): try this if Bernard can't hear you</option>
     </select>
     <hr style="border:0;border-top:1px solid var(--line, #5a1a1f);margin:16px 0">
+    <p><b style="color:var(--text)">Voice engine.</b> Free mode costs nothing: this device listens and speaks, and Bernard thinks on your server using Google's free Gemini allowance. ElevenLabs gives Bernard's real voice and natural back-and-forth, but uses credits. Photos always use ElevenLabs.</p>
+    <label for="engineSelect">Engine</label>
+    <select id="engineSelect" style="width:100%;padding:10px;background:transparent;color:var(--text);border:1px solid var(--line, #5a1a1f);border-radius:8px">
+      <option value="free">Free (£0): device voice + Gemini</option>
+      <option value="elevenlabs">ElevenLabs: Bernard's real voice (uses credits)</option>
+    </select>
+    <div id="voiceRow">
+      <label for="voiceSelect">Free-mode voice on this computer</label>
+      <div style="display:flex;gap:10px"><select id="voiceSelect" style="flex:1;padding:10px;background:transparent;color:var(--text);border:1px solid var(--line, #5a1a1f);border-radius:8px"></select><button class="btn" type="button" id="voiceTest">Test</button></div>
+    </div>
+    <div class="note" id="engineNote"></div>
+    <hr style="border:0;border-top:1px solid var(--line, #5a1a1f);margin:16px 0">
     <p><b style="color:var(--text)">"Hey Bernard" wake word.</b> Press the grid button left of the ask bar to put Bernard on standby. He listens using Chrome's speech recognition (on-device where your computer supports it).</p>
     <p>Optional: for a private wake word, add a Picovoice AccessKey and your "Hey Bernud" file (Web / WASM). Both stay on this device only.</p>
     <label for="keyInput">Picovoice AccessKey</label>
@@ -953,6 +965,7 @@
   }
 
   async function startConversation(firstText) {
+    if (freeActive || (!busy && useFree() && !pendingPhoto)) return freeStart(firstText);
     if (busy) { if (firstText && conversation) sendText(firstText); return; }
     busy = true;
     appCall("conversationStarted");
@@ -1010,6 +1023,7 @@
   }
 
   async function endConversation() {
+    if (freeActive) return freeEnd();
     if (conversation) { try { await conversation.endSession(); } catch {} }
     else onConversationEnded();
   }
@@ -1039,6 +1053,117 @@
   }
 
   function ask(text) { startConversation(text); }
+
+  // =====================================================================
+  //  FREE MODE (£0): the device listens and speaks, Bernard's Gemini brain on the server thinks.
+  // =====================================================================
+  const ENGINE_KEY = "bernud.engine", VOICE_KEY = "bernud.voice";
+  const useFree = () => (store.get(ENGINE_KEY) || "free") === "free";
+  let freeActive = false, freeSession = "", freeRec = null, freeLast = "";
+  const freeCb = {};
+  const BYE_RE = /^(?:ok(?:ay)?[ ,]*)?(?:bye|goodbye|good night|goodnight|that'?s all|that is all|that'?s it|nothing|no(?:pe)?(?:,? thanks?| thank you)?|thanks?(?: you)?(?: bernard| bernie| bernud)?|cheers|stop|cancel|never ?mind)[.!, ]*$/i;
+  const oneOf = (a) => a[Math.floor(Math.random() * a.length)];
+
+  function freeListen() {          // resolves with what was said ("" = nothing, null = not supported)
+    return new Promise((resolve) => {
+      if (APP && APP.listenOnce) { freeCb.heard = resolve; appCall("listenOnce"); return; }
+      if (!SpeechRec) return resolve(null);
+      const r = new SpeechRec(); freeRec = r;
+      r.lang = "en-GB"; r.interimResults = true; r.continuous = false; r.maxAlternatives = 1;
+      let finalText = "", done = false;
+      const finish = (t) => { if (done) return; done = true; if (freeRec === r) freeRec = null; resolve(t); };
+      freeCb.heard = finish;
+      r.onresult = (e) => {
+        let interim = "";
+        for (let i = e.resultIndex; i < e.results.length; i++) { const t = e.results[i][0].transcript; if (e.results[i].isFinal) finalText += t; else interim += t; }
+        $("subline").textContent = "You: " + (finalText + interim);
+      };
+      r.onerror = (e) => { if (e.error === "not-allowed" || e.error === "service-not-allowed") $("subline").textContent = "Microphone blocked. Allow it for this site."; };
+      r.onend = () => finish(finalText.trim());
+      try { r.start(); } catch { finish(""); }
+    });
+  }
+  window.bernudHeard = (t) => { const f = freeCb.heard; freeCb.heard = null; if (f) f(t === null ? null : String(t || "").trim()); };
+  window.bernudPartial = (t) => { if (freeActive) $("subline").textContent = "You: " + t; };
+
+  function pcVoice() {
+    const voices = window.speechSynthesis ? speechSynthesis.getVoices() : [];
+    const pick = store.get(VOICE_KEY);
+    return voices.find((v) => v.name === pick) ||
+      voices.find((v) => /en[-_]GB/i.test(v.lang) && /male|george|ryan|thomas|oliver|arthur|daniel/i.test(v.name) && !/female/i.test(v.name)) ||
+      voices.find((v) => /en[-_]GB/i.test(v.lang)) || null;
+  }
+  function freeSpeak(text) {
+    return new Promise((resolve) => {
+      if (!text) return resolve();
+      const guard = setTimeout(() => { if (freeCb.spoke === resolve) freeCb.spoke = null; resolve(); }, 8000 + text.length * 120);
+      const done = () => { clearTimeout(guard); resolve(); };
+      if (APP && APP.speak) { freeCb.spoke = done; appCall("speak", text); return; }
+      if (!window.speechSynthesis) return done();
+      const u = new SpeechSynthesisUtterance(text);
+      u.voice = pcVoice(); u.lang = "en-GB";
+      u.onend = u.onerror = done;
+      freeCb.spoke = done;
+      speechSynthesis.cancel(); speechSynthesis.speak(u);
+    });
+  }
+  window.bernudSpoke = () => { const f = freeCb.spoke; freeCb.spoke = null; if (f) f(); };
+
+  async function freeAsk(text) {
+    const pass = store.get("bernud.dashKey");
+    if (!pass) return { ok: false, code: "no_pass", reply: "Free mode needs your dashboard passcode first. Tap the CCP brief button and enter it." };
+    try {
+      const r = await fetch(`${SERVER}/brain/chat`, { method: "POST", headers: { "content-type": "application/json", "x-dashboard-key": pass }, body: JSON.stringify({ session: freeSession, text }) });
+      if (r.status === 401) return { ok: false, code: "no_pass", reply: "Your dashboard passcode wasn't accepted. Re-enter it in the CCP brief." };
+      return await r.json();
+    } catch { return { ok: false, code: "offline", reply: "I couldn't reach my server. Check your connection." }; }
+  }
+
+  // One question and answer. Returns true when the conversation should stop.
+  async function freeTurn(text) {
+    $("subline").textContent = "You: " + text;
+    setMode("connecting", "Thinking…");
+    const r = await freeAsk(text);
+    if (!freeActive) return true;
+    const reply = String(r.reply || "Sorry, no answer came back.");
+    lastAgentLine = reply; freeLast = reply;
+    setMode("speaking", reply.length > 220 ? reply.slice(0, 217) + "…" : reply);
+    await freeSpeak(reply);
+    return (r.tools || []).includes("goodnight") || ["quota", "not_set_up", "no_pass", "no_config", "offline"].includes(r.code);
+  }
+
+  async function freeStart(firstText) {
+    if (freeActive) { if (firstText) freeTurn(firstText); return; }
+    freeActive = true; busy = true; freeLast = ""; freeSession = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    appCall("freeStarted");
+    await stopWakeWord();
+    try {
+      if (firstText) { await freeTurn(firstText); return; }   // typed or quick button: answer once
+      const g = pickGreeting();
+      setMode("speaking", g);
+      await freeSpeak(g);
+      // Keep going while he keeps talking; stop on silence or a goodbye.
+      for (let i = 0; i < 15 && freeActive; i++) {
+        setMode("listening", "Go ahead.");
+        const heard = await freeListen();
+        if (!freeActive) return;
+        if (heard === null) { $("subline").textContent = "Speech recognition isn't available here. Type instead, or switch to ElevenLabs in Settings."; return; }
+        if (!heard) return;
+        if (BYE_RE.test(heard)) { $("subline").textContent = "You: " + heard; await freeSpeak(oneOf(["Very good, Nicholas.", "Right you are.", "Any time.", "I'll be here."])); return; }
+        if (await freeTurn(heard)) return;
+      }
+    } finally { if (freeActive) freeEnd(); }
+  }
+
+  function freeEnd() {
+    freeActive = false; busy = false;
+    try { if (freeRec) freeRec.abort(); } catch {}
+    try { window.speechSynthesis && speechSynthesis.cancel(); } catch {}
+    appCall("freeEnded");
+    window.bernudHeard(""); window.bernudSpoke();
+    if (armed) { setMode("standby", freeLast || undefined); setTimeout(startWakeWord, 800); }
+    else setMode("idle", freeLast || undefined);
+  }
 
   // ---- Photos: shrink on the phone, upload into the conversation, ask Bernard about it ----
   let pendingPhoto = null;
@@ -1225,8 +1350,25 @@
     const n = store.get(STORE.ppnName); $("ppnStatus").textContent = n ? "Saved: " + n : "";
     const s = store.get(STORE.sens) || "0.6"; $("sensInput").value = s; $("sensVal").textContent = s;
     $("settingsErr").textContent = ""; pendingPpn = null;
+    $("engineSelect").value = useFree() ? "free" : "elevenlabs";
+    loadVoices();
     $("diag").textContent = `Speech recognition: ${SpeechRec ? "supported" : "not supported"} · On-device: ${useLocalSpeech ? "yes" : "no"} · Picovoice: ${hasPico() ? "set up" : "not set up"}`;
   }
+  function loadVoices() {
+    $("voiceRow").style.display = APP ? "none" : "";
+    $("engineNote").textContent = APP ? "On the phone, free mode uses the phone's own voice: change it in Android Settings › Text-to-speech output." : "";
+    if (APP || !window.speechSynthesis) return;
+    const sel = $("voiceSelect"), voices = speechSynthesis.getVoices().filter((v) => /^en/i.test(v.lang));
+    const cur = (pcVoice() || {}).name;
+    sel.innerHTML = "";
+    for (const v of voices) { const o = document.createElement("option"); o.value = v.name; o.textContent = `${v.name} (${v.lang})`; sel.appendChild(o); }
+    if (cur) sel.value = cur;
+  }
+  if (window.speechSynthesis) speechSynthesis.onvoiceschanged = () => { if ($("drawer").classList.contains("open")) loadVoices(); };
+  $("engineSelect").addEventListener("change", (e) => store.set(ENGINE_KEY, e.target.value));
+  $("voiceSelect").addEventListener("change", (e) => store.set(VOICE_KEY, e.target.value));
+  $("voiceTest").addEventListener("click", () => { const u = new SpeechSynthesisUtterance("Good evening, Nicholas. Bernud at your service."); u.voice = pcVoice(); u.lang = "en-GB"; speechSynthesis.cancel(); speechSynthesis.speak(u); });
+
   async function loadMics() {
     const sel = $("micSelect");
     try {
