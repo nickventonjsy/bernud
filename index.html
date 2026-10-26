@@ -818,7 +818,7 @@
     core.classList.toggle("blue", look === "blue" || look === "cyborgblue");
     wave.classList.toggle("blue", look === "blue" || look === "cyborgblue");
     // The portrait is blue; turn it Bernard red to match the dashboard
-    faceCv.style.filter = look === "cyborg" ? "hue-rotate(162deg) saturate(1.3) brightness(1.05)" : "";
+    if (look === "cyborg" || look === "cyborgblue") usePortrait(look);
     faceCv.style.display = faceOn() ? "" : "none";
     const sel = $("lookSelect"); if (sel) sel.value = look;
   }
@@ -970,27 +970,45 @@
 
   // ---- Bernard's picture face (his own ChatGPT-made portrait, bernard-face.webp), brought to life ----
   // Coordinates below are in the original 1254-pixel picture.
-  const CYB = {
-    img: new Image(), ready: false, W: 1254,
-    eyes: [[458, 580], [792, 580]], eyeHalf: [82, 44], chip: [630, 345], mouthY: 934,
-    traces: [
-      [[630, 300], [630, 220], [600, 190], [600, 110]], [[660, 300], [690, 270], [690, 150], [720, 120]],
-      [[595, 315], [540, 280], [540, 170], [500, 140]], [[675, 345], [760, 345], [800, 310], [880, 310]],
-      [[585, 345], [500, 345], [460, 310], [380, 310]], [[630, 390], [630, 470], [630, 520]],
-      [[400, 700], [400, 790], [430, 820], [430, 900]], [[860, 700], [860, 790], [830, 820], [830, 900]],
-      [[540, 1000], [500, 1040], [500, 1100]], [[725, 1000], [765, 1040], [765, 1100]],
-    ],
+  // Two portraits: the red one (default) and the earlier blue one.
+  const PORTRAITS = {
+    cyborg: {
+      src: "bernard-face-red.webp", W: 1254,
+      eyes: [[455, 483], [797, 487]], eyeHalf: [66, 30], chip: [626, 250], mouthY: 790, mouthX: [488, 765], jawBottom: 975,
+      glow: [255, 60, 50], core: [255, 225, 215],
+      traces: [
+        [[627, 20], [627, 120], [627, 200]], [[627, 300], [627, 380], [627, 440]], [[627, 870], [627, 920], [627, 975]],
+        [[440, 600], [446, 650], [452, 710]], [[812, 600], [806, 650], [800, 710]],
+        [[205, 420], [205, 490], [205, 570]], [[1045, 420], [1045, 490], [1045, 570]],
+        [[400, 230], [395, 280], [392, 330]], [[852, 230], [857, 280], [860, 330]],
+        [[330, 1150], [420, 1080], [520, 1040]], [[925, 1150], [835, 1080], [735, 1040]],
+      ],
+    },
+    cyborgblue: {
+      src: "bernard-face.webp", W: 1254,
+      eyes: [[458, 580], [792, 580]], eyeHalf: [82, 44], chip: [630, 345], mouthY: 934, mouthX: [505, 760], jawBottom: 1130,
+      glow: [90, 210, 255], core: [230, 250, 255],
+      traces: [
+        [[630, 300], [630, 220], [600, 190], [600, 110]], [[660, 300], [690, 270], [690, 150], [720, 120]],
+        [[595, 315], [540, 280], [540, 170], [500, 140]], [[675, 345], [760, 345], [800, 310], [880, 310]],
+        [[585, 345], [500, 345], [460, 310], [380, 310]], [[630, 390], [630, 470], [630, 520]],
+        [[400, 700], [400, 790], [430, 820], [430, 900]], [[860, 700], [860, 790], [830, 820], [830, 900]],
+        [[540, 1000], [500, 1040], [500, 1100]], [[725, 1000], [765, 1040], [765, 1100]],
+      ],
+    },
   };
-  CYB.img.onload = () => { CYB.ready = true; };
-  CYB.img.src = "bernard-face.webp";
+  for (const pt of Object.values(PORTRAITS)) { pt.img = new Image(); pt.img.onload = () => { pt.ready = true; }; }
+  let CYB = PORTRAITS.cyborg;
+  function usePortrait(name) { CYB = PORTRAITS[name] || PORTRAITS.cyborg; if (!CYB.img.src) CYB.img.src = CYB.src; }
   let glitchAt = 6;
 
   function drawCyborg(t, lv) {
     const [w, h] = sizeCanvas(faceCv);
     const c = fctx;
     c.clearRect(0, 0, w, h);
-    if (!CYB.ready) return;
-    const img = CYB.img, W = CYB.W, sc = img.naturalWidth / W;
+    if (!CYB.ready) { if (!CYB.img.src) CYB.img.src = CYB.src; return; }
+    const img = CYB.img, W = CYB.W, sc = img.naturalWidth / W, G = CYB.glow, CO = CYB.core;
+    const col = (c3, a) => `rgba(${c3[0]},${c3[1]},${c3[2]},${a})`;
     const listening = mode === "listening", speaking = mode === "speaking", thinking = mode === "connecting";
     const still = reduceMotion;
 
@@ -1010,21 +1028,21 @@
     c.drawImage(img, 0, 0, W, W);
 
     // Jaw: the lower lip and chin slide down as he speaks, opening a dark mouth
-    const d = face.mouth * 34;
+    const d = face.mouth * 30;
     if (d > 0.4) {
-      const my = CYB.mouthY;
+      const my = CYB.mouthY, [mx0, mx1] = CYB.mouthX, jb = CYB.jawBottom, mc = (mx0 + mx1) / 2;
       c.save();
-      c.beginPath(); c.moveTo(505, my - 6); c.lineTo(760, my - 6); c.lineTo(800, my + 60); c.lineTo(770, 1130); c.lineTo(495, 1130); c.lineTo(465, my + 60); c.closePath(); c.clip();
-      c.fillStyle = "#01040b"; c.fillRect(470, my - 6, 330, d + 12);
-      const top = my - 2, bot = 1135, span = bot - top;
+      c.beginPath(); c.moveTo(mx0, my - 6); c.lineTo(mx1, my - 6); c.lineTo(mx1 + 40, my + 60); c.lineTo(mx1 + 10, jb); c.lineTo(mx0 - 10, jb); c.lineTo(mx0 - 40, my + 60); c.closePath(); c.clip();
+      c.fillStyle = "#070102"; c.beginPath(); c.ellipse(mc, my + d / 2 - 1, (mx1 - mx0) * 0.44, d / 2 + 6, 0, 0, Math.PI * 2); c.fill();
+      const top = my - 2, bot = jb + 5, span = bot - top;
       for (let y = top; y < bot; y += 6) {
         const s0 = d * (1 - (y - top) / span), s1 = d * (1 - (y + 6 - top) / span);
-        c.drawImage(img, 460 * sc, y * sc, 350 * sc, 6 * sc, 460, y + s0, 350, 6 + (s1 - s0) + 0.6);
+        c.drawImage(img, (mx0 - 45) * sc, y * sc, (mx1 - mx0 + 90) * sc, 6 * sc, mx0 - 45, y + s0, mx1 - mx0 + 90, 6 + (s1 - s0) + 0.6);
       }
       c.restore();
-      const mg = c.createRadialGradient(632, my + d / 2, 0, 632, my + d / 2, 110);
-      mg.addColorStop(0, `rgba(90,200,255,${0.12 + lv * 0.25})`); mg.addColorStop(1, "rgba(90,200,255,0)");
-      c.globalCompositeOperation = "lighter"; c.fillStyle = mg; c.fillRect(520, my - 30, 230, d + 60); c.globalCompositeOperation = "source-over";
+      const mg = c.createRadialGradient(mc, my + d / 2, 0, mc, my + d / 2, 110);
+      mg.addColorStop(0, col(G, 0.12 + lv * 0.25)); mg.addColorStop(1, col(G, 0));
+      c.globalCompositeOperation = "lighter"; c.fillStyle = mg; c.fillRect(mc - 115, my - 30, 230, d + 60); c.globalCompositeOperation = "source-over";
     }
 
     // Eyelids close over the eyes when he blinks (a strip of the metal brow stretched down)
@@ -1033,7 +1051,7 @@
       c.save();
       c.beginPath(); c.ellipse(ex, ey, hw, hh, 0, 0, Math.PI * 2); c.clip();
       c.drawImage(img, (ex - hw) * sc, (ey - hh - 34) * sc, hw * 2 * sc, 34 * sc, ex - hw, ey - hh, hw * 2, hh * 2 * blink + 2);
-      c.strokeStyle = "rgba(120,220,255,0.6)"; c.lineWidth = 2;
+      c.strokeStyle = col(G, 0.6); c.lineWidth = 2;
       c.beginPath(); c.moveTo(ex - hw * 0.9, ey - hh + hh * 2 * blink); c.lineTo(ex + hw * 0.9, ey - hh + hh * 2 * blink); c.stroke();
       c.restore();
     }
@@ -1044,13 +1062,13 @@
     for (const [ex, ey] of CYB.eyes) {
       const r = 70 * (1 + lv * 0.5 + (listening ? 0.15 : 0));
       const g = c.createRadialGradient(ex, ey, 0, ex, ey, r);
-      g.addColorStop(0, `rgba(230,250,255,${Math.min(1, eyeA * 1.2)})`); g.addColorStop(0.25, `rgba(90,210,255,${eyeA * 0.8})`); g.addColorStop(1, "rgba(30,120,255,0)");
+      g.addColorStop(0, col(CO, Math.min(1, eyeA * 1.2))); g.addColorStop(0.25, col(G, eyeA * 0.8)); g.addColorStop(1, col(G, 0));
       c.fillStyle = g; c.fillRect(ex - r, ey - r, r * 2, r * 2);
     }
     // Forehead chip pulses (fast while thinking)
     const chipA = 0.25 + 0.25 * Math.sin(t * (thinking ? 7 : 1.6)) + lv * 0.3;
     const cg = c.createRadialGradient(CYB.chip[0], CYB.chip[1], 0, CYB.chip[0], CYB.chip[1], 90);
-    cg.addColorStop(0, `rgba(220,248,255,${chipA})`); cg.addColorStop(0.3, `rgba(80,200,255,${chipA * 0.6})`); cg.addColorStop(1, "rgba(30,120,255,0)");
+    cg.addColorStop(0, col(CO, chipA)); cg.addColorStop(0.3, col(G, chipA * 0.6)); cg.addColorStop(1, col(G, 0));
     c.fillStyle = cg; c.fillRect(CYB.chip[0] - 90, CYB.chip[1] - 90, 180, 180);
     // Light pulses along the circuits
     if (!still) for (let i = 0; i < CYB.traces.length; i++) {
@@ -1058,7 +1076,7 @@
       const segs = tr.length - 1, fi = f * segs, j = Math.floor(fi), u = fi - j, a = tr[j], b = tr[j + 1];
       const x = a[0] + (b[0] - a[0]) * u, y = a[1] + (b[1] - a[1]) * u;
       const pg = c.createRadialGradient(x, y, 0, x, y, 18);
-      pg.addColorStop(0, "rgba(235,250,255,0.95)"); pg.addColorStop(0.4, "rgba(90,210,255,0.5)"); pg.addColorStop(1, "rgba(30,120,255,0)");
+      pg.addColorStop(0, col(CO, 0.95)); pg.addColorStop(0.4, col(G, 0.5)); pg.addColorStop(1, col(G, 0));
       c.fillStyle = pg; c.fillRect(x - 18, y - 18, 36, 36);
     }
     // A slow scan sweep that lights up the circuits it passes
