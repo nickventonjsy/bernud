@@ -119,7 +119,7 @@ export function toOpenAiTool(t) {
 }
 const estTokens = (x) => Math.ceil(JSON.stringify(x).length / 3.6);
 
-export function createBrain({ geminiKey, groqKey = "", elevenKey, agentId, kv, port, bernudKey, zwKey,
+export function createBrain({ briefHandler = null, geminiKey, groqKey = "", elevenKey, agentId, kv, port, bernudKey, zwKey,
   models = (process.env.GEMINI_MODELS || "gemini-3.6-flash,gemini-3.8-flash,gemini-3.5-flash-lite").split(",").map((m) => m.trim()).filter(Boolean),
   groqModels = (process.env.GROQ_MODELS || "openai/gpt-oss-120b,openai/gpt-oss-20b,qwen/qwen3.8-27b").split(",").map((m) => m.trim()).filter(Boolean),
   groqMaxTokens = 7000, fetchImpl = fetch, now = () => new Date(), log = console }) {
@@ -322,6 +322,12 @@ export function createBrain({ geminiKey, groqKey = "", elevenKey, agentId, kv, p
     const t0 = Date.now();
     const remember = (reply, model, groups = s.groups) => { s.turns = [...s.turns, { user: text, reply }].slice(-6); s.groups = groups; return reply; };
 
+    // 0. "My brief": read the saved CCP brief, or have one prepared (too big a job for the free AIs).
+    if (briefHandler && /^(?:(?:hey |ok |okay )?(?:bernard|bernud|bernie)[, ]*)?(?:(?:can i (?:have|get)|give me|read me|get me|show me|what'?s in|let'?s have|do|run|prepare|i'?d like|please)\s+)?(?:a |an |my |the |today'?s )?(?:(?:new|fresh|latest|updated)\s+)?(?:ccp |cory'?s |daily |morning |work )*(?:brief|briefing)(?:\s+(?:please|again|for today|now))*[.!?]*$/i.test(text.trim())) {
+      const r = await briefHandler(text);
+      remember(r.reply, "brief", ["brief"]);
+      return { ok: true, reply: r.reply, tools: ["brief"], ui: r.ui, model: "brief", ms: Date.now() - t0 };
+    }
     // 1. Instant commands: no AI needed.
     const q = matchQuick(text, lastSwitch.at > Date.now() - 30 * 60_000 ? lastSwitch.name : "");
     if (q && byName.has(q.tool)) {

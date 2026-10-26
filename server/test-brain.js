@@ -167,4 +167,10 @@ const b4 = mk({ models: ["old", "new"], fetchImpl: async (u, o) => {
 assert.equal((await b4.chat({ session: "z", text: "hi" })).model, "new"); assert.deepEqual(tried, ["old", "new"]);
 const b5 = mk({ models: ["a1", "a2"], fetchImpl: async (u, o) => (String(u).includes("generativelanguage") ? { ok: false, status: 503, json: async () => ({ error: { message: "high demand" } }) } : fetchImpl(u, o)) });
 assert.equal((await b5.chat({ session: "q", text: "hi" }).catch((e) => e)).code, "busy");
+// "My daily brief" goes to the brief handler, not the AI.
+const bb = mk({ briefHandler: async (t) => ({ reply: "Brief: " + t, ui: { brief: true } }) });
+for (const t of ["give me my daily brief", "Morning brief please", "CCP brief", "can I have my brief?", "Hey Bernard, my daily briefing", "a new brief"]) {
+  const x = await bb.chat({ session: "b1", text: t }); assert.equal(x.model, "brief", t); assert.deepEqual(x.ui, { brief: true });
+}
+assert.notEqual((await bb.chat({ session: "b2", text: "what was in the brief about the supplier" })).model, "brief");
 console.log("brain ok");

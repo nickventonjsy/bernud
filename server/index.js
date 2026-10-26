@@ -128,6 +128,7 @@ export const home = createHome({ kv: db.kv, smartthings: lights, sayOnPhone, tod
 const { createYouTube } = await import("./youtube.js");
 const { createRoutines } = await import("./routines.js");
 export const routines = createRoutines({ kv: db.kv, lights, smartthings, phone, pc, zw: { url: (process.env.ZW_URL || "https://zentrawire.onrender.com").replace(/\/+$/, ""), key: process.env.ZW_ASSISTANT_KEY || "" }, events: async () => (await calendarForBrief()).events });
+const { briefSummary } = await import("./briefsummary.js");
 const { createImou, STREAM_HOST, rewritePlaylist } = await import("./imou.js");
 export const imou = createImou({ appId: (process.env.IMOU_APP_ID || "").trim(), appSecret: (process.env.IMOU_APP_SECRET || "").trim() });
 const { createHmac } = await import("node:crypto");
@@ -143,13 +144,28 @@ async function cameraShow(name, quality = "HD") {
 const { createGeminiVoice } = await import("./geminivoice.js");
 export const geminiVoice = createGeminiVoice({ apiKey: process.env.GEMINI_API_KEY || "" });
 const { createBrain } = await import("./brain.js");
-export const brain = createBrain({ geminiKey: (process.env.GEMINI_API_KEY || "").trim(), groqKey: (process.env.GROQ_API_KEY || "").trim(), elevenKey: process.env.ELEVENLABS_API_KEY || "", agentId: process.env.AGENT_ID || "agent_0501m5q6cc15eqcrnamk2e1w84xc", kv: db.kv, port: PORT, bernudKey: API_KEY, zwKey: process.env.ZW_ASSISTANT_KEY || "" });
+export const brain = createBrain({ briefHandler: (text) => briefForBrain(text), geminiKey: (process.env.GEMINI_API_KEY || "").trim(), groqKey: (process.env.GROQ_API_KEY || "").trim(), elevenKey: process.env.ELEVENLABS_API_KEY || "", agentId: process.env.AGENT_ID || "agent_0501m5q6cc15eqcrnamk2e1w84xc", kv: db.kv, port: PORT, bernudKey: API_KEY, zwKey: process.env.ZW_ASSISTANT_KEY || "" });
 export const youtube = createYouTube({ web, pc, notify, smartthings, zw: { url: (process.env.ZW_URL || "https://zentrawire.onrender.com").replace(/\/+$/, ""), key: process.env.ZW_ASSISTANT_KEY || "" } });
 export const scheduler = createScheduler({
   kv: db.kv, ccp, notify,
   agentId: process.env.AGENT_ID || "agent_0501m5q6cc15eqcrnamk2e1w84xc",
   config: { time: process.env.BRIEF_TIME, days: process.env.BRIEF_DAYS },
 });
+
+// "Give me my brief" in free mode: read out the saved brief, or prepare one if today's isn't there yet.
+// (Preparing uses Bernard's ElevenLabs agent in text-only mode, like the 9am run: no voice, so it's cheap.)
+async function briefForBrain(text) {
+  const b = await ccp.latestBrief().catch(() => null);
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(new Date());
+  const day = b && new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(new Date(b.created_at));
+  const fresh = /\b(new|fresh|again|update|redo|latest)\b/i.test(String(text));
+  if (b && day === today && !fresh) return { reply: `Here's today's brief. ${briefSummary(b.text)} The full version is open on your screen.`, ui: { brief: true } };
+  // Preparing takes a minute or two: start it and reply now; it arrives as a phone notification and in "CCP brief".
+  const running = (await scheduler.status()).running;
+  if (!running) scheduler.runBrief("asked").catch(() => {});
+  const when = b ? ` Meanwhile, the last one I have is from ${new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", weekday: "long", hour: "numeric", minute: "2-digit" }).format(new Date(b.created_at))}.` : "";
+  return { reply: `${running ? "I'm already putting" : day === today ? "I'm putting a fresh" : "Today's brief wasn't ready, so I'm putting"} ${running ? "a brief" : "one"} together now. It'll come through on your phone and under CCP brief in a couple of minutes.${when}` };
+}
 
 // ---------------------------------------------------------------------------
 // Memory search: simple keyword scoring, good enough for a personal list.

@@ -1207,6 +1207,7 @@
     const r = await freeAsk(text);
     if (!freeActive) return true;
     if (r.ui && r.ui.camera) openCamera(r.ui.camera.name);
+    if (r.ui && r.ui.brief) { try { openBrief(); } catch {} }
     const reply = String(r.reply || "Sorry, no answer came back.");
     lastAgentLine = reply; freeLast = reply;
     setMode("speaking", reply.length > 220 ? reply.slice(0, 217) + "…" : reply);
