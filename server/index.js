@@ -131,7 +131,7 @@ export const routines = createRoutines({ kv: db.kv, lights, smartthings, phone, 
 const { createGeminiVoice } = await import("./geminivoice.js");
 export const geminiVoice = createGeminiVoice({ apiKey: process.env.GEMINI_API_KEY || "" });
 const { createBrain } = await import("./brain.js");
-export const brain = createBrain({ geminiKey: process.env.GEMINI_API_KEY || "", elevenKey: process.env.ELEVENLABS_API_KEY || "", agentId: process.env.AGENT_ID || "agent_0501m5q6cc15eqcrnamk2e1w84xc", kv: db.kv, port: PORT, bernudKey: API_KEY, zwKey: process.env.ZW_ASSISTANT_KEY || "" });
+export const brain = createBrain({ geminiKey: process.env.GEMINI_API_KEY || "", groqKey: process.env.GROQ_API_KEY || "", elevenKey: process.env.ELEVENLABS_API_KEY || "", agentId: process.env.AGENT_ID || "agent_0501m5q6cc15eqcrnamk2e1w84xc", kv: db.kv, port: PORT, bernudKey: API_KEY, zwKey: process.env.ZW_ASSISTANT_KEY || "" });
 export const youtube = createYouTube({ web, pc, notify, smartthings, zw: { url: (process.env.ZW_URL || "https://zentrawire.onrender.com").replace(/\/+$/, ""), key: process.env.ZW_ASSISTANT_KEY || "" } });
 export const scheduler = createScheduler({
   kv: db.kv, ccp, notify,

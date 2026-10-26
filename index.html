@@ -474,7 +474,8 @@
       <div id="gStyleRow"><label for="gStyle">How the Gemini voice should speak</label>
       <input id="gStyle" type="text" placeholder="A calm, well-spoken English butler with a dry wit…">
       <label for="gName">How to say his name (spell it how it sounds)</label>
-      <input id="gName" type="text" placeholder="Bur-nud"></div>
+      <input id="gName" type="text" placeholder="Bur-nud">
+      <label style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="shortDevice" style="width:auto"> Use the quick device voice for short replies ("Lamp on.")</label></div>
       <div id="devSliders">
       <label for="pitchInput">Pitch: <span id="pitchVal"></span></label>
       <input id="pitchInput" type="range" min="0.6" max="1.4" step="0.05">
@@ -1105,29 +1106,53 @@
   }
   const vPitch = () => Number(store.get("bernud.pitch") || "1"), vRate = () => Number(store.get("bernud.rate") || "1");
   function pcUtterance(text) { const u = new SpeechSynthesisUtterance(text); u.voice = pcVoice(); u.lang = "en-GB"; u.pitch = vPitch(); u.rate = vRate(); return u; }
-  // Gemini's natural voice (made on the server, played here). Resolves false if it couldn't, so the device voice takes over.
-  let gAudio = null;
-  async function geminiSpeak(text) {
+  // Gemini's natural voice (made on the server, played here), sentence by sentence: the first sentence starts
+  // playing while the rest is still being made. If Google fails, the device voice says whatever is left.
+  let gAudio = null, gTesting = false;
+  async function geminiAudio(text) {
     const voice = store.get("bernud.gvoice"), pass = store.get("bernud.dashKey");
-    if (!voice || !pass) return false;
+    if (!voice || !pass) return null;
     try {
       const r = await fetch(`${SERVER}/brain/speak`, { method: "POST", headers: { "content-type": "application/json", "x-dashboard-key": pass }, body: JSON.stringify({ text, voice, style: store.get("bernud.gstyle") || undefined, name_sound: store.get("bernud.gname") || undefined }), signal: AbortSignal.timeout(30000) });
-      if (!r.ok) return false;
-      const url = URL.createObjectURL(await r.blob());
-      if (!freeActive && !gTesting) { URL.revokeObjectURL(url); return true; }
-      await new Promise((res) => {
-        const a = new Audio(url); gAudio = a;
-        const end = () => { if (gAudio === a) gAudio = null; URL.revokeObjectURL(url); res(); };
-        a.onended = a.onerror = end;
-        a.play().catch(end);
-        freeCb.spoke = end;
-      });
-      return true;
-    } catch { return false; }
+      if (!r.ok) return null;
+      return URL.createObjectURL(await r.blob());
+    } catch { return null; }
   }
-  let gTesting = false;
+  function playUrl(url) {
+    return new Promise((res) => {
+      const a = new Audio(url); gAudio = a;
+      const end = () => { if (gAudio === a) gAudio = null; URL.revokeObjectURL(url); res(); };
+      a.onended = a.onerror = end;
+      a.play().catch(end);
+      freeCb.spoke = end;
+    });
+  }
+  // First sentence on its own (so he starts quickly), then the rest in a few bigger pieces.
+  function speechChunks(text) {
+    const sentences = String(text).match(/[^.!?]+(?:[.!?]+["')\]]*|$)\s*/g)?.map((x) => x.trim()).filter(Boolean) || [String(text)];
+    const out = [sentences.shift()];
+    let cur = "";
+    for (const x of sentences) { if (cur && (cur + " " + x).length > 220) { out.push(cur); cur = x; } else cur = cur ? cur + " " + x : x; }
+    if (cur) out.push(cur);
+    return out;
+  }
+  async function geminiSpeak(text) {
+    const parts = speechChunks(text);
+    let next = geminiAudio(parts[0]);
+    for (let i = 0; i < parts.length; i++) {
+      const url = await next;
+      next = i + 1 < parts.length ? geminiAudio(parts[i + 1]) : null;
+      if (!freeActive && !gTesting) { if (url) URL.revokeObjectURL(url); return true; }
+      if (!url) { if (i === 0) return false; await deviceSpeak(parts.slice(i).join(" ")); return true; }
+      await playUrl(url);
+    }
+    return true;
+  }
+  const shortOnDevice = () => store.get("bernud.shortDevice") !== "0";
   async function freeSpeak(text) {
-    if (text && store.get("bernud.gvoice") && await geminiSpeak(text)) return;
+    if (!text) return;
+    const quick = shortOnDevice() && text.length <= 45;
+    if (store.get("bernud.gvoice") && !quick && await geminiSpeak(text)) return;
     return deviceSpeak(text);
   }
   function deviceSpeak(text) {
@@ -1449,6 +1474,7 @@
     $("voiceRow").style.display = "";
     $("gStyle").value = store.get("bernud.gstyle") || "";
     $("gName").value = store.get("bernud.gname") || "";
+    $("shortDevice").checked = shortOnDevice();
     $("engineNote").textContent = "Gemini voices sound natural and are free, but take a second or two and need internet; if one fails, Bernard uses the " + (APP ? "phone's" : "computer's") + " own voice instead." + (store.get("bernud.dashKey") ? "" : " Enter your passcode in the CCP brief to see the Gemini voices.");
     gList = null; renderVoices(); loadGeminiVoices();
     if (APP) { appCall("ttsVoices"); return; }
@@ -1463,6 +1489,7 @@
   $("voiceSelect").addEventListener("change", saveVoice);
   $("gStyle").addEventListener("change", saveVoice);
   $("gName").addEventListener("change", saveVoice);
+  $("shortDevice").addEventListener("change", (e) => store.set("bernud.shortDevice", e.target.checked ? "1" : "0"));
   $("pitchInput").addEventListener("input", showVoiceNums); $("pitchInput").addEventListener("change", saveVoice);
   $("rateInput").addEventListener("input", showVoiceNums); $("rateInput").addEventListener("change", saveVoice);
   $("voiceTest").addEventListener("click", async () => {

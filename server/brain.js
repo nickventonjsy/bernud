@@ -1,15 +1,11 @@
 // Bernard's free "brain": Gemini (Google's free tier) running Bernard's own instructions and tools on this server.
 // The prompt and tool list are read live from the ElevenLabs agent (single source of truth, nothing private in
 // the public repo), cached in kv in case ElevenLabs can't be reached, and executed here by calling the same webhooks.
+import { matchQuick } from "./quick.js";
 const GEMINI = "https://generativelanguage.googleapis.com/v1beta/models";
+const GROQ = "https://api.groq.com/openai/v1/chat/completions";
 const SKIP = new Set(["end_call"]);
 const SESSION_MS = 15 * 60_000;
-// Keep recent history, always starting at one of Nicholas's own messages (never mid tool call).
-function trim(contents, max = 30) {
-  let start = Math.max(0, contents.length - max);
-  while (start < contents.length && !(contents[start].role === "user" && contents[start].parts?.some((p) => p.text))) start++;
-  return contents.slice(start);
-}
 
 const TEXT_MODE_NOTE = `
 
@@ -48,7 +44,85 @@ export function toDeclaration(t) {
   return d;
 }
 
-export function createBrain({ geminiKey, elevenKey, agentId, kv, port, bernudKey, zwKey, models = (process.env.GEMINI_MODELS || "gemini-3.6-flash,gemini-3.8-flash,gemini-3.5-flash-lite").split(",").map((m) => m.trim()).filter(Boolean), fetchImpl = fetch, now = () => new Date(), log = console }) {
+// ---- Slimming: only the instructions and tools a question needs ----
+// Tool groups and the words that bring them in. Tools not listed in any group (added later in ElevenLabs) are always sent.
+export const GROUPS = {
+  home: { tools: ["lights", "tv_control", "goodnight", "home_arrival", "youtube"], re: /\b(lights?|lamps?|bulbs?|bright|dim|colou?r|ceiling|govee|hue|tv|telly|television|netflix|youtube|video|watch|good ?night|bed|arriv|home|leave|leaving)\b/ },
+  music: { tools: ["spotify_info", "spotify_control"], re: /\b(spotify|music|songs?|play|playing|playlist|tracks?|album|artist|pause|resume|skip|next|previous|shuffle|repeat|louder|quieter|volume|speaker)\b/ },
+  devices: { tools: ["pc_control", "phone_control"], re: /\b(pc|computer|laptop|desktop|phone|mobile|torch|flash|ring|whatsapp|call|ring|text|message|brightness|do not disturb|dnd|open|app|lock|shut ?down|restart|sleep|volume|script|powershell|window|type)\b/ },
+  markets: { tools: ["zentrawire", "get_crypto_prices", "price_alert"], re: /\b(crypto|bitcoin|btc|eth|ethereum|coins?|xrp|ripple|solana|doge|market|markets|watchlist|zentrawire|signals?|stocks?|shares|nvidia|tesla|moving|movers)\b/ },
+  email: { tools: ["gmail_search", "gmail_read", "gmail_draft"], re: /\b(e-?mails?|mail|inbox|gmail|drafts?|reply|replies|wrote|sent|supplier|invoice)\b/ },
+  calendar: { tools: ["calendar"], re: /\b(calendar|diary|meetings?|appointments?|events?|book|booked|schedule|what'?s on|today|tomorrow|tonight|this week|next week|monday|tuesday|wednesday|thursday|friday|saturday|sunday|busy|free)\b/ },
+  ccp: { tools: ["ccp_search", "ccp_read", "ccp_delete", "reorder_list"], re: /\b(ccp|cory|paints?|pricing|prices?|quote|quotation|tds|sds|data ?sheets?|mixing|ratio|pot life|products?|supplier|reorder|order|orders|stock|folder|files?|delete|restore|lacquer|primer|clear ?coat|thinners?|hardener|filler|basecoat|capella|tins?|aerosol|kit)\b/ },
+  brief: { tools: ["ccp_brief_context", "ccp_save_brief", "gmail_read"], re: /\bbrief\b/ },
+  reminders: { tools: ["reminder", "send_to_phone", "price_alert"], re: /\b(remind|reminder|alert|notify|notification|send (?:it|that|me|this)|to my phone)\b/ },
+  web: { tools: ["web_search", "web_read", "get_news"], re: /\b(search|look up|google|find|who|what|when|where|how|why|news|headlines?|open|hours|menu|restaurant|takeaway|website|food|order|book a table)\b/ },
+  weather: { tools: ["get_weather"], re: /\b(weather|rain|raining|wind|windy|temperature|cold|warm|hot|sunny|umbrella|forecast|coat|degrees|snow|storm)\b/ },
+};
+const ALWAYS = ["recall", "remember", "forget"];
+const DEFAULT_GROUPS = ["web", "weather", "calendar", "reminders"];
+// Which prompt sections go with which tools. Sections not listed here (identity, speaking, safety…) are always sent.
+const SECTION_TOOLS = [
+  [/^Samsung TVs/, ["tv_control"]], [/^ZentraWire/, ["zentrawire"]], [/^Spotify/, ["spotify_control", "spotify_info"]],
+  [/^Calendar/, ["calendar"]], [/^Reminders/, ["reminder", "price_alert"]], [/^Photos/, []], [/^The web/, ["web_search"]],
+  [/^Ordering food/, "food"], [/^CCP email/, ["gmail_search", "gmail_draft"]], [/^Controlling his PC/, ["pc_control", "phone_control"]],
+  [/^The CCP Brain/, ["ccp_search", "ccp_delete"]], [/^CCP morning brief/, ["ccp_brief_context"]], [/^CCP pricing/, ["ccp_search"]],
+];
+const FOOD = /\b(food|order|takeaway|restaurant|menu|delivery|deliveroo|just eat|pizza|curry|chinese|indian|burger|kebab|book a table|dinner|lunch)\b/;
+
+export function pickGroups(text, previous = []) {
+  const t = String(text || "").toLowerCase();
+  const hit = Object.entries(GROUPS).filter(([, g]) => g.re.test(t)).map(([k]) => k);
+  // Short follow-ups ("yes", "do it", "the second one") keep the previous topic's tools.
+  const followUp = t.split(/\s+/).length <= 6 || /^(yes|yeah|yep|no|nope|ok|okay|go on|do it|that one|the (first|second|third|last) one|sure|please|cancel)\b/.test(t);
+  const groups = new Set([...hit, ...(followUp || !hit.length ? previous : [])]);
+  if (!groups.size) DEFAULT_GROUPS.forEach((g) => groups.add(g));
+  return [...groups];
+}
+
+export function slimConfig(cfg, text, groups) {
+  const grouped = new Set(Object.values(GROUPS).flatMap((g) => g.tools));
+  const want = new Set([...ALWAYS, ...groups.flatMap((g) => GROUPS[g]?.tools || [])]);
+  const tools = cfg.tools.filter((t) => want.has(t.name) || !grouped.has(t.name));
+  const names = new Set(tools.map((t) => t.name));
+  const allNames = new Set(cfg.tools.map((t) => t.name));
+  const sections = cfg.prompt.split(/^(?=# )/m).filter((sec) => {
+    const title = sec.replace(/^# /, "").split("\n")[0];
+    const rule = SECTION_TOOLS.find(([re]) => re.test(title));
+    if (!rule) return true;
+    if (rule[1] === "food") return FOOD.test(String(text).toLowerCase());
+    return rule[1].some((n) => names.has(n));
+  }).map((sec) => {
+    if (!/^# Tools/.test(sec)) return sec;
+    // Drop lines in the tool list that only describe tools not sent this time.
+    return sec.split("\n").filter((line) => {
+      const m = line.match(/^- ([a-z_, /]+?):/);
+      if (!m) return true;
+      const ids = m[1].split(/[,/ ]+|\band\b/).map((x) => x.trim()).filter((x) => allNames.has(x));
+      return !ids.length || ids.some((x) => names.has(x));
+    }).join("\n");
+  });
+  return { prompt: sections.join(""), tools };
+}
+
+// Gemini declaration -> OpenAI/Groq function (lower-case JSON schema types).
+function toJsonSchema(s) {
+  if (!s) return s;
+  const out = { ...s, type: String(s.type).toLowerCase() };
+  if (s.items) out.items = toJsonSchema(s.items);
+  if (s.properties) out.properties = Object.fromEntries(Object.entries(s.properties).map(([k, v]) => [k, toJsonSchema(v)]));
+  return out;
+}
+export function toOpenAiTool(t) {
+  const d = toDeclaration(t);
+  return { type: "function", function: { name: d.name, description: d.description.slice(0, 1024), parameters: d.parameters ? toJsonSchema(d.parameters) : { type: "object", properties: {} } } };
+}
+const estTokens = (x) => Math.ceil(JSON.stringify(x).length / 3.6);
+
+export function createBrain({ geminiKey, groqKey = "", elevenKey, agentId, kv, port, bernudKey, zwKey,
+  models = (process.env.GEMINI_MODELS || "gemini-3.6-flash,gemini-3.8-flash,gemini-3.5-flash-lite").split(",").map((m) => m.trim()).filter(Boolean),
+  groqModels = (process.env.GROQ_MODELS || "openai/gpt-oss-120b,openai/gpt-oss-20b").split(",").map((m) => m.trim()).filter(Boolean),
+  groqMaxTokens = 7000, fetchImpl = fetch, now = () => new Date(), log = console }) {
   let cfg = null, cfgAt = 0;
   const sessions = new Map();
 
@@ -83,7 +157,7 @@ export function createBrain({ geminiKey, elevenKey, agentId, kv, port, bernudKey
     else if (url.hostname.startsWith("zentrawire")) headers["x-zw-assistant"] = zwKey;
     const qProps = a.query_params_schema?.properties || {}, bProps = a.request_body_schema?.properties || {};
     const query = { ...constants(qProps) }, body = { ...constants(bProps) };
-    for (const [k, v] of Object.entries(args)) { if (k in qProps) query[k] = v; else body[k] = v; }
+    for (const [k, v] of Object.entries(args || {})) { if (k in qProps) query[k] = v; else body[k] = v; }
     for (const [k, v] of Object.entries(query)) if (v !== undefined && v !== null && v !== "") url.searchParams.set(k, Array.isArray(v) ? v.join(",") : String(v));
     const method = a.method || "GET";
     const r = await fetchImpl(url, { method, headers, body: method === "GET" ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(Math.min(Math.max(t.response_timeout_secs || 20, 5), 60) * 1000) });
@@ -93,7 +167,14 @@ export function createBrain({ geminiKey, elevenKey, agentId, kv, port, bernudKey
     const s = JSON.stringify(out);
     return s.length > 12_000 ? { truncated: true, text: s.slice(0, 12_000) } : (Array.isArray(out) ? { result: out } : out);
   }
+  async function callTool(byName, name, args, used) {
+    used.push(name);
+    const t = byName.get(name);
+    try { return t ? await runTool(t, args || {}) : { error: "unknown tool" }; }
+    catch (e) { return { error: String(e.message || e).slice(0, 300) }; }
+  }
 
+  // ---------------- Gemini (hedged across models) ----------------
   async function gemini(model, payload, timeoutMs = 25_000) {
     let r;
     try { r = await fetchImpl(`${GEMINI}/${model}:generateContent`, { method: "POST", headers: { "content-type": "application/json", "x-goog-api-key": geminiKey }, body: JSON.stringify(payload), signal: AbortSignal.timeout(timeoutMs) }); }
@@ -102,10 +183,8 @@ export function createBrain({ geminiKey, elevenKey, agentId, kv, port, bernudKey
     if (!r.ok) throw Object.assign(new Error(j.error?.message || `Gemini ${r.status}`), { status: r.status });
     return j;
   }
-
-  // Ask the first model; if it hasn't answered within a few seconds, ask the next one too and take whichever
-  // answers first. Models that are overloaded or out of free allowance sit out for a few minutes.
   const cooldown = new Map();
+  const cooling = (k) => (cooldown.get(k) || 0) > Date.now();
   async function attempt(m, payload) {
     try { return await gemini(m, payload); }
     catch (e) {
@@ -116,8 +195,9 @@ export function createBrain({ geminiKey, elevenKey, agentId, kv, port, bernudKey
       throw e;
     }
   }
+  // Ask the first model; if it hasn't answered within a few seconds, ask the next too and take whichever answers first.
   function generate(payload, hedgeMs = 6000) {
-    let order = models.filter((m) => (cooldown.get(m) || 0) < Date.now());
+    let order = models.filter((m) => !cooling(m));
     if (!order.length) order = [...models];
     return new Promise((resolve, reject) => {
       let idx = 0, pending = 0, done = false;
@@ -146,28 +226,15 @@ export function createBrain({ geminiKey, elevenKey, agentId, kv, port, bernudKey
       launch();
     });
   }
-
-  async function chat({ session = "default", text }) {
-    if (!geminiKey) return { ok: false, code: "not_set_up", reply: "Free mode isn't set up yet: the Gemini API key needs adding on the server." };
-    text = String(text || "").trim().slice(0, 4000);
-    if (!text) return { ok: false, reply: "I didn't catch anything." };
-    const c = await config();
-    const byName = new Map(c.tools.map((t) => [t.name, t]));
-    const time = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", dateStyle: "full", timeStyle: "short" }).format(now());
-    const system = c.prompt.replaceAll("{{system__time}}", time) + TEXT_MODE_NOTE;
-
-    for (const [k, s] of sessions) if (Date.now() - s.at > SESSION_MS) sessions.delete(k);
-    const s = sessions.get(session) || { history: [], at: 0 };
-    s.at = Date.now(); sessions.set(session, s);
-    const contents = [...s.history, { role: "user", parts: [{ text }] }];
-    const used = [];
+  async function runGemini({ system, turns, text, tools, byName, used }) {
+    const contents = [...turns.flatMap((t) => [{ role: "user", parts: [{ text: t.user }] }, { role: "model", parts: [{ text: t.reply }] }]), { role: "user", parts: [{ text }] }];
+    const decls = tools.map(toDeclaration);
     let model = models[0];
-
     for (let step = 0; step < 6; step++) {
       const { model: m, res } = await generate({
         systemInstruction: { parts: [{ text: system }] },
         contents,
-        tools: [{ functionDeclarations: c.tools.map(toDeclaration) }],
+        ...(decls.length ? { tools: [{ functionDeclarations: decls }] } : {}),
         generationConfig: { maxOutputTokens: 2048, thinkingConfig: { thinkingLevel: "low" } },
       });
       model = m;
@@ -175,23 +242,96 @@ export function createBrain({ geminiKey, elevenKey, agentId, kv, port, bernudKey
       content.role = "model";
       const calls = (content.parts || []).filter((p) => p.functionCall);
       contents.push(content);
-      if (!calls.length) {
-        const reply = (content.parts || []).map((p) => p.text || "").join("").trim() || "Done.";
-        s.history = trim(contents);
-        return { ok: true, reply, tools: used, model, config: c.source };
-      }
-      const results = await Promise.all(calls.map(async ({ functionCall: fc }) => {
-        used.push(fc.name);
-        const t = byName.get(fc.name);
-        let response;
-        try { response = t ? await runTool(t, fc.args || {}) : { error: "unknown tool" }; }
-        catch (e) { response = { error: String(e.message || e).slice(0, 300) }; }
-        return { functionResponse: { name: fc.name, response } };
-      }));
+      if (!calls.length) return { reply: (content.parts || []).map((p) => p.text || "").join("").trim() || "Done.", model };
+      const results = await Promise.all(calls.map(async ({ functionCall: fc }) => ({ functionResponse: { name: fc.name, response: await callTool(byName, fc.name, fc.args, used) } })));
       contents.push({ role: "user", parts: results });
     }
-    s.history = trim(contents);
-    return { ok: true, reply: "That took more steps than I'd like. Could you ask again more simply?", tools: used, model };
+    return { reply: "That took more steps than I'd like. Could you ask again more simply?", model };
+  }
+
+  // ---------------- Groq (very fast, small free allowance) ----------------
+  async function groq(model, body) {
+    let r;
+    try { r = await fetchImpl(GROQ, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${groqKey}` }, body: JSON.stringify({ model, ...body }), signal: AbortSignal.timeout(15_000) }); }
+    catch (e) { throw Object.assign(new Error(e.name === "TimeoutError" ? `${model} took too long` : e.message), { status: 504 }); }
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw Object.assign(new Error(j.error?.message || `Groq ${r.status}`), { status: r.status, code: j.error?.code });
+    return j;
+  }
+  async function runGroq({ system, turns, text, tools, byName, used }) {
+    const messages = [{ role: "system", content: system }, ...turns.flatMap((t) => [{ role: "user", content: t.user }, { role: "assistant", content: t.reply }]), { role: "user", content: text }];
+    const oaTools = tools.map(toOpenAiTool);
+    const model = groqModels.find((m) => !cooling("groq:" + m));
+    if (!model) throw Object.assign(new Error("Groq resting"), { status: 429 });
+    for (let step = 0; step < 5; step++) {
+      const body = { messages, ...(oaTools.length ? { tools: oaTools, tool_choice: "auto" } : {}), temperature: 0.3, max_completion_tokens: 1024, reasoning_effort: "low" };
+      if (estTokens(body) > groqMaxTokens) throw Object.assign(new Error("too big for Groq's free allowance"), { status: 413 });
+      let j;
+      try { j = await groq(model, body); }
+      catch (e) {
+        if (e.status === 400 && /reasoning/i.test(e.message)) { delete body.reasoning_effort; j = await groq(model, body); }
+        else throw Object.assign(e, { model });
+      }
+      const msg = j.choices?.[0]?.message || {};
+      const calls = msg.tool_calls || [];
+      if (!calls.length) return { reply: String(msg.content || "").trim() || "Done.", model: "groq:" + model };
+      messages.push({ role: "assistant", content: msg.content || "", tool_calls: calls });
+      const results = await Promise.all(calls.map(async (c) => {
+        let args = {}; try { args = JSON.parse(c.function?.arguments || "{}"); } catch {}
+        return { role: "tool", tool_call_id: c.id, content: JSON.stringify(await callTool(byName, c.function?.name, args, used)).slice(0, 12_000) };
+      }));
+      messages.push(...results);
+    }
+    return { reply: "That took more steps than I'd like. Could you ask again more simply?", model: "groq:" + model };
+  }
+
+  // ---------------- One question ----------------
+  async function chat({ session = "default", text }) {
+    if (!geminiKey && !groqKey) return { ok: false, code: "not_set_up", reply: "Free mode isn't set up yet: the Gemini API key needs adding on the server." };
+    text = String(text || "").trim().slice(0, 4000);
+    if (!text) return { ok: false, reply: "I didn't catch anything." };
+    const c = await config();
+    const byName = new Map(c.tools.map((t) => [t.name, t]));
+    for (const [k, s] of sessions) if (Date.now() - s.at > SESSION_MS) sessions.delete(k);
+    const s = sessions.get(session) || { turns: [], groups: [], at: 0 };
+    s.at = Date.now(); sessions.set(session, s);
+    const used = [];
+    const t0 = Date.now();
+    const remember = (reply, model, groups = s.groups) => { s.turns = [...s.turns, { user: text, reply }].slice(-6); s.groups = groups; return reply; };
+
+    // 1. Instant commands: no AI needed.
+    const q = matchQuick(text);
+    if (q && byName.has(q.tool)) {
+      const result = await callTool(byName, q.tool, q.args, used);
+      const reply = q.reply(result);
+      if (reply) { remember(reply, "instant", pickGroups(text)); return { ok: true, reply, tools: used, model: "instant", ms: Date.now() - t0 }; }
+      used.length = 0; // didn't work as a quick command: let the AI handle it (and explain any problem)
+    }
+
+    // 2. The AI, with only the instructions and tools this question needs.
+    const groups = pickGroups(text, s.groups);
+    const slim = slimConfig(c, text, groups);
+    const time = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", dateStyle: "full", timeStyle: "short" }).format(now());
+    const system = slim.prompt.replaceAll("{{system__time}}", time) + TEXT_MODE_NOTE;
+    const job = { system, turns: s.turns, text, tools: slim.tools, byName: new Map(slim.tools.map((t) => [t.name, t])), used };
+
+    let out = null;
+    if (groqKey && groqModels.some((m) => !cooling("groq:" + m))) {
+      try { out = await runGroq(job); }
+      catch (e) {
+        log.error?.("groq", e.model || "", e.status, String(e.message).slice(0, 200));
+        if (e.status === 429) cooldown.set("groq:" + (e.model || groqModels[0]), Date.now() + (/per day|TPD|RPD/i.test(e.message) ? 60 : 1.2) * 60_000);
+        if (e.status === 401 || e.status === 403) cooldown.set("groq:" + (e.model || groqModels[0]), Date.now() + 60 * 60_000);
+        // Never repeat actions: if Groq already did something before failing, say so instead of starting again.
+        if (used.length) out = { reply: "That's done, though I couldn't put together a proper answer.", model: "groq" };
+      }
+    }
+    if (!out) {
+      if (!geminiKey) return { ok: false, code: "busy", reply: "My fast brain is resting for a minute. Try again shortly." };
+      out = await runGemini(job);
+    }
+    remember(out.reply, out.model, groups);
+    return { ok: true, reply: out.reply, tools: used, model: out.model, ms: Date.now() - t0, groups, config: c.source };
   }
 
   // Startup self-test: which models answer, and how fast (logged for diagnosis).
@@ -202,17 +342,20 @@ export function createBrain({ geminiKey, elevenKey, agentId, kv, port, bernudKey
       try { const j = await gemini(m, { contents: [{ role: "user", parts: [{ text: "Reply with the single word OK." }] }] }, 30_000); out.push(`${m}: ${(j.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("").trim().slice(0, 20)} in ${Date.now() - t0}ms`); }
       catch (e) { out.push(`${m}: ${e.status || ""} ${String(e.message).slice(0, 120)} after ${Date.now() - t0}ms`); }
     }
-    const t0 = Date.now();
-    try { const r = await chat({ session: "selftest", text: "Say hello in five words, without using any tools." }); out.push(`full chat: ${r.model} "${String(r.reply).slice(0, 60)}" in ${Date.now() - t0}ms`); }
-    catch (e) { out.push(`full chat failed after ${Date.now() - t0}ms: ${String(e.message).slice(0, 120)}`); }
-    sessions.delete("selftest");
+    for (const q of ["Say hello in five words, without using any tools.", "What's on my calendar tomorrow? Just tell me whether you could check, don't call any tools."]) {
+      const t0 = Date.now();
+      try { const r = await chat({ session: "selftest", text: q }); out.push(`chat: ${r.model} [${(r.groups || []).join(",")}] "${String(r.reply).slice(0, 60)}" in ${Date.now() - t0}ms`); }
+      catch (e) { out.push(`chat failed after ${Date.now() - t0}ms: ${String(e.message).slice(0, 120)}`); }
+      sessions.delete("selftest");
+    }
+    try { const c = await config(); const full = estTokens(c.prompt) + estTokens(c.tools.map(toDeclaration)); const sl = slimConfig(c, "what's the weather", pickGroups("what's the weather")); out.push(`size: full ~${full} tokens, weather question ~${estTokens(sl.prompt) + estTokens(sl.tools.map(toDeclaration))} tokens`); } catch {}
     return out;
   }
 
   return {
     chat,
     selfTest,
-    async status() { try { const c = await config(); return { ok: true, configured: !!geminiKey, tools: c.tools.length, source: c.source }; } catch (e) { return { ok: false, configured: !!geminiKey, error: e.message }; } },
+    async status() { try { const c = await config(); return { ok: true, configured: !!(geminiKey || groqKey), gemini: !!geminiKey, groq: !!groqKey, tools: c.tools.length, source: c.source }; } catch (e) { return { ok: false, configured: !!(geminiKey || groqKey), error: e.message }; } },
     reset(session) { sessions.delete(session); },
   };
 }
