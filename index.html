@@ -472,6 +472,7 @@
     <hr style="border:0;border-top:1px solid var(--line, #5a1a1f);margin:16px 0">
     <label for="lookSelect">Bernard's look</label>
     <select id="lookSelect" style="width:100%;padding:10px;background:transparent;color:var(--text);border:1px solid var(--line, #5a1a1f);border-radius:8px">
+      <option value="cyborg">Face: Bernard (cyborg portrait)</option>
       <option value="blue">Face: blue hologram</option>
       <option value="red">Face: Bernard red</option>
       <option value="orb">Classic orb (no face)</option>
@@ -810,11 +811,11 @@
     blue: { deep: [30, 110, 255], mid: [90, 210, 255], hi: [235, 250, 255], gold: [255, 196, 90], iris: [120, 235, 255] },
     red: { deep: [200, 20, 20], mid: [255, 90, 70], hi: [255, 238, 232], gold: [255, 200, 110], iris: [255, 140, 110] },
   };
-  let look = store.get("bernud.look") || "blue";   // blue | red | orb
+  let look = store.get("bernud.look") || "cyborg";   // cyborg | blue | red | orb
   const faceOn = () => look !== "orb";
   function applyLook() {
-    core.classList.toggle("blue", look === "blue");
-    wave.classList.toggle("blue", look === "blue");
+    core.classList.toggle("blue", look === "blue" || look === "cyborg");
+    wave.classList.toggle("blue", look === "blue" || look === "cyborg");
     faceCv.style.display = faceOn() ? "" : "none";
     const sel = $("lookSelect"); if (sel) sel.value = look;
   }
@@ -964,8 +965,129 @@
 
   const face = { yaw: -0.52, pitch: 0, gx: 0, gy: 0, gtx: 0, gty: 0, nextGlance: 0, nextBlink: 2, blinkAt: -9, mouth: 0, open: 1 };
 
+  // ---- Bernard's picture face (his own ChatGPT-made portrait, bernard-face.webp), brought to life ----
+  // Coordinates below are in the original 1254-pixel picture.
+  const CYB = {
+    img: new Image(), ready: false, W: 1254,
+    eyes: [[458, 580], [792, 580]], eyeHalf: [82, 44], chip: [630, 345], mouthY: 934,
+    traces: [
+      [[630, 300], [630, 220], [600, 190], [600, 110]], [[660, 300], [690, 270], [690, 150], [720, 120]],
+      [[595, 315], [540, 280], [540, 170], [500, 140]], [[675, 345], [760, 345], [800, 310], [880, 310]],
+      [[585, 345], [500, 345], [460, 310], [380, 310]], [[630, 390], [630, 470], [630, 520]],
+      [[400, 700], [400, 790], [430, 820], [430, 900]], [[860, 700], [860, 790], [830, 820], [830, 900]],
+      [[540, 1000], [500, 1040], [500, 1100]], [[725, 1000], [765, 1040], [765, 1100]],
+    ],
+  };
+  CYB.img.onload = () => { CYB.ready = true; };
+  CYB.img.src = "bernard-face.webp";
+  let glitchAt = 6;
+
+  function drawCyborg(t, lv) {
+    const [w, h] = sizeCanvas(faceCv);
+    const c = fctx;
+    c.clearRect(0, 0, w, h);
+    if (!CYB.ready) return;
+    const img = CYB.img, W = CYB.W, sc = img.naturalWidth / W;
+    const listening = mode === "listening", speaking = mode === "speaking", thinking = mode === "connecting";
+    const still = reduceMotion;
+
+    // Blinks and mouth, as for the dot face
+    if (t > face.nextBlink && !still) { face.blinkAt = t; face.nextBlink = t + 2.4 + Math.random() * 4; }
+    const bp = (t - face.blinkAt) / 0.2, blink = bp >= 0 && bp <= 1 ? Math.sin(bp * Math.PI) : 0;
+    let mt = 0;
+    if (speaking) mt = lv > 0.04 ? Math.min(1, lv * 1.4) : (still ? 0.3 : 0.1 + 0.6 * Math.abs(Math.sin(t * 9.5)) * (0.55 + 0.45 * Math.sin(t * 2.9 + 1)));
+    face.mouth += (mt - face.mouth) * 0.35;
+
+    // Breathing drift; leans in a little when listening, tilts when thinking
+    const k = Math.min(w, h) / W * (1.02 + (still ? 0 : 0.01 * Math.sin(t * 0.9)) + (listening ? 0.025 : 0) + lv * 0.012);
+    const ox = w / 2 + (still ? 0 : 4 * DPR * Math.sin(t * 0.37)), oy = h / 2 + (still ? 0 : 3 * DPR * Math.sin(t * 0.53));
+    face.pitch += (((still ? 0 : 0.01 * Math.sin(t * 0.29)) + (thinking ? -0.025 : 0)) - face.pitch) * 0.05;
+    c.save();
+    c.translate(ox, oy); c.rotate(face.pitch); c.scale(k, k); c.translate(-W / 2, -W / 2);
+    c.drawImage(img, 0, 0, W, W);
+
+    // Jaw: the lower lip and chin slide down as he speaks, opening a dark mouth
+    const d = face.mouth * 34;
+    if (d > 0.4) {
+      const my = CYB.mouthY;
+      c.save();
+      c.beginPath(); c.moveTo(505, my - 6); c.lineTo(760, my - 6); c.lineTo(800, my + 60); c.lineTo(770, 1130); c.lineTo(495, 1130); c.lineTo(465, my + 60); c.closePath(); c.clip();
+      c.fillStyle = "#01040b"; c.fillRect(470, my - 6, 330, d + 12);
+      const top = my - 2, bot = 1135, span = bot - top;
+      for (let y = top; y < bot; y += 6) {
+        const s0 = d * (1 - (y - top) / span), s1 = d * (1 - (y + 6 - top) / span);
+        c.drawImage(img, 460 * sc, y * sc, 350 * sc, 6 * sc, 460, y + s0, 350, 6 + (s1 - s0) + 0.6);
+      }
+      c.restore();
+      const mg = c.createRadialGradient(632, my + d / 2, 0, 632, my + d / 2, 110);
+      mg.addColorStop(0, `rgba(90,200,255,${0.12 + lv * 0.25})`); mg.addColorStop(1, "rgba(90,200,255,0)");
+      c.globalCompositeOperation = "lighter"; c.fillStyle = mg; c.fillRect(520, my - 30, 230, d + 60); c.globalCompositeOperation = "source-over";
+    }
+
+    // Eyelids close over the eyes when he blinks (a strip of the metal brow stretched down)
+    const [hw, hh] = CYB.eyeHalf;
+    if (blink > 0.02) for (const [ex, ey] of CYB.eyes) {
+      c.save();
+      c.beginPath(); c.ellipse(ex, ey, hw, hh, 0, 0, Math.PI * 2); c.clip();
+      c.drawImage(img, (ex - hw) * sc, (ey - hh - 34) * sc, hw * 2 * sc, 34 * sc, ex - hw, ey - hh, hw * 2, hh * 2 * blink + 2);
+      c.strokeStyle = "rgba(120,220,255,0.6)"; c.lineWidth = 2;
+      c.beginPath(); c.moveTo(ex - hw * 0.9, ey - hh + hh * 2 * blink); c.lineTo(ex + hw * 0.9, ey - hh + hh * 2 * blink); c.stroke();
+      c.restore();
+    }
+
+    c.globalCompositeOperation = "lighter";
+    // Eye glow: brighter when listening or speaking, out while blinking
+    const eyeA = (0.32 + (still ? 0 : 0.1 * Math.sin(t * 2.1)) + lv * 0.6 + (listening ? 0.25 : 0) + (thinking ? 0.1 : 0)) * (1 - blink);
+    for (const [ex, ey] of CYB.eyes) {
+      const r = 70 * (1 + lv * 0.5 + (listening ? 0.15 : 0));
+      const g = c.createRadialGradient(ex, ey, 0, ex, ey, r);
+      g.addColorStop(0, `rgba(230,250,255,${Math.min(1, eyeA * 1.2)})`); g.addColorStop(0.25, `rgba(90,210,255,${eyeA * 0.8})`); g.addColorStop(1, "rgba(30,120,255,0)");
+      c.fillStyle = g; c.fillRect(ex - r, ey - r, r * 2, r * 2);
+    }
+    // Forehead chip pulses (fast while thinking)
+    const chipA = 0.25 + 0.25 * Math.sin(t * (thinking ? 7 : 1.6)) + lv * 0.3;
+    const cg = c.createRadialGradient(CYB.chip[0], CYB.chip[1], 0, CYB.chip[0], CYB.chip[1], 90);
+    cg.addColorStop(0, `rgba(220,248,255,${chipA})`); cg.addColorStop(0.3, `rgba(80,200,255,${chipA * 0.6})`); cg.addColorStop(1, "rgba(30,120,255,0)");
+    c.fillStyle = cg; c.fillRect(CYB.chip[0] - 90, CYB.chip[1] - 90, 180, 180);
+    // Light pulses along the circuits
+    if (!still) for (let i = 0; i < CYB.traces.length; i++) {
+      const tr = CYB.traces[i], f = ((t * (thinking ? 0.9 : speaking ? 0.5 : 0.3)) + i * 0.37) % 1;
+      const segs = tr.length - 1, fi = f * segs, j = Math.floor(fi), u = fi - j, a = tr[j], b = tr[j + 1];
+      const x = a[0] + (b[0] - a[0]) * u, y = a[1] + (b[1] - a[1]) * u;
+      const pg = c.createRadialGradient(x, y, 0, x, y, 18);
+      pg.addColorStop(0, "rgba(235,250,255,0.95)"); pg.addColorStop(0.4, "rgba(90,210,255,0.5)"); pg.addColorStop(1, "rgba(30,120,255,0)");
+      c.fillStyle = pg; c.fillRect(x - 18, y - 18, 36, 36);
+    }
+    // A slow scan sweep that lights up the circuits it passes
+    if (!still) {
+      const sy = ((t * (thinking ? 420 : 160)) % (W + 300)) - 150;
+      c.save(); c.beginPath(); c.rect(0, sy - 22, W, 44); c.clip();
+      c.globalAlpha = 0.22; c.drawImage(img, 0, 0, W, W);
+      c.restore();
+    }
+    c.globalCompositeOperation = "source-over";
+
+    // Now and then, a brief hologram glitch
+    if (!still && t > glitchAt) {
+      if (t > glitchAt + 0.14) glitchAt = t + 5 + Math.random() * 8;
+      else for (let i = 0; i < 3; i++) {
+        const y = 150 + Math.random() * 900, hgt = 6 + Math.random() * 22, off = (Math.random() - 0.5) * 30;
+        c.drawImage(img, 0, y * sc, img.naturalWidth, hgt * sc, off, y, W, hgt);
+      }
+    }
+    c.restore();
+
+    // Soft round edge so the picture melts into the dashboard
+    const R = Math.min(w, h) / 2;
+    const m = c.createRadialGradient(w / 2, h / 2, R * 0.6, w / 2, h / 2, R * 0.99);
+    m.addColorStop(0, "rgba(0,0,0,1)"); m.addColorStop(1, "rgba(0,0,0,0)");
+    c.globalCompositeOperation = "destination-in"; c.fillStyle = m; c.fillRect(0, 0, w, h);
+    c.globalCompositeOperation = "source-over";
+  }
+
   function drawFace(t, lv) {
     if (!faceOn()) return;
+    if (look === "cyborg") return drawCyborg(t, lv);
     const [w, h] = sizeCanvas(faceCv);
     const small = Math.min(w, h) < 700;
     if (!HEAD || HEAD.small !== small) HEAD = buildHead(small);
