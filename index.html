@@ -472,7 +472,8 @@
     <hr style="border:0;border-top:1px solid var(--line, #5a1a1f);margin:16px 0">
     <label for="lookSelect">Bernard's look</label>
     <select id="lookSelect" style="width:100%;padding:10px;background:transparent;color:var(--text);border:1px solid var(--line, #5a1a1f);border-radius:8px">
-      <option value="cyborg">Face: Bernard (cyborg portrait)</option>
+      <option value="cyborg">Face: Bernard, red</option>
+      <option value="cyborgblue">Face: Bernard, blue</option>
       <option value="blue">Face: blue hologram</option>
       <option value="red">Face: Bernard red</option>
       <option value="orb">Classic orb (no face)</option>
@@ -811,11 +812,13 @@
     blue: { deep: [30, 110, 255], mid: [90, 210, 255], hi: [235, 250, 255], gold: [255, 196, 90], iris: [120, 235, 255] },
     red: { deep: [200, 20, 20], mid: [255, 90, 70], hi: [255, 238, 232], gold: [255, 200, 110], iris: [255, 140, 110] },
   };
-  let look = store.get("bernud.look") || "cyborg";   // cyborg | blue | red | orb
+  let look = store.get("bernud.look") || "cyborg";   // cyborg (red) | cyborgblue | blue | red | orb
   const faceOn = () => look !== "orb";
   function applyLook() {
-    core.classList.toggle("blue", look === "blue" || look === "cyborg");
-    wave.classList.toggle("blue", look === "blue" || look === "cyborg");
+    core.classList.toggle("blue", look === "blue" || look === "cyborgblue");
+    wave.classList.toggle("blue", look === "blue" || look === "cyborgblue");
+    // The portrait is blue; turn it Bernard red to match the dashboard
+    faceCv.style.filter = look === "cyborg" ? "hue-rotate(162deg) saturate(1.3) brightness(1.05)" : "";
     faceCv.style.display = faceOn() ? "" : "none";
     const sel = $("lookSelect"); if (sel) sel.value = look;
   }
@@ -1087,7 +1090,7 @@
 
   function drawFace(t, lv) {
     if (!faceOn()) return;
-    if (look === "cyborg") return drawCyborg(t, lv);
+    if (look === "cyborg" || look === "cyborgblue") return drawCyborg(t, lv);
     const [w, h] = sizeCanvas(faceCv);
     const small = Math.min(w, h) < 700;
     if (!HEAD || HEAD.small !== small) HEAD = buildHead(small);
