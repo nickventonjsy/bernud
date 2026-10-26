@@ -128,6 +128,8 @@ export const home = createHome({ kv: db.kv, smartthings: lights, sayOnPhone, tod
 const { createYouTube } = await import("./youtube.js");
 const { createRoutines } = await import("./routines.js");
 export const routines = createRoutines({ kv: db.kv, lights, smartthings, phone, pc, zw: { url: (process.env.ZW_URL || "https://zentrawire.onrender.com").replace(/\/+$/, ""), key: process.env.ZW_ASSISTANT_KEY || "" }, events: async () => (await calendarForBrief()).events });
+const { createGeminiVoice } = await import("./geminivoice.js");
+export const geminiVoice = createGeminiVoice({ apiKey: process.env.GEMINI_API_KEY || "" });
 const { createBrain } = await import("./brain.js");
 export const brain = createBrain({ geminiKey: process.env.GEMINI_API_KEY || "", elevenKey: process.env.ELEVENLABS_API_KEY || "", agentId: process.env.AGENT_ID || "agent_0501m5q6cc15eqcrnamk2e1w84xc", kv: db.kv, port: PORT, bernudKey: API_KEY, zwKey: process.env.ZW_ASSISTANT_KEY || "" });
 export const youtube = createYouTube({ web, pc, notify, smartthings, zw: { url: (process.env.ZW_URL || "https://zentrawire.onrender.com").replace(/\/+$/, ""), key: process.env.ZW_ASSISTANT_KEY || "" } });
@@ -362,6 +364,21 @@ export async function handle(req, res) {
     const b = await readJson(req);
     try { return send(res, 200, await brain.chat({ session: String(b.session || "default").slice(0, 64), text: b.text }), req); }
     catch (e) { console.error("brain", e.message); return send(res, 200, { ok: false, code: e.code || "error", reply: ["quota", "busy", "no_config"].includes(e.code) ? e.message : "Sorry, my free brain hit a problem: " + String(e.message).slice(0, 160) }, req); }
+  }
+  // Gemini's natural voices for free mode: the list, and a reply turned into a WAV.
+  if (path === "/brain/voices" && req.method === "GET") {
+    if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
+    return send(res, 200, { ok: geminiVoice.configured(), voices: await geminiVoice.voices() }, req);
+  }
+  if (path === "/brain/speak" && req.method === "POST") {
+    if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
+    const b = await readJson(req);
+    try {
+      const { wav, model } = await geminiVoice.speak({ text: b.text, voice: b.voice, style: b.style });
+      const origin = req.headers.origin;
+      res.writeHead(200, { "content-type": "audio/wav", "content-length": wav.length, "cache-control": "no-store", "x-tts-model": model, ...(origin && PUBLIC_ORIGINS.has(origin) ? { "access-control-allow-origin": origin, "access-control-expose-headers": "x-tts-model", vary: "origin" } : {}) });
+      return res.end(wav);
+    } catch (e) { return send(res, 502, { ok: false, error: String(e.message).slice(0, 200) }, req); }
   }
   if (path === "/brain/status" && req.method === "GET") {
     if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
@@ -740,7 +757,8 @@ export async function handle(req, res) {
 await db.init();
 if (ccp.configured() && process.env.NODE_ENV !== "test") ccp.startBackgroundIndex();
 if (process.env.NODE_ENV !== "test" && NTFY_TOPIC) { scheduler.start(); reminders.start(); orders.start(); }
-if (process.env.NODE_ENV !== "test") setTimeout(async () => { const s = await brain.status(); console.log("brain status", JSON.stringify(s)); if (s.ok && s.configured) console.log("brain selftest", JSON.stringify(await brain.selfTest())); }, 5000);
+if (process.env.NODE_ENV !== "test") setTimeout(async () => { const s = await brain.status(); console.log("brain status", JSON.stringify(s)); if (s.ok && s.configured) console.log("brain selftest", JSON.stringify(await brain.selfTest()));
+  if (geminiVoice.configured()) { const t0 = Date.now(); try { const v = await geminiVoice.voices(); const r = await geminiVoice.speak({ text: "Good afternoon, Nicholas." }); console.log("voice selftest", JSON.stringify({ model: r.model, bytes: r.wav.length, ms: Date.now() - t0, voices: v.length, british: v.filter((x) => x.source === "british").length, sample: v.slice(0, 3).map((x) => x.id + " " + x.description) })); } catch (e) { console.log("voice selftest failed", e.status, e.message); } } }, 5000);
 if (process.env.NODE_ENV !== "test") smartthings.startKeepAlive();
 
 if (process.env.NODE_ENV !== "test") {

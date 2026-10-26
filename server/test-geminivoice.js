@@ -1,0 +1,21 @@
+import assert from "node:assert/strict";
+import { createGeminiVoice, findAudio, toWav } from "./geminivoice.js";
+const pcm = Buffer.alloc(480);
+assert.equal(toWav(pcm).subarray(0, 4).toString(), "RIFF");
+assert.equal(toWav(toWav(pcm)).length, 524);
+assert.equal(findAudio({ steps: [{ type: "model_output", content: [{ type: "audio", data: "QUJD" }] }] }), "QUJD");
+assert.equal(findAudio({ output_audio: { data: "WFla" } }), "WFla");
+let body;
+const v = createGeminiVoice({ apiKey: "K", log: { error() {} }, fetchImpl: async (u, o) => {
+  if (String(u).includes("/voices")) return { ok: true, json: async () => ({ voices: [{ id: "en-GB-x", display_name: "Arthur", gender: "male", accent: "RP" }] }) };
+  body = JSON.parse(o.body);
+  if (body.model === "gemini-3.8-flash-tts") return { ok: false, status: 503, json: async () => ({ error: { message: "busy" } }) };
+  return { ok: true, json: async () => ({ steps: [{ type: "model_output", content: [{ type: "audio", data: toWav(pcm).toString("base64") }] }] }) };
+} });
+const list = await v.voices();
+assert.equal(list[0].id, "en-GB-x"); assert.ok(list.length > 30);
+const r = await v.speak({ text: "Hello", voice: "en-GB-x" });
+assert.equal(r.model, "gemini-3.8-flash-lite-tts"); assert.equal(r.wav.length, 524);
+assert.deepEqual(body.generation_config.speech_config, [{ voice: "en-GB-x" }]);
+assert.equal(body.input[0].content[0].annotations[0].type, "speech_metadata");
+console.log("geminivoice ok");

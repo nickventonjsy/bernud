@@ -471,10 +471,14 @@
     <div id="voiceRow">
       <label for="voiceSelect">Bernard's voice in free mode</label>
       <div style="display:flex;gap:10px"><select id="voiceSelect" style="flex:1;min-width:0;padding:10px;background:transparent;color:var(--text);border:1px solid var(--line, #5a1a1f);border-radius:8px"></select><button class="btn" type="button" id="voiceTest">Test</button></div>
+      <div id="gStyleRow"><label for="gStyle">How the Gemini voice should speak</label>
+      <input id="gStyle" type="text" placeholder="A calm, well-spoken English butler with a dry wit…"></div>
+      <div id="devSliders">
       <label for="pitchInput">Pitch: <span id="pitchVal"></span></label>
       <input id="pitchInput" type="range" min="0.6" max="1.4" step="0.05">
       <label for="rateInput">Speed: <span id="rateVal"></span></label>
       <input id="rateInput" type="range" min="0.6" max="1.5" step="0.05">
+      </div>
     </div>
     <div class="note" id="engineNote"></div>
     <hr style="border:0;border-top:1px solid var(--line, #5a1a1f);margin:16px 0">
@@ -1099,7 +1103,32 @@
   }
   const vPitch = () => Number(store.get("bernud.pitch") || "1"), vRate = () => Number(store.get("bernud.rate") || "1");
   function pcUtterance(text) { const u = new SpeechSynthesisUtterance(text); u.voice = pcVoice(); u.lang = "en-GB"; u.pitch = vPitch(); u.rate = vRate(); return u; }
-  function freeSpeak(text) {
+  // Gemini's natural voice (made on the server, played here). Resolves false if it couldn't, so the device voice takes over.
+  let gAudio = null;
+  async function geminiSpeak(text) {
+    const voice = store.get("bernud.gvoice"), pass = store.get("bernud.dashKey");
+    if (!voice || !pass) return false;
+    try {
+      const r = await fetch(`${SERVER}/brain/speak`, { method: "POST", headers: { "content-type": "application/json", "x-dashboard-key": pass }, body: JSON.stringify({ text, voice, style: store.get("bernud.gstyle") || undefined }), signal: AbortSignal.timeout(30000) });
+      if (!r.ok) return false;
+      const url = URL.createObjectURL(await r.blob());
+      if (!freeActive && !gTesting) { URL.revokeObjectURL(url); return true; }
+      await new Promise((res) => {
+        const a = new Audio(url); gAudio = a;
+        const end = () => { if (gAudio === a) gAudio = null; URL.revokeObjectURL(url); res(); };
+        a.onended = a.onerror = end;
+        a.play().catch(end);
+        freeCb.spoke = end;
+      });
+      return true;
+    } catch { return false; }
+  }
+  let gTesting = false;
+  async function freeSpeak(text) {
+    if (text && store.get("bernud.gvoice") && await geminiSpeak(text)) return;
+    return deviceSpeak(text);
+  }
+  function deviceSpeak(text) {
     return new Promise((resolve) => {
       if (!text) return resolve();
       const guard = setTimeout(() => { if (freeCb.spoke === resolve) freeCb.spoke = null; resolve(); }, 8000 + text.length * 120);
@@ -1164,6 +1193,7 @@
     freeActive = false; busy = false;
     try { if (freeRec) freeRec.abort(); } catch {}
     try { window.speechSynthesis && speechSynthesis.cancel(); } catch {}
+    try { if (gAudio) { gAudio.pause(); gAudio = null; } } catch {}
     appCall("freeEnded");
     window.bernudHeard(""); window.bernudSpoke();
     if (armed) { setMode("standby", freeLast || undefined); setTimeout(startWakeWord, 800); }
@@ -1366,40 +1396,81 @@
     const where = { "en-GB": "UK", "en-US": "US", "en-AU": "Australian", "en-IN": "Indian", "en-IE": "Irish", "en-ZA": "South African", "en-NG": "Nigerian" }[v.locale] || v.locale;
     return `${where} voice ${code ? code.toUpperCase() : i + 1}${code && VOICE_HINT[code] && v.locale === "en-GB" ? " (" + VOICE_HINT[code] + ")" : ""}${v.network ? " · online" : ""}${v.installed ? "" : " · needs download"}`;
   }
-  window.bernudVoices = (d) => {
+  // The voice list: Gemini's natural voices (from the server) first, then this device's own voices.
+  let gList = null, devList = [], devCurrent = "";
+  function renderVoices() {
     const sel = $("voiceSelect"); sel.innerHTML = "";
-    const def = document.createElement("option"); def.value = ""; def.textContent = "Phone's default UK voice"; sel.appendChild(def);
-    (d.voices || []).forEach((v, i) => { const o = document.createElement("option"); o.value = v.name; o.textContent = phoneVoiceLabel(v, i); sel.appendChild(o); });
-    sel.value = [...sel.options].some((o) => o.value === d.current) ? d.current : "";
+    const group = (label) => { const g = document.createElement("optgroup"); g.label = label; sel.appendChild(g); return g; };
+    const add = (parent, value, text) => { const o = document.createElement("option"); o.value = value; o.textContent = text; parent.appendChild(o); };
+    if (gList && gList.length) {
+      const brit = gList.filter((v) => v.source === "british"), pre = gList.filter((v) => v.source !== "british");
+      if (brit.length) { const g = group("Gemini British voices (natural, free)"); brit.forEach((v) => add(g, "g:" + v.id, `${v.name}${v.description ? " · " + v.description : ""}`)); }
+      const g2 = group(brit.length ? "Gemini voices (natural, free)" : "Gemini voices (natural, free; choose the style below for a British delivery)");
+      pre.forEach((v) => add(g2, "g:" + v.id, `${v.name} · ${v.description}`));
+    } else if (gList === null) add(group("Gemini voices"), "", "Loading…");
+    const d = group(APP ? "Phone voices (instant, work offline)" : "This computer's voices (instant)");
+    if (APP) add(d, "", "Phone's default UK voice");
+    devList.forEach((v) => add(d, v.value, v.label));
+    const gv = store.get("bernud.gvoice");
+    const want = gv ? "g:" + gv : devCurrent;
+    sel.value = [...sel.options].some((o) => o.value === want) ? want : (APP ? "" : (sel.querySelector('optgroup:last-child option') || {}).value || "");
+    showVoiceKind();
+  }
+  function showVoiceKind() {
+    const g = $("voiceSelect").value.startsWith("g:");
+    $("gStyleRow").style.display = g ? "" : "none";
+    $("devSliders").style.display = g ? "none" : "";
+  }
+  async function loadGeminiVoices() {
+    const pass = store.get("bernud.dashKey");
+    if (!pass) { gList = []; renderVoices(); return; }
+    try { const r = await fetch(`${SERVER}/brain/voices`, { headers: { "x-dashboard-key": pass } }); const j = await r.json(); gList = j.voices || []; }
+    catch { gList = []; }
+    renderVoices();
+  }
+  window.bernudVoices = (d) => {
+    devList = (d.voices || []).map((v, i) => ({ value: v.name, label: phoneVoiceLabel(v, i) }));
+    devCurrent = d.current || "";
     $("pitchInput").value = d.pitch || 1; $("rateInput").value = d.rate || 1; showVoiceNums();
-    if (!(d.voices || []).length) $("engineNote").textContent = "No English voices found. In Android Settings › Text-to-speech output, choose Speech Services by Google and install English (United Kingdom).";
+    renderVoices();
   };
   function showVoiceNums() { $("pitchVal").textContent = Number($("pitchInput").value).toFixed(2); $("rateVal").textContent = Number($("rateInput").value).toFixed(2); }
   function saveVoice() {
-    showVoiceNums();
-    if (APP) { appCall("setTtsVoice", $("voiceSelect").value, Number($("pitchInput").value), Number($("rateInput").value)); return; }
-    store.set(VOICE_KEY, $("voiceSelect").value); store.set("bernud.pitch", $("pitchInput").value); store.set("bernud.rate", $("rateInput").value);
+    showVoiceNums(); showVoiceKind();
+    const v = $("voiceSelect").value;
+    if (v.startsWith("g:")) { store.set("bernud.gvoice", v.slice(2)); store.set("bernud.gstyle", $("gStyle").value.trim()); return; }
+    store.del("bernud.gvoice");
+    if (APP) { appCall("setTtsVoice", v, Number($("pitchInput").value), Number($("rateInput").value)); return; }
+    store.set(VOICE_KEY, v); store.set("bernud.pitch", $("pitchInput").value); store.set("bernud.rate", $("rateInput").value);
   }
   function loadVoices() {
     $("voiceRow").style.display = "";
-    $("engineNote").textContent = APP ? "These are your phone's own voices. \"Online\" ones sound best but need internet; ones marked \"needs download\" install the first time you use them." : "";
-    if (APP) { $("voiceSelect").innerHTML = "<option>Loading voices…</option>"; appCall("ttsVoices"); return; }
-    if (!window.speechSynthesis) { $("voiceRow").style.display = "none"; return; }
-    const sel = $("voiceSelect"), voices = speechSynthesis.getVoices().filter((v) => /^en/i.test(v.lang));
-    const cur = (pcVoice() || {}).name;
-    sel.innerHTML = "";
-    for (const v of voices) { const o = document.createElement("option"); o.value = v.name; o.textContent = `${v.name} (${v.lang})`; sel.appendChild(o); }
-    if (cur) sel.value = cur;
+    $("gStyle").value = store.get("bernud.gstyle") || "";
+    $("engineNote").textContent = "Gemini voices sound natural and are free, but take a second or two and need internet; if one fails, Bernard uses the " + (APP ? "phone's" : "computer's") + " own voice instead." + (store.get("bernud.dashKey") ? "" : " Enter your passcode in the CCP brief to see the Gemini voices.");
+    gList = null; renderVoices(); loadGeminiVoices();
+    if (APP) { appCall("ttsVoices"); return; }
+    if (!window.speechSynthesis) return;
+    devList = speechSynthesis.getVoices().filter((v) => /^en/i.test(v.lang)).map((v) => ({ value: v.name, label: `${v.name} (${v.lang})` }));
+    devCurrent = (pcVoice() || {}).name || "";
     $("pitchInput").value = vPitch(); $("rateInput").value = vRate(); showVoiceNums();
+    renderVoices();
   }
   if (window.speechSynthesis) speechSynthesis.onvoiceschanged = () => { if ($("drawer").classList.contains("open") && !APP) loadVoices(); };
   $("engineSelect").addEventListener("change", (e) => store.set(ENGINE_KEY, e.target.value));
   $("voiceSelect").addEventListener("change", saveVoice);
+  $("gStyle").addEventListener("change", saveVoice);
   $("pitchInput").addEventListener("input", showVoiceNums); $("pitchInput").addEventListener("change", saveVoice);
   $("rateInput").addEventListener("input", showVoiceNums); $("rateInput").addEventListener("change", saveVoice);
-  $("voiceTest").addEventListener("click", () => {
+  $("voiceTest").addEventListener("click", async () => {
     const line = "Good evening, Nicholas. Bernud at your service. Shall I turn the lights down?";
-    if (APP) { saveVoice(); setTimeout(() => appCall("speak", line), 150); return; }
+    saveVoice();
+    if ($("voiceSelect").value.startsWith("g:")) {
+      $("voiceTest").textContent = "…"; gTesting = true;
+      const ok = await geminiSpeak(line); gTesting = false; $("voiceTest").textContent = "Test";
+      if (!ok) $("engineNote").textContent = "That Gemini voice didn't come through (Google may be busy). Try again in a moment, or pick another.";
+      return;
+    }
+    if (APP) { setTimeout(() => appCall("speak", line), 150); return; }
     speechSynthesis.cancel(); speechSynthesis.speak(pcUtterance(line));
   });
 
