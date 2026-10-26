@@ -523,6 +523,7 @@
   </div>
 </div>
 
+<script src="facemesh.js"></script>
 <script type="module">
   const AGENT_ID = "agent_0501m5q6cc15eqcrnamk2e1w84xc";
   const SERVER = "https://bernud-server.onrender.com";
@@ -723,7 +724,7 @@
       { r: 0.5, w: 1.2, segs: [[0.02, 0.2], [0.27, 0.48], [0.52, 0.73], [0.77, 0.98]], speed: -0.7, a: 0.6 },
     ];
     for (const ring of rings) {
-      if (hideCentre && ring.r < 0.62) continue;
+      if (hideCentre) continue;
       c.save();
       c.rotate(spin * ring.speed * (1 + lv * 1.5));
       c.strokeStyle = `rgba(255,${50 + lv * 80},${40 + lv * 40},${Math.min(1, ring.a + lv * 0.3)})`;
@@ -739,11 +740,13 @@
       c.restore();
     }
     // Two white highlight arcs, like the reference
+    if (!hideCentre) {
     c.save(); c.rotate(-spin * 0.3);
     c.strokeStyle = `rgba(255,235,235,${0.55 + lv * 0.4})`; c.lineWidth = 2 * DPR; c.shadowColor = "#fff"; c.shadowBlur = 6 * DPR;
     c.beginPath(); c.arc(0, 0, R * 0.69 * pulse, 0.62 * Math.PI * 2, 0.66 * Math.PI * 2); c.stroke();
     c.beginPath(); c.arc(0, 0, R * 0.69 * pulse, 0.12 * Math.PI * 2, 0.16 * Math.PI * 2); c.stroke();
     c.restore();
+    }
 
     if (!hideCentre) {
     // Globe of dots
@@ -796,15 +799,16 @@
   }
 
   // =====================================================================
-  //  BERNARD'S FACE: a holographic wireframe head drawn live on #face.
-  //  Idle: drifts, blinks, glances about. Listening: looks at you, eyes wide.
-  //  Thinking: looks up, the network across his head races. Speaking: mouth follows his voice.
+  //  BERNARD'S FACE: a holographic head made of glowing dots, built from a real face shape
+  //  (MediaPipe's canonical face model, in facemesh.js) plus a skull, ears and neck.
+  //  Idle: three-quarter view, drifting, blinking. Listening: turns to you, eyes wide.
+  //  Thinking: looks up, gold circuits race. Speaking: the jaw moves with his voice.
   // =====================================================================
   const faceCv = $("face");
   const fctx = faceCv.getContext("2d");
   const LOOKS = {
-    blue: { main: [90, 200, 255], accent: [255, 80, 215], hot: [225, 248, 255] },
-    red: { main: [255, 72, 60], accent: [255, 175, 80], hot: [255, 236, 230] },
+    blue: { deep: [30, 110, 255], mid: [90, 210, 255], hi: [235, 250, 255], gold: [255, 196, 90], iris: [120, 235, 255] },
+    red: { deep: [200, 20, 20], mid: [255, 90, 70], hi: [255, 238, 232], gold: [255, 200, 110], iris: [255, 140, 110] },
   };
   let look = store.get("bernud.look") || "blue";   // blue | red | orb
   const faceOn = () => look !== "orb";
@@ -814,219 +818,315 @@
     faceCv.style.display = faceOn() ? "" : "none";
     const sel = $("lookSelect"); if (sel) sel.value = look;
   }
-  const rgba = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
-  const g2 = (dx, sx, dy, sy) => Math.exp(-((dx / sx) ** 2 + (dy / sy) ** 2));
+  const rgba = (c, a) => `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a})`;
+  const mix = (a, b, k) => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k];
 
-  // Head shape: half-width at height y (top 1, chin about -1), and the depth of the face at (x, y).
-  function halfWidth(y) {
-    if (y > 1 || y < -1.02) return 0;
-    let w = 0.74 * Math.sqrt(Math.max(0, 1 - (y / 1.02) ** 2));
-    if (y < -0.2) w *= 1 - 0.38 * Math.min(1, (-0.2 - y) / 0.8) ** 1.4;
-    return w;
-  }
-  function frontZ(x, y) {
-    const w = halfWidth(y);
-    if (!w || Math.abs(x) >= w) return 0;
-    const nx = x / w, ax = Math.abs(x);
-    let z = 0.78 * Math.sqrt(1 - nx * nx) * Math.pow(Math.max(0, 1 - (y / 1.05) ** 2), 0.35);
-    z += 0.05 * g2(ax - 0.3, 0.2, y - 0.34, 0.06);    // brow ridge
-    z -= 0.08 * g2(ax - 0.29, 0.12, y - 0.2, 0.08);   // eye sockets
-    z += 0.16 * g2(x, 0.06, y + 0.02, 0.2);           // nose ridge
-    z += 0.08 * g2(x, 0.08, y + 0.2, 0.07);           // nose tip
-    z += 0.04 * g2(ax - 0.09, 0.05, y + 0.25, 0.05);  // nostrils
-    z += 0.04 * g2(ax - 0.4, 0.13, y + 0.02, 0.12);   // cheekbones
-    z += 0.05 * g2(x, 0.17, y + 0.5, 0.08);           // lips
-    z += 0.04 * g2(x, 0.13, y + 0.83, 0.09);          // chin
-    return z;
-  }
-  const backZ = (x, y) => { const w = halfWidth(y); if (!w) return 0; const nx = x / w; return -0.86 * Math.sqrt(Math.max(0, 1 - nx * nx)) * Math.pow(Math.max(0, 1 - (y / 1.05) ** 2), 0.5); };
+  let HEAD = null;
+  function buildHead(small) {
+    const src = window.BERNARD_FACE;
+    if (!src) return null;
+    let seed = 11; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    const V = []; for (let i = 0; i < src.v.length; i += 3) V.push([src.v[i], src.v[i + 1], src.v[i + 2]]);
+    const T = []; for (let i = 0; i < src.f.length; i += 3) T.push([src.f[i], src.f[i + 1], src.f[i + 2]]);
+    const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+    const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+    const unit = (a) => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+    // Smooth normals, pointing out of the face
+    const vn = V.map(() => [0, 0, 0]);
+    for (const [a, b, c] of T) { const n = cross(sub(V[b], V[a]), sub(V[c], V[a])); for (const i of [a, b, c]) { vn[i][0] += n[0]; vn[i][1] += n[1]; vn[i][2] += n[2]; } }
+    const flip = vn[1][2] < 0 ? -1 : 1;
+    for (let i = 0; i < vn.length; i++) vn[i] = unit(vn[i].map((x) => x * flip));
+    for (const v of V) v[0] *= 0.9;   // a slightly narrower, more natural face
 
-  // Mesh: rows across the face, columns down it; front and back of the head.
-  const ROWS = 34, COLS = 27;
-  const mesh = { front: [], back: [] };
-  for (let r = 0; r < ROWS; r++) {
-    const y = 0.97 - (r / (ROWS - 1)) * 1.95;
-    const fr = [], bk = [];
-    for (let k = 0; k < COLS; k++) {
-      const nx = -0.98 + (k / (COLS - 1)) * 1.96, x = nx * halfWidth(y);
-      fr.push([x, y, frontZ(x, y)]); bk.push([x, y, backZ(x, y)]);
-    }
-    mesh.front.push(fr); mesh.back.push(bk);
-  }
-  // A network of nodes over the skull, each linked to its nearest neighbours.
-  const net = (() => {
-    let s = 7; const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647);
-    const nodes = [];
-    for (let i = 0; i < 34; i++) {
-      const y = 0.25 + rnd() * 0.72, w = halfWidth(y), x = (rnd() * 2 - 1) * w * 0.92;
-      const front = rnd() < 0.7;
-      nodes.push({ p: [x, y, (front ? frontZ(x, y) : backZ(x, y)) * 1.02], hot: rnd() < 0.3, ph: rnd() * 6.28 });
-    }
-    const links = [];
-    nodes.forEach((n, i) => {
-      nodes.map((m, j) => [j, Math.hypot(n.p[0] - m.p[0], n.p[1] - m.p[1], n.p[2] - m.p[2])])
-        .filter(([j]) => j !== i).sort((a, b) => a[1] - b[1]).slice(0, 2)
-        .forEach(([j]) => { if (!links.some((l) => (l.a === j && l.b === i))) links.push({ a: i, b: j, ph: rnd(), sp: 0.25 + rnd() * 0.5 }); });
+    // Jaw: how much each vertex moves when the mouth opens (lower lip and chin, fading to the sides)
+    const yMid = (V[13][1] + V[14][1]) / 2, yCorner = (V[61][1] + V[291][1]) / 2, xCorner = Math.abs(V[61][0]);
+    const upperLip = new Set([13, 82, 81, 80, 191, 312, 311, 310, 415, 0, 37, 39, 40, 185, 267, 269, 270, 409, 61, 291, 78, 308]);
+    const jawV = V.map(([x, y], i) => {
+      if (upperLip.has(i)) return 0;
+      const line = yMid + (yCorner - yMid) * Math.min(1, (x / xCorner) ** 2);
+      return Math.max(0, Math.min(1, (line - y) / 0.025)) * Math.exp(-((x / 0.4) ** 2));
     });
-    return { nodes, links };
-  })();
+    const eyeL = new Set([33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246]);
+    const eyeR = new Set([263, 249, 390, 373, 374, 380, 381, 382, 362, 398, 384, 385, 386, 387, 388, 466]);
+    const mouthIn = new Set([78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308, 95, 88, 178, 87, 14, 317, 402, 318, 324]);
+    const eyeInfo = [eyeL, eyeR].map((set) => {
+      const ids = [...set], xs = ids.map((i) => V[i][0]), ys = ids.map((i) => V[i][1]), zs = ids.map((i) => V[i][2]);
+      return { cx: (Math.min(...xs) + Math.max(...xs)) / 2, cy: (Math.min(...ys) + Math.max(...ys)) / 2, cz: Math.max(...zs), hw: (Math.max(...xs) - Math.min(...xs)) / 2, hh: (Math.max(...ys) - Math.min(...ys)) / 2 };
+    });
 
-  const face = { yaw: 0, pitch: 0, gx: 0, gy: 0, gtx: 0, gty: 0, nextGlance: 0, nextBlink: 2, blinkAt: -1, mouth: 0, brow: 0, open: 1 };
+    const P = [];   // [x, y, z, nx, ny, nz, jaw, kind, a, b]  kind: 0 skin, 1/2 eye L/R, 3 neck
+    const step = small ? 0.03 : 0.022;
+    for (const [a, b, c] of T) {
+      if (mouthIn.has(a) && mouthIn.has(b) && mouthIn.has(c)) continue;   // the gap between the lips
+      const eye = 0;
+      if ((eyeL.has(a) && eyeL.has(b) && eyeL.has(c)) || (eyeR.has(a) && eyeR.has(b) && eyeR.has(c))) continue;   // eyeballs added below
+      const A = V[a], B = V[b], C = V[c];
+      const fn = unit(cross(sub(B, A), sub(C, A)).map((x) => x * flip));
+      const put = (u, v) => {
+        const w = 1 - u - v;
+        const x = A[0] * w + B[0] * u + C[0] * v, y = A[1] * w + B[1] * u + C[1] * v, z = A[2] * w + B[2] * u + C[2] * v;
+        const n = unit([vn[a][0] * w + vn[b][0] * u + vn[c][0] * v, vn[a][1] * w + vn[b][1] * u + vn[c][1] * v, vn[a][2] * w + vn[b][2] * u + vn[c][2] * v]);
+        const j = jawV[a] * w + jawV[b] * u + jawV[c] * v;
+        if (eye) { const e = eyeInfo[eye - 1]; P.push([x, y, z, 0, 0, 1, 0, eye, (x - e.cx) / e.hw, (y - e.cy) / e.hh]); }
+        else P.push([x, y, z, n[0], n[1], n[2], j, 0, 0, 0]);
+      };
+      if (fn[2] > 0.35) {
+        // Face-on triangles: a regular grid seen from the front, like a scanned face
+        const xs = [A[0], B[0], C[0]], ys = [A[1], B[1], C[1]];
+        const det = (B[1] - C[1]) * (A[0] - C[0]) + (C[0] - B[0]) * (A[1] - C[1]);
+        if (Math.abs(det) < 1e-9) continue;
+        for (let gx = Math.ceil(Math.min(...xs) / step) * step; gx <= Math.max(...xs); gx += step)
+          for (let gy = Math.ceil(Math.min(...ys) / step) * step; gy <= Math.max(...ys); gy += step) {
+            const l1 = ((B[1] - C[1]) * (gx - C[0]) + (C[0] - B[0]) * (gy - C[1])) / det;
+            const l2 = ((C[1] - A[1]) * (gx - C[0]) + (A[0] - C[0]) * (gy - C[1])) / det;
+            const l3 = 1 - l1 - l2;
+            if (l1 >= 0 && l2 >= 0 && l3 >= 0) put(l2, l3);
+          }
+      } else {
+        // Side-on triangles: scatter points by area
+        const area = Math.hypot(...cross(sub(B, A), sub(C, A))) / 2;
+        let n = area / (step * step); n = Math.floor(n) + (rnd() < n % 1 ? 1 : 0);
+        for (let i = 0; i < n; i++) { let u = rnd(), v = rnd(); if (u + v > 1) { u = 1 - u; v = 1 - v; } put(u, v); }
+      }
+    }
+    // Eyeballs: a fine grid inside each eye opening
+    eyeInfo.forEach((e, k) => {
+      const st = step * 0.45;
+      for (let u = -1; u <= 1; u += st / e.hw) for (let v = -1; v <= 1; v += st / e.hh) {
+        if (u * u + v * v > 1) continue;
+        P.push([e.cx + u * e.hw, e.cy + v * e.hh, e.cz - 0.01 - 0.02 * u * u, 0, 0, 1, 0, k + 1, u, v]);
+      }
+    });
+    // Skull: an egg shape behind and above the face
+    const nSkull = small ? 1600 : 2800;
+    for (let i = 0; i < nSkull; i++) {
+      const yy = 1 - (i / (nSkull - 1)) * 2, r = Math.sqrt(1 - yy * yy), th = Math.PI * (3 - Math.sqrt(5)) * i;
+      const ux = Math.cos(th) * r, uz = Math.sin(th) * r;
+      const x = ux * 0.8, y = 0.24 + yy * 1.0, z = -0.33 + uz * 1.0;
+      if (y < -0.45 || (y < 0.72 && z > -0.12)) continue;
+      if (Math.abs(x) < 0.74 && y < 0.72 && z > -0.3) continue;
+      P.push([x, y, z, ...unit([ux / 0.9, yy / 0.98, uz / 1.02]), 0, 0, 0, 0]);
+    }
+    // Ears
+    for (const sx of [-1, 1]) {
+      const n = small ? 160 : 260;
+      for (let i = 0; i < n; i++) {
+        const ang = rnd() * Math.PI * 2, rr = Math.sqrt(rnd());
+        const rim = rr > 0.82 ? 1 : 0;
+        const y = 0.02 + Math.sin(ang) * 0.27 * rr, z = -0.42 + Math.cos(ang) * 0.15 * rr;
+        P.push([sx * (0.77 + 0.06 * rr * rr + 0.02 * rim), y, z, ...unit([sx * 0.8, 0.05 * Math.sin(ang), 0.55]), 0, 0, 0, 0]);
+      }
+    }
+    // Neck, fading out downwards
+    const nNeck = small ? 500 : 900;
+    for (let i = 0; i < nNeck; i++) {
+      const a = (rnd() - 0.5) * Math.PI * 1.5 + Math.PI / 2, y = -0.62 - rnd() * 1.0;
+      const x = Math.cos(a) * 0.38, z = -0.32 + Math.sin(a) * 0.38;
+      if (z > 0.02 && y > -0.95) continue;
+      P.push([x, y, z, Math.cos(a), 0, Math.sin(a), 0, 3, 0, 0]);
+    }
+    // Height map of the front surface, so circuit traces sit on the skin
+    const G = 64, hm = new Float32Array(G * G).fill(-9);
+    const cell = (x, y) => [Math.floor((x + 1.1) / 2.2 * G), Math.floor((1.3 - y) / 2.6 * G)];
+    for (const p of P) { if (p[7] === 3) continue; const [i, j] = cell(p[0], p[1]); if (i >= 0 && i < G && j >= 0 && j < G) hm[j * G + i] = Math.max(hm[j * G + i], p[2]); }
+    const surf = (x, y) => { const [i, j] = cell(x, y); if (i < 0 || i >= G || j < 0 || j >= G) return null; const z = hm[j * G + i]; return z > -8 ? z + 0.012 : null; };
+    // Gold circuit traces over the forehead, temples and cheek
+    const traces = [];
+    const starts = [[-0.15, 0.62], [0.2, 0.7], [-0.55, 0.45], [0.55, 0.3], [-0.62, -0.05], [0.05, 0.85], [0.6, -0.25], [-0.35, 0.8], [0.35, 0.5]];
+    for (const [sx0, sy0] of starts) {
+      let x = sx0, y = sy0, dir = rnd() < 0.5 ? 0 : 1, pts = [];
+      const len = 7 + Math.floor(rnd() * 8);
+      for (let k = 0; k < len; k++) {
+        const z = surf(x, y); if (z === null) break;
+        pts.push([x, y, z]);
+        if (rnd() < 0.3) dir = (dir + (rnd() < 0.5 ? 1 : 3)) % 4;
+        const d = [[1, 0], [0, -1], [-1, 0], [0, 1]][dir], s = 0.045;
+        x += d[0] * s * (Math.sign(sx0) || 1); y += d[1] * s;
+      }
+      if (pts.length > 2) traces.push({ pts, ph: rnd(), sp: 0.2 + rnd() * 0.4 });
+    }
+    // Floating particles and code text around the head
+    const motes = Array.from({ length: small ? 40 : 70 }, () => ({ x: rnd(), y: rnd(), r: 0.5 + rnd() * (rnd() < 0.15 ? 5 : 1.6), a: 0.15 + rnd() * 0.6, sp: 0.005 + rnd() * 0.02, ph: rnd() * 6.28 }));
+    const lines = {
+      eyes: [[33, 246, 161, 160, 159, 158, 157, 173, 133], [263, 466, 388, 387, 386, 385, 384, 398, 362]],
+      lowerLids: [[33, 7, 163, 144, 145, 153, 154, 155, 133], [263, 249, 390, 373, 374, 380, 381, 382, 362]],
+      brows: [[70, 63, 105, 66, 107], [300, 293, 334, 296, 336]],
+      lips: [[61, 185, 40, 39, 37, 0, 267, 269, 270, 409, 291], [61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291], [78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308], [78, 95, 88, 178, 87, 14, 317, 402, 318, 324, 308]],
+      nose: [[98, 97, 2, 326, 327], [64, 48, 115, 220, 45, 4, 275, 440, 344, 278, 294]],
+    };
+    return { P, V, jawV, lines, eyeInfo, traces, motes, small, temple: [-0.6, 0.42, surf(-0.6, 0.42) ?? 0.3], ear: [0.81, 0.03, -0.42] };
+  }
+  const CODE = [
+    "const link = cortex.sync(sensors);", "if (signal.clarity > 0.82) {", "  bernard.focus(request);", "}",
+    "for (const node of mesh.nodes) {", "  node.weight *= decay(t);", "}", "return intent.resolve(context);",
+    "await memory.recall(\"Nicholas\");", "voice.render(reply, { tone: \"dry\" });",
+  ];
+
+  const face = { yaw: -0.52, pitch: 0, gx: 0, gy: 0, gtx: 0, gty: 0, nextGlance: 0, nextBlink: 2, blinkAt: -9, mouth: 0, open: 1 };
 
   function drawFace(t, lv) {
     if (!faceOn()) return;
     const [w, h] = sizeCanvas(faceCv);
-    const c = fctx, P = LOOKS[look] || LOOKS.blue;
+    const small = Math.min(w, h) < 700;
+    if (!HEAD || HEAD.small !== small) HEAD = buildHead(small);
+    const c = fctx;
     c.clearRect(0, 0, w, h);
-    const R = Math.min(w, h) / 2, S = R * 0.5, CX = w / 2, CY = h / 2 - R * 0.1;
+    if (!HEAD) return;
+    const C = LOOKS[look] || LOOKS.blue;
+    const R = Math.min(w, h) / 2, S = R * 0.6, CX = w / 2, CY = h / 2 + R * 0.02;
     const listening = mode === "listening", speaking = mode === "speaking", thinking = mode === "connecting";
     const still = reduceMotion;
 
-    // Where he's looking and how his head moves, eased towards a target for each state.
-    let ty = still ? 0 : 0.3 * Math.sin(t * 0.33) + 0.07 * Math.sin(t * 0.91);
-    let tp = still ? 0 : 0.06 * Math.sin(t * 0.27 + 1);
-    if (listening) { ty = still ? 0 : 0.06 * Math.sin(t * 0.5); tp = 0.02; }
-    if (speaking) { ty = still ? 0 : 0.12 * Math.sin(t * 0.6); tp = still ? 0 : 0.03 + lv * 0.08 * Math.sin(t * 7); }
-    if (thinking) { ty = still ? 0.15 : 0.22 * Math.sin(t * 0.8); tp = -0.12; }
-    face.yaw += (ty - face.yaw) * 0.04; face.pitch += (tp - face.pitch) * 0.05;
+    // Head movement for each state, eased
+    let ty = -0.52 + (still ? 0 : 0.12 * Math.sin(t * 0.3) + 0.04 * Math.sin(t * 0.83)), tp = still ? 0 : 0.04 * Math.sin(t * 0.25 + 1);
+    if (listening) { ty = still ? -0.05 : -0.05 + 0.04 * Math.sin(t * 0.5); tp = 0.02; }
+    if (speaking) { ty = -0.2 + (still ? 0 : 0.08 * Math.sin(t * 0.6)); tp = still ? 0 : 0.02 + lv * 0.05 * Math.sin(t * 6); }
+    if (thinking) { ty = -0.5 + (still ? 0 : 0.1 * Math.sin(t * 0.7)); tp = 0.1; }
+    face.yaw += (ty - face.yaw) * 0.035; face.pitch += (tp - face.pitch) * 0.05;
     if (t > face.nextGlance) {
-      face.nextGlance = t + 0.8 + Math.random() * 2.4;
-      face.gtx = thinking ? -0.03 + Math.random() * 0.02 : listening ? 0 : (Math.random() - 0.5) * 0.05;
-      face.gty = thinking ? 0.025 : (Math.random() - 0.5) * 0.02;
+      face.nextGlance = t + 0.8 + Math.random() * 2.5;
+      face.gtx = thinking ? 0.18 : listening ? 0 : (Math.random() - 0.5) * 0.5;
+      face.gty = thinking ? 0.35 : (Math.random() - 0.5) * 0.25;
     }
     face.gx += (face.gtx - face.gx) * 0.25; face.gy += (face.gty - face.gy) * 0.25;
     if (t > face.nextBlink && !still) { face.blinkAt = t; face.nextBlink = t + 2.2 + Math.random() * 4; }
-    const bp = (t - face.blinkAt) / 0.17;
-    const blink = bp >= 0 && bp <= 1 ? Math.sin(bp * Math.PI) : 0;
-    face.open += ((listening ? 1.15 : thinking ? 0.85 : 1) - face.open) * 0.1;
-    const eyeOpen = Math.max(0.05, face.open * (1 - blink));
-    face.brow += ((listening ? 0.025 : thinking ? 0.02 : 0) - face.brow) * 0.1;
-    // Mouth: follows the real voice level when there is one, otherwise a speech-like rhythm.
+    const bp = (t - face.blinkAt) / 0.18, blink = bp >= 0 && bp <= 1 ? Math.sin(bp * Math.PI) : 0;
+    face.open += ((listening ? 1.1 : thinking ? 0.85 : 1) - face.open) * 0.1;
+    const lid = Math.min(1, Math.max(0, 1 - face.open * (1 - blink)));   // 0 open … 1 shut
     let mt = 0;
-    if (speaking) mt = lv > 0.04 ? Math.min(1, lv * 1.3) : (still ? 0.3 : 0.08 + 0.55 * Math.abs(Math.sin(t * 9.5)) * (0.55 + 0.45 * Math.sin(t * 2.9 + 1)));
+    if (speaking) mt = lv > 0.04 ? Math.min(1, lv * 1.4) : (still ? 0.3 : 0.1 + 0.6 * Math.abs(Math.sin(t * 9.5)) * (0.55 + 0.45 * Math.sin(t * 2.9 + 1)));
     face.mouth += (mt - face.mouth) * 0.35;
+    const jawA = face.mouth * 0.16, jc = Math.cos(jawA), js = Math.sin(jawA), pivY = -0.2, pivZ = -0.25;
 
     const cy = Math.cos(face.yaw), sy = Math.sin(face.yaw), cp = Math.cos(face.pitch), sp = Math.sin(face.pitch);
-    const pr = (p) => {
-      const x1 = p[0] * cy + p[2] * sy, z1 = -p[0] * sy + p[2] * cy;
-      const y2 = p[1] * cp - z1 * sp, z2 = p[1] * sp + z1 * cp;
-      const k = 3.2 / (3.2 - z2);
-      return [CX + x1 * k * S, CY - y2 * k * S, z2, k];
-    };
-    const energy = 0.55 + lv * 0.45 + (listening ? 0.15 : 0) + (thinking ? 0.1 : 0);
+    const rot = (x, y, z) => { const x1 = x * cy + z * sy, z1 = -x * sy + z * cy; return [x1, y * cp - z1 * sp, y * sp + z1 * cp]; };
+    const proj = (x, y, z) => { const q = rot(x, y, z), k = 3.4 / (3.4 - q[2]); return [CX + q[0] * k * S, CY - q[1] * k * S, q[2], k]; };
+    const Lx = -0.45, Ly = 0.5, Lz = 0.74;   // light from the upper left, in front
+    const energy = 0.8 + lv * 0.4 + (listening ? 0.15 : 0) + (thinking ? 0.1 : 0);
 
-    // Glow behind the head
-    const glow = c.createRadialGradient(CX, CY, S * 0.1, CX, CY, S * 1.5);
-    glow.addColorStop(0, rgba(P.main, 0.2 * energy)); glow.addColorStop(1, rgba(P.main, 0));
-    c.fillStyle = glow; c.fillRect(0, 0, w, h);
-
-    // Neck and shoulders
-    c.strokeStyle = rgba(P.main, 0.35); c.lineWidth = 1 * DPR;
-    for (const side of [-1, 1]) {
-      c.beginPath();
-      const a = pr([side * 0.26, -0.82, -0.05]), b = pr([side * 0.3, -1.38, 0]), d = pr([side * 1.15, -1.72, 0]);
-      c.moveTo(a[0], a[1]); c.quadraticCurveTo(b[0], b[1], d[0], d[1]); c.stroke();
+    // Background: halo, particles, code
+    const halo = c.createRadialGradient(CX, CY - S * 0.1, S * 0.2, CX, CY, S * 1.7);
+    halo.addColorStop(0, rgba(C.deep, 0.08 * energy)); halo.addColorStop(1, rgba(C.deep, 0));
+    c.fillStyle = halo; c.fillRect(0, 0, w, h);
+    for (const m of HEAD.motes) {
+      const y = ((m.y - (still ? 0 : t * m.sp)) % 1 + 1) % 1, x = m.x + 0.01 * Math.sin(t * 0.5 + m.ph);
+      c.fillStyle = rgba(m.r > 3 ? C.deep : C.mid, m.a * (m.r > 3 ? 0.25 : 0.7));
+      c.beginPath(); c.arc(x * w, y * h, m.r * DPR, 0, Math.PI * 2); c.fill();
     }
-    c.strokeStyle = rgba(P.main, 0.14);
-    for (let i = 1; i < 6; i++) { const yy = -0.95 - i * 0.12, ww = 0.27 + i * 0.012; const a = pr([-ww, yy, 0]), b = pr([ww, yy, 0]); c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); c.stroke(); }
+    c.font = `${Math.max(8, Math.round(R * 0.028))}px ui-monospace, Menlo, Consolas, monospace`;
+    c.fillStyle = rgba(C.mid, 0.16);
+    const lh = R * 0.045, scroll = still ? 0 : (t * 6) % (CODE.length * lh);
+    for (let i = 0; i < CODE.length * 2; i++) {
+      const y = h * 0.62 + i * lh - scroll;
+      if (y > h * 0.6 && y < h * 0.98) c.fillText(CODE[i % CODE.length], w * 0.04, y);
+      const y2 = h * 0.02 + i * lh - scroll * 0.7;
+      if (y2 > h * 0.01 && y2 < h * 0.2) c.fillText(CODE[(i + 4) % CODE.length], w * 0.56, y2);
+    }
 
-    // Back of the head: faint dots (it's a hologram, you see through it)
-    c.fillStyle = rgba(P.main, 1);
-    for (const row of mesh.back) for (const p of row) { const q = pr(p); c.globalAlpha = 0.1; c.fillRect(q[0] - DPR * 0.6, q[1] - DPR * 0.6, DPR * 1.2, DPR * 1.2); }
+    // The head: dots binned by brightness and drawn additively, so they glow where they overlap
+    const BINS = 7, paths = Array.from({ length: BINS }, () => new Path2D()), eyeDots = [], irisDots = [];
+    const sizes = Array.from({ length: BINS }, (_, i) => DPR * (small ? 1 : 0.95) * (0.75 + i * 0.25));
+    const scanY = still ? 9 : 1.3 - ((t * (thinking ? 0.5 : 0.18)) % 1) * 3;
+    for (const p of HEAD.P) {
+      let [x, y, z, nx, ny, nz, jw, kind, eu, ev] = p;
+      if (jw > 0.001) {   // open the jaw
+        const a = jw, dy = y - pivY, dz = z - pivZ;
+        const ny2 = pivY + dy * (1 + (jc - 1) * a) - dz * js * a, nz2 = pivZ + dz * (1 + (jc - 1) * a) + dy * js * a;
+        y = ny2; z = nz2;
+      }
+      const q = proj(x, y, z);
+      const n = rot(nx, ny, nz);
+      let b;
+      if (kind === 1 || kind === 2) {
+        const e = HEAD.eyeInfo[kind - 1];
+        if (ev > 1 - 2 * lid) b = 0.45;   // eyelid closing over
+        else {
+          const di = Math.hypot(eu - face.gx, (ev - face.gy) * 1.6);
+          if (di < 0.42) { irisDots.push(q, di); continue; }
+          eyeDots.push(q); continue;
+        }
+      } else {
+        const diff = Math.max(0, n[0] * Lx + n[1] * Ly + n[2] * Lz);
+        const rim = Math.pow(1 - Math.abs(n[2]), 4);
+        const spec = Math.pow(Math.max(0, n[0] * 0.2 + n[1] * 0.3 + n[2] * 0.93), 24);
+        b = 0.04 + Math.pow(diff, 1.8) * 0.85 + rim * 0.55 + spec * 0.35;
+        if (n[2] < -0.1) b *= 0.1;   // far side, seen faintly through the hologram
+      }
+      if (kind === 3) b *= Math.max(0, 1 + (y + 0.95) * 1.2);
+      b *= energy;
+      b += Math.max(0, 1 - Math.abs(y - scanY) / 0.06) * 0.5;
+      if (b <= 0.03) continue;
+      const bi = Math.min(BINS - 1, Math.floor(b * BINS));
+      const s = sizes[bi] * q[3];
+      paths[bi].rect(q[0] - s / 2, q[1] - s / 2, s, s);
+    }
+    c.globalCompositeOperation = "lighter";
+    for (let i = 0; i < BINS; i++) {
+      const k = i / (BINS - 1);
+      c.fillStyle = rgba(k < 0.55 ? mix(C.deep, C.mid, k / 0.55) : mix(C.mid, C.hi, (k - 0.55) / 0.45), 0.3 + k * 0.7);
+      c.fill(paths[i]);
+    }
+    // Eyes: dark whites, a glowing iris that follows his gaze
+    c.globalCompositeOperation = "source-over";
+    c.fillStyle = rgba(C.deep, 0.35);
+    for (const q of eyeDots) c.fillRect(q[0] - DPR * 0.6, q[1] - DPR * 0.6, DPR * 1.2, DPR * 1.2);
+    for (let i = 0; i < irisDots.length; i += 2) {
+      const q = irisDots[i], d = irisDots[i + 1];
+      const k = d < 0.14 ? 0.15 : 1 - Math.abs(d - 0.28) / 0.16;
+      c.fillStyle = rgba(d < 0.14 ? C.deep : mix(C.iris, C.hi, Math.max(0, k)), 0.55 + 0.45 * Math.max(0, k));
+      const s = DPR * 1.6 * q[3];
+      c.fillRect(q[0] - s / 2, q[1] - s / 2, s, s);
+    }
+    for (const e of HEAD.eyeInfo) {   // catch-light
+      if (lid > 0.6) continue;
+      const q = proj(e.cx + (face.gx - 0.12) * e.hw, e.cy + (face.gy + 0.15) * e.hh, e.cz + 0.01);
+      c.fillStyle = rgba(C.hi, 0.9); c.beginPath(); c.arc(q[0], q[1], 1.4 * DPR * q[3], 0, Math.PI * 2); c.fill();
+    }
 
-    // Wireframe: rows across, columns down
-    const F = mesh.front.map((row) => row.map(pr));
-    c.lineWidth = 0.8 * DPR; c.strokeStyle = rgba(P.main, 1);
-    c.globalAlpha = 0.2 * energy;
-    for (const row of F) { c.beginPath(); row.forEach((q, i) => (i ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]))); c.stroke(); }
-    c.globalAlpha = 0.1 * energy;
-    for (let k = 0; k < COLS; k += 2) { c.beginPath(); F.forEach((row, i) => (i ? c.lineTo(row[k][0], row[k][1]) : c.moveTo(row[k][0], row[k][1]))); c.stroke(); }
+    // Fine glowing outlines: eyelids, brows, lips, nostrils
+    const vP = (i) => { let [x, y, z] = HEAD.V[i]; const a = HEAD.jawV[i]; if (a > 0.001) { const dy = y - pivY, dz = z - pivZ; y = pivY + dy * (1 + (jc - 1) * a) - dz * js * a; z = pivZ + dz * (1 + (jc - 1) * a) + dy * js * a; } return proj(x, y, z + 0.008); };
+    const stroke = (ids, alpha, wd) => { const pts = ids.map(vP); c.strokeStyle = rgba(C.hi, alpha); c.lineWidth = wd * DPR; c.beginPath(); pts.forEach((q, i) => (i ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]))); c.stroke(); };
+    c.shadowColor = rgba(C.mid, 1); c.shadowBlur = 5 * DPR;
+    HEAD.lines.eyes.forEach((ids, k) => { if (lid < 0.6) stroke(ids, 0.55, 1.1); else { const e = HEAD.eyeInfo[k]; const a = proj(e.cx - e.hw, e.cy, e.cz), b = proj(e.cx + e.hw, e.cy, e.cz); c.strokeStyle = rgba(C.hi, 0.75); c.lineWidth = 1.3 * DPR; c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); c.stroke(); } });
+    HEAD.lines.lowerLids.forEach((ids) => stroke(ids, 0.18, 0.8));
+    HEAD.lines.brows.forEach((ids) => stroke(ids, 0.2, 1.4));
+    HEAD.lines.lips.forEach((ids, i) => stroke(ids, i < 2 ? 0.16 : 0.42, 0.9));
+    HEAD.lines.nose.forEach((ids) => stroke(ids, 0.2, 0.9));
+    c.shadowBlur = 0;
+    c.globalCompositeOperation = "lighter";
 
-    // Surface dots, brighter nearer the front and where the scan line passes
-    const scanY = still ? 9 : 1.1 - ((t * (thinking ? 0.55 : 0.22)) % 1) * 2.4;
-    for (let r = 0; r < ROWS; r++) {
-      const y = mesh.front[r][0][1], scan = Math.max(0, 1 - Math.abs(y - scanY) / 0.12);
-      for (const q of F[r]) {
-        const depth = Math.max(0, Math.min(1, (q[2] + 0.4) / 1.2));
-        c.globalAlpha = Math.min(1, (0.18 + depth * 0.55) * energy + scan * 0.6);
-        const s = DPR * (0.8 + depth * 1.1 + scan);
-        c.fillRect(q[0] - s / 2, q[1] - s / 2, s, s);
+    // Gold circuit traces with travelling pulses
+    c.lineWidth = 1.1 * DPR; c.shadowColor = rgba(C.gold, 1); c.shadowBlur = 6 * DPR;
+    for (const tr of HEAD.traces) {
+      const pts = tr.pts.map(([x, y, z]) => proj(x, y, z));
+      const vis = pts.reduce((s, q) => s + q[2], 0) / pts.length > -0.3;
+      c.strokeStyle = rgba(C.gold, vis ? 0.55 : 0.15);
+      c.beginPath(); pts.forEach((q, i) => (i ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]))); c.stroke();
+      if (!vis) continue;
+      const end = pts[pts.length - 1];
+      c.fillStyle = rgba(C.gold, 0.9); c.beginPath(); c.arc(end[0], end[1], 1.8 * DPR, 0, Math.PI * 2); c.fill();
+      if (!still) {
+        const f = (tr.ph + t * tr.sp * (thinking ? 3 : speaking ? 1.5 : 1)) % 1, fi = f * (pts.length - 1), i0 = Math.floor(fi), u = fi - i0;
+        const a = pts[i0], b = pts[Math.min(pts.length - 1, i0 + 1)];
+        c.fillStyle = rgba(C.hi, 0.95); c.beginPath(); c.arc(a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u, 2.2 * DPR, 0, Math.PI * 2); c.fill();
       }
     }
-    c.globalAlpha = 1;
-
-    // Network over the skull, with pulses running along the links
-    const N = net.nodes.map((n) => pr(n.p));
-    c.lineWidth = 0.9 * DPR;
-    for (const l of net.links) {
-      const a = N[l.a], b = N[l.b], front = (a[2] + b[2]) / 2 > -0.1;
-      c.strokeStyle = rgba(P.main, front ? 0.35 : 0.12);
-      c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); c.stroke();
-      if (!still && front) {
-        const f = (l.ph + t * l.sp * (thinking ? 3.5 : speaking ? 1.6 : 1)) % 1;
-        c.fillStyle = rgba(P.accent, 0.9);
-        c.beginPath(); c.arc(a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, 1.6 * DPR, 0, Math.PI * 2); c.fill();
-      }
-    }
-    net.nodes.forEach((n, i) => {
-      const q = N[i]; if (q[2] < -0.2) return;
-      const tw = 0.6 + 0.4 * Math.sin(t * 2 + n.ph);
-      c.fillStyle = rgba(n.hot ? P.accent : P.hot, 0.5 + 0.5 * tw);
-      c.beginPath(); c.arc(q[0], q[1], (n.hot ? 2.3 : 1.6) * DPR, 0, Math.PI * 2); c.fill();
-    });
-
-    // Features: bright glowing lines on the surface
-    const on = (x, y, lift = 0.012) => pr([x, y, frontZ(x, y) + lift]);
-    const line = (pts, alpha, width = 1.4, close = false) => {
-      c.strokeStyle = rgba(P.hot, alpha); c.lineWidth = width * DPR;
-      c.beginPath(); pts.forEach((q, i) => (i ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]))); if (close) c.closePath(); c.stroke();
-    };
-    const steps = (n, f) => Array.from({ length: n + 1 }, (_, i) => f(i / n));
-    c.shadowColor = rgba(P.main, 1); c.shadowBlur = (6 + lv * 10) * DPR;
-    for (const side of [-1, 1]) {
-      const ex = side * 0.29, ey = 0.19, hw = 0.115, hh = 0.055 * eyeOpen;
-      // brows
-      line(steps(10, (u) => on(ex + (u - 0.5) * 0.27 * side, 0.33 + face.brow + 0.04 * Math.sin(u * Math.PI) - (side * (u - 0.5) * 0.03))), Math.min(1, 0.95 * energy + 0.2), 2.4);
-      // eyelids
-      line([...steps(12, (u) => on(ex + (u - 0.5) * 2 * hw, ey + hh * Math.sin(u * Math.PI))), ...steps(12, (u) => on(ex + (0.5 - u) * 2 * hw, ey - hh * 0.8 * Math.sin(u * Math.PI)))], 0.9, 1.4, true);
-      // iris and pupil, hidden as the eye closes
-      if (eyeOpen > 0.3) {
-        const ic = on(ex + face.gx, ey + face.gy, 0.02), ir = 0.036 * ic[3] * S * Math.min(1, eyeOpen);
-        const gi = c.createRadialGradient(ic[0], ic[1], 0, ic[0], ic[1], ir);
-        gi.addColorStop(0, rgba(P.hot, 1)); gi.addColorStop(0.45, rgba(P.main, 0.95)); gi.addColorStop(1, rgba(P.main, 0.1));
-        c.fillStyle = gi; c.beginPath(); c.arc(ic[0], ic[1], ir, 0, Math.PI * 2); c.fill();
-      }
-      // nostril curve
-      line(steps(6, (u) => on(side * (0.035 + 0.06 * Math.sin(u * Math.PI * 0.9)), -0.22 - 0.05 * u)), 0.6, 1.2);
-      // cheek contour
-      line(steps(8, (u) => on(side * (0.5 - 0.06 * u), 0.05 - u * 0.5, 0.005)), 0.18, 1);
-    }
-    // nose bridge
-    for (const sd of [-1, 1]) line(steps(8, (u) => on(sd * (0.03 + 0.012 * u), 0.2 - u * 0.38)), 0.5, 1.2);
-    // mouth: lips part as he speaks
-    const m = face.mouth, my = -0.5;
-    const upper = steps(14, (u) => on((u - 0.5) * 0.34, my + 0.035 * Math.sin(u * Math.PI) + 0.012 * Math.cos(u * Math.PI * 4)));
-    const upperIn = steps(14, (u) => on((u - 0.5) * 0.3, my - 0.004 + 0.012 * m * Math.sin(u * Math.PI)));
-    const lowerIn = steps(14, (u) => on((u - 0.5) * 0.3, my - 0.01 - 0.14 * m * Math.sin(u * Math.PI)));
-    const lower = steps(14, (u) => on((u - 0.5) * 0.34, my - 0.04 - 0.14 * m * Math.sin(u * Math.PI) - 0.025 * Math.sin(u * Math.PI)));
-    if (m > 0.05) {
-      c.fillStyle = rgba(P.main, 0.18 + m * 0.25);
-      c.beginPath(); [...upperIn, ...lowerIn.reverse()].forEach((q, i) => (i ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]))); c.closePath(); c.fill();
-      lowerIn.reverse();
-    }
-    line(upper, 0.75, 1.5); line(lower, 0.6, 1.4); line(upperIn, 0.85, 1.2); if (m > 0.05) line(lowerIn, 0.85, 1.2);
-    // jawline
-    for (const side of [-1, 1]) line(steps(14, (u) => { const y = 0.1 - u * 1.05, wv = halfWidth(y) * 0.97; return pr([side * wv, y, frontZ(side * wv * 0.999, y)]); }), 0.35, 1.2);
     c.shadowBlur = 0;
 
-    // Listening: soft rings pulse out from the face
-    if (listening && !still) {
-      for (let k = 0; k < 2; k++) {
-        const p = (t * 0.7 + k / 2) % 1;
-        c.strokeStyle = rgba(P.main, (1 - p) * (0.25 + lv * 0.5)); c.lineWidth = 1.5 * DPR;
-        c.beginPath(); c.ellipse(CX, CY, S * (0.85 + p * 0.5), S * (1.1 + p * 0.5), 0, 0, Math.PI * 2); c.stroke();
+    // HUD rings at the temple and over the ear
+    for (const [pos, rad, spd] of [[HEAD.temple, 0.17, 0.6], [HEAD.ear, 0.2, -0.4]]) {
+      const q = proj(...pos);
+      if (q[2] < -0.5) continue;
+      const r0 = rad * S * q[3];
+      c.save(); c.translate(q[0], q[1]); c.scale(Math.max(0.35, Math.abs(Math.cos(face.yaw + (pos === HEAD.ear ? 1.2 : 0.4)))), 1);
+      c.strokeStyle = rgba(C.mid, 0.55); c.lineWidth = 1.2 * DPR;
+      for (const [k, s0, s1] of [[1, 0.1, 0.8], [0.72, 0.5, 1.3], [0.45, 0, 2]]) {
+        c.beginPath(); c.arc(0, 0, r0 * k, s0 * Math.PI + (still ? 0 : t * spd * k), s1 * Math.PI + (still ? 0 : t * spd * k)); c.stroke();
       }
+      c.fillStyle = rgba(C.hi, 0.85); c.beginPath(); c.arc(0, 0, r0 * 0.14, 0, Math.PI * 2); c.fill();
+      c.restore();
     }
+    c.globalCompositeOperation = "source-over";
   }
   applyLook();
   $("lookSelect").addEventListener("change", (e) => { look = e.target.value; store.set("bernud.look", look); applyLook(); });
