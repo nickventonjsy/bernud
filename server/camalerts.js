@@ -101,9 +101,15 @@ export function createCamAlerts({ kv, imou, notify, publicUrl, hookSecret, now =
   async function register() {
     const url = `${publicUrl}/camera/hook/${hookSecret}`;
     let cur = {}; try { cur = await imou.call("getMessageCallback", {}); } catch {}
-    if (cur.callbackUrl === url && String(cur.status || "on") === "on") return { ok: true, already: true };
-    await imou.call("setMessageCallback", { callbackFlag: "alarm,deviceStatus", callbackUrl: url, status: "on" });
-    return { ok: true, registered: true };
+    if ((cur.callbackUrl === url || cur.callbackUrl === url.replace(/^https:\/\/([^/:]+)\//, "https://$1:443/")) && String(cur.status || "on") === "on") return { ok: true, already: true };
+    try { await imou.call("setMessageCallback", { callbackFlag: "alarm,deviceStatus", callbackUrl: url, status: "on" }); return { ok: true, registered: true, url: url.replace(hookSecret, "…") }; }
+    catch (e) {
+      if (e.code !== "OP1003") throw e;
+      // Imou sometimes wants the port spelled out.
+      const withPort = url.replace(/^https:\/\/([^/:]+)\//, "https://$1:443/");
+      await imou.call("setMessageCallback", { callbackFlag: "alarm,deviceStatus", callbackUrl: withPort, status: "on" });
+      return { ok: true, registered: true, url: withPort.replace(hookSecret, "…") };
+    }
   }
 
   // Backup check every ~10 minutes, only for cameras being watched right now (keeps Imou requests low).

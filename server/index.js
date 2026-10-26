@@ -364,10 +364,12 @@ export async function handle(req, res) {
   if (path === "/" || path === "/health") return send(res, 200, { ok: true, service: "bernud", storage: db.kind }, req);
 
   // Imou pushes camera alarms here (secret path). Reply straight away, then deal with it.
-  if (req.method === "POST" && path.startsWith("/camera/hook/")) {
+  if (path.startsWith("/camera/hook/")) {
     const expect = createHmac("sha256", "hook:" + DASHBOARD_KEY).update("imou").digest("hex").slice(0, 24);
     if (!DASHBOARD_KEY || path.slice("/camera/hook/".length) !== expect) return send(res, 404, { error: "not found" });
+    if (req.method !== "POST") return send(res, 200, { code: "0", msg: "ok" }); // Imou checks the address is reachable first
     const b = await readJson(req).catch(() => ({}));
+    if (!b || typeof b !== "object" || (!b.did && !b.deviceId && !Array.isArray(b))) return send(res, 200, { code: "0", msg: "ok" });
     send(res, 200, { code: "0", msg: "ok" });
     for (const m of Array.isArray(b) ? b : [b]) camAlerts.handle(m).catch((e) => console.error("camera hook", e.message));
     return;
