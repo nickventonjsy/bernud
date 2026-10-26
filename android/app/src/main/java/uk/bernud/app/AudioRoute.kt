@@ -26,10 +26,12 @@ object AudioRoute {
     fun conversationEnded(ctx: Context) {
         val am = ctx.getSystemService(AudioManager::class.java) ?: return
         try {
-            if (Build.VERSION.SDK_INT >= 31) am.clearCommunicationDevice()
-            else @Suppress("DEPRECATION") { am.isSpeakerphoneOn = false }
+            if (Build.VERSION.SDK_INT >= 31) am.clearCommunicationDevice() else legacySpeaker(am, false)
         } catch (_: Exception) {}
     }
+
+    @Suppress("DEPRECATION")
+    private fun legacySpeaker(am: AudioManager, on: Boolean) { am.isSpeakerphoneOn = on }
 
     private fun toSpeaker(ctx: Context) {
         val am = ctx.getSystemService(AudioManager::class.java) ?: return
@@ -39,10 +41,7 @@ object AudioRoute {
             if (Build.VERSION.SDK_INT >= 31) {
                 am.availableCommunicationDevices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
                     ?.let { am.setCommunicationDevice(it) }
-            } else {
-                @Suppress("DEPRECATION")
-                am.isSpeakerphoneOn = true
-            }
+            } else legacySpeaker(am, true)
             val max = am.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL)
             if (am.getStreamVolume(AudioManager.STREAM_VOICE_CALL) < max * 0.6) {
                 am.setStreamVolume(AudioManager.STREAM_VOICE_CALL, (max * 0.8).toInt(), 0)
