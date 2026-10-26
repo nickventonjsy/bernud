@@ -160,6 +160,8 @@ async function cameraShow(name, quality = "HD") {
 const { createGeminiVoice } = await import("./geminivoice.js");
 export const geminiVoice = createGeminiVoice({ apiKey: process.env.GEMINI_API_KEY || "" });
 const { factFor } = await import("./jerseyfacts.js");
+const { createCrypto, spokenCrypto } = await import("./crypto.js");
+export const coinPrices = createCrypto();
 const { createBrain } = await import("./brain.js");
 export const brain = createBrain({ briefHandler: (text) => briefForBrain(text), dayLog, geminiKey: (process.env.GEMINI_API_KEY || "").trim(), groqKey: (process.env.GROQ_API_KEY || "").trim(), elevenKey: process.env.ELEVENLABS_API_KEY || "", agentId: process.env.AGENT_ID || "agent_0501m5q6cc15eqcrnamk2e1w84xc", kv: db.kv, port: PORT, bernudKey: API_KEY, zwKey: process.env.ZW_ASSISTANT_KEY || "" });
 const { createDJ } = await import("./dj.js");
@@ -214,12 +216,13 @@ async function briefForBrain(text) {
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(new Date());
   const day = b && new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(new Date(b.created_at));
   const fresh = /\b(new|fresh|again|update|redo|latest)\b/i.test(String(text));
-  if (b && day === today && !fresh) return { reply: `Here's today's brief. ${briefSummary(b.text)} And today's Jersey titbit: ${factFor()} The full version is open on your screen.`, ui: { brief: true } };
+  const coins = spokenCrypto(await coinPrices.usd().catch(() => null));
+  if (b && day === today && !fresh) return { reply: `Here's today's brief. ${briefSummary(b.text)} ${coins} And today's Jersey titbit: ${factFor()} The full version is open on your screen.`, ui: { brief: true } };
   // Preparing takes a minute or two: start it and reply now; it arrives as a phone notification and in "CCP brief".
   const running = (await scheduler.status()).running;
   if (!running) scheduler.runBrief("asked").catch(() => {});
   const when = b ? ` Meanwhile, the last one I have is from ${new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", weekday: "long", hour: "numeric", minute: "2-digit" }).format(new Date(b.created_at))}.` : "";
-  return { reply: `${running ? "I'm already putting" : day === today ? "I'm putting a fresh" : "Today's brief wasn't ready, so I'm putting"} ${running ? "a brief" : "one"} together now. It'll come through on your phone and under CCP brief in a couple of minutes.${when}` };
+  return { reply: (coins ? coins + " " : "") + `${running ? "I'm already putting" : day === today ? "I'm putting a fresh" : "Today's brief wasn't ready, so I'm putting"} ${running ? "a brief" : "one"} together now. It'll come through on your phone and under CCP brief in a couple of minutes.${when}` };
 }
 
 // ---------------------------------------------------------------------------
@@ -926,6 +929,7 @@ export async function handle(req, res) {
           ctx.calendar_today = await calendarForBrief();
           try { const r = await orders.summary(); if (r.length) ctx.reorder_list = r; } catch {}
           ctx.jersey_titbit = factFor();
+          try { ctx.crypto_usd = await coinPrices.usd(); } catch { ctx.crypto_usd_error = "Crypto prices couldn't be fetched just now."; }
           if (ctx.email.connected) ctx.not_connected = (ctx.not_connected || []).filter((x) => x !== "email");
           return send(res, 200, ctx);
         }

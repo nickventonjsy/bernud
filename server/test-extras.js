@@ -75,3 +75,11 @@ assert.match(slim.prompt, /Meal ideas/); assert.doesNotMatch(slim.prompt, /# Spo
 assert.ok(slim.tools.some((t) => t.name === "send_to_phone"));
 assert.doesNotMatch(slimConfig(cfg, "play something", pickGroups("play something")).prompt, /Meal ideas/);
 console.log("extras ok");
+
+// Crypto in dollars for the brief
+const { createCrypto, spokenCrypto, fmtUsd } = await import("./crypto.js");
+const cp = createCrypto({ fetchImpl: async (u) => { assert.match(u, /vs_currencies=usd/); return { ok: true, json: async () => ({ bitcoin: { usd: 67250.4, usd_24h_change: 1.234 }, ethereum: { usd: 2510, usd_24h_change: -0.56 }, solana: { usd: 150.2, usd_24h_change: 0 }, ripple: { usd: 0.5123, usd_24h_change: 2 } }) }; } });
+const coins = await cp.usd();
+assert.equal(fmtUsd(67250.4), "$67,250"); assert.equal(fmtUsd(0.5123), "$0.5123"); assert.equal(fmtUsd(2.4), "$2.40");
+assert.equal(spokenCrypto(coins), "Crypto in dollars: Bitcoin $67,250, up 1.2 percent; Ethereum $2,510, down 0.6 percent; Solana $150, flat; XRP $0.5123, up 2 percent.");
+console.log("crypto ok");

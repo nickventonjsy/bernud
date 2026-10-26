@@ -365,7 +365,7 @@
     </div>
 
     <div class="panel" aria-label="Watchlist">
-      <div class="p-head"><div class="p-title">Watchlist</div><div class="p-tag">Last 7 days · GBP</div></div>
+      <div class="p-head"><div class="p-title">Watchlist</div><div class="p-tag">Last 7 days · USD</div></div>
       <div id="coins"><div class="coin"><div><b>Loading</b><div class="px">—</div></div><canvas class="spark"></canvas><div class="chg"></div></div></div>
     </div>
   </section>
@@ -1370,7 +1370,7 @@
   const COINS = [["bitcoin", "BTC"], ["ethereum", "ETH"], ["solana", "SOL"], ["ripple", "XRP"]];
   async function loadCoins() {
     try {
-      const list = await getJSON(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=gbp&ids=${COINS.map((c) => c[0]).join(",")}&sparkline=true&price_change_percentage=24h`);
+      const list = await getJSON(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${COINS.map((c) => c[0]).join(",")}&sparkline=true&price_change_percentage=24h`);
       const byId = Object.fromEntries(list.map((c) => [c.id, c]));
       const box = $("coins");
       box.innerHTML = "";
@@ -1378,12 +1378,12 @@
         const c = byId[id];
         if (!c) continue;
         const ch = c.price_change_percentage_24h ?? 0;
-        const px = c.current_price >= 100 ? c.current_price.toLocaleString("en-GB", { maximumFractionDigits: 0 }) : c.current_price.toLocaleString("en-GB", { maximumFractionDigits: 3 });
+        const px = c.current_price >= 100 ? c.current_price.toLocaleString("en-US", { maximumFractionDigits: 0 }) : c.current_price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: c.current_price < 1 ? 4 : 2 });
         const row = document.createElement("div");
         row.className = "coin";
         row.innerHTML = `<div><b></b><div class="px"></div></div><canvas class="spark"></canvas><div class="chg"></div>`;
         row.querySelector("b").textContent = sym;
-        row.querySelector(".px").textContent = "£" + px;
+        row.querySelector(".px").textContent = "$" + px;
         const chg = row.querySelector(".chg");
         chg.textContent = `${ch >= 0 ? "▲" : "▼"} ${Math.abs(ch).toFixed(1)}%`;
         chg.className = "chg " + (ch >= 0 ? "up" : "down");
