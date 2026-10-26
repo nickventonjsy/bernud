@@ -723,6 +723,7 @@
       { r: 0.5, w: 1.2, segs: [[0.02, 0.2], [0.27, 0.48], [0.52, 0.73], [0.77, 0.98]], speed: -0.7, a: 0.6 },
     ];
     for (const ring of rings) {
+      if (hideCentre && ring.r < 0.62) continue;
       c.save();
       c.rotate(spin * ring.speed * (1 + lv * 1.5));
       c.strokeStyle = `rgba(255,${50 + lv * 80},${40 + lv * 40},${Math.min(1, ring.a + lv * 0.3)})`;
@@ -877,7 +878,7 @@
     const [w, h] = sizeCanvas(faceCv);
     const c = fctx, P = LOOKS[look] || LOOKS.blue;
     c.clearRect(0, 0, w, h);
-    const R = Math.min(w, h) / 2, S = R * 0.42, CX = w / 2, CY = h / 2 - R * 0.07;
+    const R = Math.min(w, h) / 2, S = R * 0.5, CX = w / 2, CY = h / 2 - R * 0.1;
     const listening = mode === "listening", speaking = mode === "speaking", thinking = mode === "connecting";
     const still = reduceMotion;
 
@@ -985,7 +986,7 @@
     for (const side of [-1, 1]) {
       const ex = side * 0.29, ey = 0.19, hw = 0.115, hh = 0.055 * eyeOpen;
       // brows
-      line(steps(10, (u) => on(ex + (u - 0.5) * 0.27 * side, 0.32 + face.brow + 0.035 * Math.sin(u * Math.PI) - (side * (u - 0.5) * 0.02))), 0.75 * energy, 1.8);
+      line(steps(10, (u) => on(ex + (u - 0.5) * 0.27 * side, 0.33 + face.brow + 0.04 * Math.sin(u * Math.PI) - (side * (u - 0.5) * 0.03))), Math.min(1, 0.95 * energy + 0.2), 2.4);
       // eyelids
       line([...steps(12, (u) => on(ex + (u - 0.5) * 2 * hw, ey + hh * Math.sin(u * Math.PI))), ...steps(12, (u) => on(ex + (0.5 - u) * 2 * hw, ey - hh * 0.8 * Math.sin(u * Math.PI)))], 0.9, 1.4, true);
       // iris and pupil, hidden as the eye closes
@@ -1001,13 +1002,13 @@
       line(steps(8, (u) => on(side * (0.5 - 0.06 * u), 0.05 - u * 0.5, 0.005)), 0.18, 1);
     }
     // nose bridge
-    line(steps(8, (u) => on(0.028, 0.18 - u * 0.36)), 0.45, 1.1);
+    for (const sd of [-1, 1]) line(steps(8, (u) => on(sd * (0.03 + 0.012 * u), 0.2 - u * 0.38)), 0.5, 1.2);
     // mouth: lips part as he speaks
     const m = face.mouth, my = -0.5;
     const upper = steps(14, (u) => on((u - 0.5) * 0.34, my + 0.035 * Math.sin(u * Math.PI) + 0.012 * Math.cos(u * Math.PI * 4)));
     const upperIn = steps(14, (u) => on((u - 0.5) * 0.3, my - 0.004 + 0.012 * m * Math.sin(u * Math.PI)));
-    const lowerIn = steps(14, (u) => on((u - 0.5) * 0.3, my - 0.01 - 0.1 * m * Math.sin(u * Math.PI)));
-    const lower = steps(14, (u) => on((u - 0.5) * 0.34, my - 0.04 - 0.1 * m * Math.sin(u * Math.PI) - 0.025 * Math.sin(u * Math.PI)));
+    const lowerIn = steps(14, (u) => on((u - 0.5) * 0.3, my - 0.01 - 0.14 * m * Math.sin(u * Math.PI)));
+    const lower = steps(14, (u) => on((u - 0.5) * 0.34, my - 0.04 - 0.14 * m * Math.sin(u * Math.PI) - 0.025 * Math.sin(u * Math.PI)));
     if (m > 0.05) {
       c.fillStyle = rgba(P.main, 0.18 + m * 0.25);
       c.beginPath(); [...upperIn, ...lowerIn.reverse()].forEach((q, i) => (i ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]))); c.closePath(); c.fill();
