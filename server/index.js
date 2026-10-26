@@ -740,7 +740,7 @@ export async function handle(req, res) {
 await db.init();
 if (ccp.configured() && process.env.NODE_ENV !== "test") ccp.startBackgroundIndex();
 if (process.env.NODE_ENV !== "test" && NTFY_TOPIC) { scheduler.start(); reminders.start(); orders.start(); }
-if (process.env.NODE_ENV !== "test") setTimeout(() => brain.status().then((s) => console.log("brain status", JSON.stringify(s))), 5000);
+if (process.env.NODE_ENV !== "test") setTimeout(async () => { const s = await brain.status(); console.log("brain status", JSON.stringify(s)); if (s.ok && s.configured) console.log("brain selftest", JSON.stringify(await brain.selfTest())); }, 5000);
 if (process.env.NODE_ENV !== "test") smartthings.startKeepAlive();
 
 if (process.env.NODE_ENV !== "test") {

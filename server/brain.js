@@ -94,8 +94,10 @@ export function createBrain({ geminiKey, elevenKey, agentId, kv, port, bernudKey
     return s.length > 12_000 ? { truncated: true, text: s.slice(0, 12_000) } : (Array.isArray(out) ? { result: out } : out);
   }
 
-  async function gemini(model, payload) {
-    const r = await fetchImpl(`${GEMINI}/${model}:generateContent`, { method: "POST", headers: { "content-type": "application/json", "x-goog-api-key": geminiKey }, body: JSON.stringify(payload), signal: AbortSignal.timeout(45_000) });
+  async function gemini(model, payload, timeoutMs = 25_000) {
+    let r;
+    try { r = await fetchImpl(`${GEMINI}/${model}:generateContent`, { method: "POST", headers: { "content-type": "application/json", "x-goog-api-key": geminiKey }, body: JSON.stringify(payload), signal: AbortSignal.timeout(timeoutMs) }); }
+    catch (e) { throw Object.assign(new Error(e.name === "TimeoutError" || /abort/i.test(e.message) ? `${model} took too long` : e.message), { status: 504 }); }
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw Object.assign(new Error(j.error?.message || `Gemini ${r.status}`), { status: r.status });
     return j;
@@ -168,8 +170,24 @@ export function createBrain({ geminiKey, elevenKey, agentId, kv, port, bernudKey
     return { ok: true, reply: "That took more steps than I'd like. Could you ask again more simply?", tools: used, model };
   }
 
+  // Startup self-test: which models answer, and how fast (logged for diagnosis).
+  async function selfTest() {
+    const out = [];
+    for (const m of models) {
+      const t0 = Date.now();
+      try { const j = await gemini(m, { contents: [{ role: "user", parts: [{ text: "Reply with the single word OK." }] }] }, 30_000); out.push(`${m}: ${(j.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("").trim().slice(0, 20)} in ${Date.now() - t0}ms`); }
+      catch (e) { out.push(`${m}: ${e.status || ""} ${String(e.message).slice(0, 120)} after ${Date.now() - t0}ms`); }
+    }
+    const t0 = Date.now();
+    try { const r = await chat({ session: "selftest", text: "Say hello in five words, without using any tools." }); out.push(`full chat: ${r.model} "${String(r.reply).slice(0, 60)}" in ${Date.now() - t0}ms`); }
+    catch (e) { out.push(`full chat failed after ${Date.now() - t0}ms: ${String(e.message).slice(0, 120)}`); }
+    sessions.delete("selftest");
+    return out;
+  }
+
   return {
     chat,
+    selfTest,
     async status() { try { const c = await config(); return { ok: true, configured: !!geminiKey, tools: c.tools.length, source: c.source }; } catch (e) { return { ok: false, configured: !!geminiKey, error: e.message }; } },
     reset(session) { sessions.delete(session); },
   };
