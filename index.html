@@ -472,7 +472,9 @@
       <label for="voiceSelect">Bernard's voice in free mode</label>
       <div style="display:flex;gap:10px"><select id="voiceSelect" style="flex:1;min-width:0;padding:10px;background:transparent;color:var(--text);border:1px solid var(--line, #5a1a1f);border-radius:8px"></select><button class="btn" type="button" id="voiceTest">Test</button></div>
       <div id="gStyleRow"><label for="gStyle">How the Gemini voice should speak</label>
-      <input id="gStyle" type="text" placeholder="A calm, well-spoken English butler with a dry wit…"></div>
+      <input id="gStyle" type="text" placeholder="A calm, well-spoken English butler with a dry wit…">
+      <label for="gName">How to say his name (spell it how it sounds)</label>
+      <input id="gName" type="text" placeholder="Bur-nud"></div>
       <div id="devSliders">
       <label for="pitchInput">Pitch: <span id="pitchVal"></span></label>
       <input id="pitchInput" type="range" min="0.6" max="1.4" step="0.05">
@@ -1109,7 +1111,7 @@
     const voice = store.get("bernud.gvoice"), pass = store.get("bernud.dashKey");
     if (!voice || !pass) return false;
     try {
-      const r = await fetch(`${SERVER}/brain/speak`, { method: "POST", headers: { "content-type": "application/json", "x-dashboard-key": pass }, body: JSON.stringify({ text, voice, style: store.get("bernud.gstyle") || undefined }), signal: AbortSignal.timeout(30000) });
+      const r = await fetch(`${SERVER}/brain/speak`, { method: "POST", headers: { "content-type": "application/json", "x-dashboard-key": pass }, body: JSON.stringify({ text, voice, style: store.get("bernud.gstyle") || undefined, name_sound: store.get("bernud.gname") || undefined }), signal: AbortSignal.timeout(30000) });
       if (!r.ok) return false;
       const url = URL.createObjectURL(await r.blob());
       if (!freeActive && !gTesting) { URL.revokeObjectURL(url); return true; }
@@ -1438,7 +1440,7 @@
   function saveVoice() {
     showVoiceNums(); showVoiceKind();
     const v = $("voiceSelect").value;
-    if (v.startsWith("g:")) { store.set("bernud.gvoice", v.slice(2)); store.set("bernud.gstyle", $("gStyle").value.trim()); return; }
+    if (v.startsWith("g:")) { store.set("bernud.gvoice", v.slice(2)); store.set("bernud.gstyle", $("gStyle").value.trim()); store.set("bernud.gname", $("gName").value.trim()); return; }
     store.del("bernud.gvoice");
     if (APP) { appCall("setTtsVoice", v, Number($("pitchInput").value), Number($("rateInput").value)); return; }
     store.set(VOICE_KEY, v); store.set("bernud.pitch", $("pitchInput").value); store.set("bernud.rate", $("rateInput").value);
@@ -1446,6 +1448,7 @@
   function loadVoices() {
     $("voiceRow").style.display = "";
     $("gStyle").value = store.get("bernud.gstyle") || "";
+    $("gName").value = store.get("bernud.gname") || "";
     $("engineNote").textContent = "Gemini voices sound natural and are free, but take a second or two and need internet; if one fails, Bernard uses the " + (APP ? "phone's" : "computer's") + " own voice instead." + (store.get("bernud.dashKey") ? "" : " Enter your passcode in the CCP brief to see the Gemini voices.");
     gList = null; renderVoices(); loadGeminiVoices();
     if (APP) { appCall("ttsVoices"); return; }
@@ -1459,6 +1462,7 @@
   $("engineSelect").addEventListener("change", (e) => store.set(ENGINE_KEY, e.target.value));
   $("voiceSelect").addEventListener("change", saveVoice);
   $("gStyle").addEventListener("change", saveVoice);
+  $("gName").addEventListener("change", saveVoice);
   $("pitchInput").addEventListener("input", showVoiceNums); $("pitchInput").addEventListener("change", saveVoice);
   $("rateInput").addEventListener("input", showVoiceNums); $("rateInput").addEventListener("change", saveVoice);
   $("voiceTest").addEventListener("click", async () => {

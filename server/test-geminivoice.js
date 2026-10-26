@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { createGeminiVoice, findAudio, toWav } from "./geminivoice.js";
+import { createGeminiVoice, findAudio, toWav, sayName } from "./geminivoice.js";
+assert.equal(sayName("Bernud here. Bernard, Bernie? bernud's"), "Bur-nud here. Bur-nud, Bernie? Bur-nud's");
+assert.equal(sayName("Hey Bernud", "Burnudd"), "Hey Burnudd");
 const pcm = Buffer.alloc(480);
 assert.equal(toWav(pcm).subarray(0, 4).toString(), "RIFF");
 assert.equal(toWav(toWav(pcm)).length, 524);

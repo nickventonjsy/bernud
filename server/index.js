@@ -374,7 +374,7 @@ export async function handle(req, res) {
     if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
     const b = await readJson(req);
     try {
-      const { wav, model } = await geminiVoice.speak({ text: b.text, voice: b.voice, style: b.style });
+      const { wav, model } = await geminiVoice.speak({ text: b.text, voice: b.voice, style: b.style, nameSound: b.name_sound });
       const origin = req.headers.origin;
       res.writeHead(200, { "content-type": "audio/wav", "content-length": wav.length, "cache-control": "no-store", "x-tts-model": model, ...(origin && PUBLIC_ORIGINS.has(origin) ? { "access-control-allow-origin": origin, "access-control-expose-headers": "x-tts-model", vary: "origin" } : {}) });
       return res.end(wav);

@@ -11,6 +11,11 @@ export const PREBUILT = [
   ["Zubenelgenubi", "Casual"], ["Sadachbia", "Lively"], ["Sadaltager", "Knowledgeable"], ["Sulafat", "Warm"], ["Vindemiatrix", "Gentle"],
 ].map(([id, d]) => ({ id, name: id, description: d, source: "prebuilt" }));
 
+// How the voice should say his name: spelt out phonetically, because Gemini reads "Bernud" as "Bernard".
+export const DEFAULT_NAME_SOUND = "Bur-nud";
+export function sayName(text, sound = DEFAULT_NAME_SOUND) {
+  return String(text).replace(/\bB(?:e|u)rn(?:u|a|ou)r?d+\b/gi, sound || DEFAULT_NAME_SOUND);
+}
 export const DEFAULT_STYLE = "A calm, well-spoken English butler with a dry wit: measured pace, warm and quietly amused, never rushed.";
 
 // Find the base64 audio wherever the response puts it (steps[].content[] in REST, output_audio in SDKs).
@@ -57,9 +62,9 @@ export function createGeminiVoice({ apiKey, models = ["gemini-3.8-flash-tts", "g
     return library;
   }
 
-  async function speak({ text, voice = "Charon", style = DEFAULT_STYLE }) {
+  async function speak({ text, voice = "Charon", style = DEFAULT_STYLE, nameSound = DEFAULT_NAME_SOUND }) {
     if (!apiKey) throw Object.assign(new Error("No Gemini key"), { status: 503 });
-    text = String(text || "").trim().slice(0, 3000);
+    text = sayName(String(text || "").trim().slice(0, 3000), String(nameSound || DEFAULT_NAME_SOUND).slice(0, 40));
     if (!text) throw Object.assign(new Error("Nothing to say"), { status: 400 });
     let last;
     for (const model of models) {
