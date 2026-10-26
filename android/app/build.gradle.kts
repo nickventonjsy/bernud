@@ -39,6 +39,7 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.activity:activity-ktx:1.9.1")
     implementation("androidx.car.app:app:1.4.0")
+    implementation("dev.mobile:dadb:1.2.9")
     implementation("com.google.android.gms:play-services-wearable:18.2.0")
     implementation("com.alphacephei:vosk-android:0.3.47@aar")
     implementation("net.java.dev.jna:jna:5.13.0@aar")

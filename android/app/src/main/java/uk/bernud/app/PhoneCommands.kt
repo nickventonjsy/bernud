@@ -63,6 +63,7 @@ class PhoneCommands(private val ctx: Context) {
                 "wa_call" -> waCall(arg.trim(), video = false)
                 "wa_video" -> waCall(arg.trim(), video = true)
                 "wa_message" -> waMessage(arg)
+                "firetv" -> FireTv.run(ctx, arg)
                 else -> throw Fail("The phone app doesn't know '$action' yet.")
             }
             true to done

@@ -204,6 +204,44 @@ async function dayVerdict({ done = [] } = {}) {
   const out = await brain.complete({ system: VERDICT_SYSTEM, text: notes, maxTokens: 120, temperature: 0.9 });
   return String(out).replace(/^["'“]+|["'”]+$/g, "").replace(/\s+/g, " ").trim().slice(0, 280) || null;
 }
+// ---------------- Shopping list, wake-up, Fire TV, watchdog ----------------
+const { createShopping } = await import("./shopping.js");
+export const shopping = createShopping({ kv: db.kv, notify });
+const { createWakeup } = await import("./wakeup.js");
+export const wakeup = createWakeup({ kv: db.kv, lights, speakers, sayOnPhone, todayEvents: async () => (await calendarForBrief()).events });
+const FIRETV_ACTIONS = ["on", "off", "home", "back", "play_pause", "up", "down", "left", "right", "select", "volume_up", "volume_down", "mute", "rewind", "fast_forward", "menu", "open", "apps", "status"];
+async function fireTv(b = {}) {
+  const action = String(b.action || "").toLowerCase().replace(/[ -]/g, "_");
+  let cfg = {}; try { cfg = JSON.parse((await db.kv.get("firetv_config")) || "{}"); } catch {}
+  if (action === "setup") {
+    const ip = String(b.value || b.ip || "").trim();
+    if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) return { ok: false, message: "That doesn't look like an IP address. It's under Settings, My Fire TV, About, Network on the Fire TV, like 192.168.1.50." };
+    await db.kv.set("firetv_config", JSON.stringify({ ...cfg, ip }));
+    return { ok: true, saved: ip, next: "Now ask me to do something on the Fire TV. The first time, the TV asks to allow USB debugging: tick Always allow and press OK." };
+  }
+  if (!FIRETV_ACTIONS.includes(action)) return { ok: false, error: "unknown_action", allowed: FIRETV_ACTIONS };
+  if (!cfg.ip) return { ok: false, error: "not_set_up", message: "The Fire TV isn't set up yet. Turn on ADB debugging on it (Settings, My Fire TV, Developer options) and tell me its IP address (Settings, My Fire TV, About, Network)." };
+  if (!phone.online()) return { ok: false, error: "phone_offline", message: "The Fire TV is controlled through the Bernard app on your phone, and it isn't connected right now. Open Bernard on the phone (it needs to be on the home Wi-Fi)." };
+  const r = await phone.send("firetv", `${cfg.ip};${action};${String(b.value || "").replace(/[;|]/g, " ").slice(0, 80)}`);
+  return r.ok ? { ok: true, done: r.output } : { ok: false, error: r.error || "firetv_failed", message: r.message || r.output || "The Fire TV didn't respond." };
+}
+const { createWatchdog } = await import("./watchdog.js");
+const zwBase = (process.env.ZW_URL || "https://zentrawire.onrender.com").replace(/\/+$/, ""), zwKey = process.env.ZW_ASSISTANT_KEY || "";
+const zwGet = async (p) => { const r = await fetch(zwBase + p, { headers: { "x-zw-assistant": zwKey }, signal: AbortSignal.timeout(15_000) }); if (!r.ok) throw new Error("ZentraWire " + r.status); return r.json(); };
+export const watchdog = createWatchdog({ kv: db.kv, notify, checks: [
+  { name: "CCP email (Gmail)", run: async () => (await gmail.connected()) ? (await gmail.hasScope(SCOPES.gmailRead)) ? { ok: true } : { ok: false, detail: "Gmail is connected but missing permission; reconnect it in Bernard" } : { ok: false, detail: "Gmail isn't connected; reconnect it in Bernard" } },
+  { name: "CCP calendar", run: async () => (await gmail.connected()) && (await gmail.hasScope(SCOPES.calendar)) ? { ok: true } : { ok: false, detail: "the calendar can't be read; reconnect Google in Bernard" } },
+  { name: "CCP Drive folder", run: async () => { try { const f = await ccp.folderInfo(); return { ok: !!f.id, detail: f.id ? "" : "folder not found" }; } catch (e) { return { ok: false, detail: String(e.message).slice(0, 120) }; } } },
+  { name: "ZentraWire", run: async () => { await zwGet("/api/assistant/summary"); return { ok: true }; } },
+  { name: "Spotify", run: async () => { const j = await zwGet("/api/assistant/spotify?what=state"); return j.connected ? { ok: true } : { ok: false, detail: j.error || "Spotify isn't connected in ZentraWire" }; } },
+  { name: "Lights and TVs (SmartThings)", run: async () => smartthings.configured() ? ((await smartthings.connected().catch(() => false)) ? { ok: true } : { ok: false, detail: "SmartThings needs reconnecting" }) : { skip: true } },
+  { name: "Cameras", run: async () => { if (!imou.configured()) return { skip: true }; const cams = await imou.cameras(true); return cams.map((c) => ({ name: `Camera: ${c.name}`, ok: c.online, detail: c.online ? "" : "offline (check its power and Wi-Fi)" })); } },
+  { name: "Bernard app on the phone", run: async () => (PHONE_TOPIC && PHONE_SECRET) ? (phone.online() ? { ok: true } : { ok: false, detail: "not connected; open the Bernard app on the phone" }) : { skip: true } },
+  { name: "Free mode brain", run: async () => { const s = await brain.status(); return s.ok && s.configured ? { ok: true } : { ok: false, detail: s.error || "no AI keys" }; } },
+  { name: "Morning brief", run: async () => { const last = JSON.parse((await db.kv.get("brief_last_result")) || "null"); return !last || last.ok ? { ok: true } : { ok: false, detail: "the last brief failed: " + (last.error || "unknown reason") }; } },
+  { name: "Home PC", alert: false, run: async () => ({ ok: pc.online(), detail: pc.online() ? "" : "off or asleep" }) },
+  { name: "Work laptop", alert: false, run: async () => ({ ok: workPc.online(), detail: workPc.online() ? "" : "off or not signed in" }) },
+] });
 export const youtube = createYouTube({ web, pc, notify, smartthings, zw: { url: (process.env.ZW_URL || "https://zentrawire.onrender.com").replace(/\/+$/, ""), key: process.env.ZW_ASSISTANT_KEY || "" } });
 export const scheduler = createScheduler({
   kv: db.kv, ccp, notify,
@@ -696,6 +734,13 @@ export async function handle(req, res) {
       try { return send(res, 200, await ccpDelete.handle(await readJson(req))); }
       catch (e) { return send(res, 200, { ok: false, error: e.code || "error", message: String(e.message).slice(0, 300), connect_link: e.link }); }
     }
+    if (path === "/shopping" && req.method === "POST") return send(res, 200, await shopping.handle(await readJson(req)));
+    if (path === "/wakeup" && req.method === "POST") return send(res, 200, await wakeup.handle(await readJson(req)));
+    if (path === "/firetv" && req.method === "POST") {
+      try { return send(res, 200, await fireTv(await readJson(req))); }
+      catch (e) { return send(res, 200, { ok: false, error: "firetv_error", message: String(e.message).slice(0, 200) }); }
+    }
+    if (path === "/system/check") return send(res, 200, await watchdog.status());
     if (path === "/music/play-on" && req.method === "POST") {
       try { return send(res, 200, await speakers.playOn(await readJson(req))); }
       catch (e) { return send(res, 200, { ok: false, error: "speaker_error", message: String(e.message).slice(0, 300) }); }
@@ -960,7 +1005,7 @@ export async function handle(req, res) {
 
 await db.init();
 if (ccp.configured() && process.env.NODE_ENV !== "test") ccp.startBackgroundIndex();
-if (process.env.NODE_ENV !== "test" && NTFY_TOPIC) { scheduler.start(); reminders.start(); orders.start(); }
+if (process.env.NODE_ENV !== "test" && NTFY_TOPIC) { scheduler.start(); reminders.start(); orders.start(); watchdog.start(); wakeup.start(); }
 if (process.env.NODE_ENV !== "test") setTimeout(async () => { const s = await brain.status(); console.log("brain status", JSON.stringify(s)); if (s.ok && s.configured) console.log("brain selftest", JSON.stringify(await brain.selfTest()));
   if (imou.configured() && DASHBOARD_KEY) camAlerts.start();
   if (imou.configured()) { try { const c = await imou.cameras(true); console.log("imou cameras", JSON.stringify(c.map((x) => ({ name: x.name, online: x.online })))); } catch (e) { console.log("imou failed", e.code, e.message); } }

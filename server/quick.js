@@ -56,6 +56,7 @@ function goodnightReply(r) {
   return parts.join(" ");
 }
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+const listWords = (a) => (a.length <= 1 ? a.join("") : `${a.slice(0, -1).join(", ")} and ${a.at(-1)}`);
 
 // Returns { tool, args, reply(result) } or null. reply() returns null when the result needs the AI to explain it.
 // lastDevice: what the previous instant command switched (so "turn it off" works).
@@ -72,7 +73,49 @@ export function matchQuick(text, lastDevice = "") {
     const name = m[1] || "", screen = m[2] || "";
     return { tool: "camera", args: { action: "show", camera: name, screen }, reply: (r) => (r.ok === false ? null : /tv|telly|television/.test(screen) ? `Here's the ${r.camera} camera on this screen. For the TV, open Bernard's camera page in the TV's browser.` : `Here's the ${r.camera} camera.`) };
   }
-  if (/^(?:good ?night|night night|nighty night|i'?m (?:off|going) to bed|bedtime)$/.test(t)) return { tool: "goodnight", args: { action: "run" }, reply: goodnightReply, end: true };
+  if (/^(?:(?:it'?s )?bed ?time(?: now| routine)?|time for bed|good ?night|night night|nighty night|i'?m (?:off|going) to bed)$/.test(t)) return { tool: "goodnight", args: { action: "run" }, reply: goodnightReply, end: true };
+
+  // Shopping list
+  if ((m = t.match(/^(?:add|put|stick) (.+?) (?:on|to|onto) (?:the |my )?(?:shopping|shopping list|list)$/)) || (m = t.match(/^(?:we need(?! to\b)|we'?re out of|we have run out of|we'?ve run out of) (.+?)(?: for the shopping)?$/))) {
+    return { tool: "shopping_list", args: { action: "add", items: m[1] }, reply: (r) => (r.ok === false ? null : r.added.length ? `Added ${listWords(r.added)}. That's ${r.count} on the list.` : `${cap(listWords(r.already))} ${r.already.length === 1 ? "is" : "are"} already on the list.`) };
+  }
+  if ((m = t.match(/^(?:take|remove|delete|cross|tick) (.+?) (?:off|from) (?:the |my )?(?:shopping|shopping list|list)$/))) {
+    return { tool: "shopping_list", args: { action: "remove", items: m[1] }, reply: (r) => (r.ok === false ? null : r.removed.length ? `Taken ${listWords(r.removed)} off. ${r.count} left.` : `I couldn't find that on the list.`) };
+  }
+  if (/^(?:what'?s|what is|read (?:me )?(?:out )?|tell me what'?s) ?(?:on )?(?:the |my )?shopping list$|^(?:read|check) (?:the |my )?shopping list$/.test(t)) {
+    return { tool: "shopping_list", args: { action: "list" }, reply: (r) => (r.ok === false ? null : r.count ? `You've got ${r.count} on the list: ${listWords(r.items)}.` : "The shopping list is empty.") };
+  }
+  if (/^(?:send|text|give)(?: me)? (?:the |my )?shopping list(?: to (?:my|the) phone)?$/.test(t)) {
+    return { tool: "shopping_list", args: { action: "send" }, reply: (r) => (r.ok === false ? null : r.empty ? "The shopping list is empty." : `Sent the shopping list to your phone, sorted by aisle.`) };
+  }
+
+  // Watchdog: "is everything working?"
+  if (/^(?:is everything (?:working|ok|okay|alright|all right)|(?:run a |do a )?(?:system|systems) check|status report|are you (?:working|ok|okay) properly|health check)$/.test(t)) {
+    return { tool: "system_check", args: {}, reply: (r) => (r.ok === false ? null : r.all_ok ? `Everything's working: ${r.working.length} checks all fine.` : `Mostly fine, but ${r.not_working.map((x) => `${x.name} (${x.problem})`).join("; ")}.`) };
+  }
+
+  // Fire TV Stick (before the general on/off patterns, which would treat it as the Samsung TV)
+  const FIRE = "(?:the |my )?(?:fire ?(?:tv|stick)|firestick|fire tv stick|amazon (?:stick|fire))";
+  if ((m = t.match(new RegExp(`^(?:turn|switch) (on|off) ${FIRE}$`))) || (m = t.match(new RegExp(`^(?:turn|switch) ${FIRE} (on|off)$`)))) {
+    const v = m[1];
+    return { tool: "firetv", args: { action: v, value: "" }, reply: (r) => (r.ok === false ? null : `Fire TV ${v}.`) };
+  }
+  if ((m = t.match(new RegExp(`^(?:open|launch|start|put on|go to) (.+?) on ${FIRE}$`)))) {
+    return { tool: "firetv", args: { action: "open", value: m[1] }, reply: (r) => (r.ok === false ? null : r.done || `Opening ${m[1]} on the Fire TV.`) };
+  }
+  if ((m = t.match(new RegExp(`^(pause|play|resume|home|back|go home|go back|mute) ${FIRE}$`))) || (m = t.match(new RegExp(`^${FIRE} (pause|play|resume|home|back|mute)$`)))) {
+    const a = { pause: "play_pause", play: "play_pause", resume: "play_pause", home: "home", "go home": "home", back: "back", "go back": "back", mute: "mute" }[m[1]];
+    return { tool: "firetv", args: { action: a, value: "" }, reply: (r) => (r.ok === false ? null : "Done.") };
+  }
+
+  // Wake-up: "wake me up at 6:45 on weekdays"
+  if ((m = t.match(/^(?:wake me(?: up)?|set (?:my |a |an )?(?:wake[- ]?up|alarm)(?: for)?) (?:at )?(\d{1,2}(?:[:.]\d{2})?\s*(?:am|pm)?)(?: (every ?day|daily|on weekdays|weekdays|at weekends|on weekends|weekends))?$/))) {
+    const days = !m[2] ? undefined : /week ?days/.test(m[2]) ? "1-5" : /weekends/.test(m[2]) ? "6-7" : "1-7";
+    return { tool: "wakeup", args: { action: "set", time: m[1].replace(/\s+/g, ""), ...(days ? { days } : {}) }, reply: (r) => (r.ok === false ? r.message || null : r.summary) };
+  }
+  if (/^(?:turn off|cancel|stop|switch off) (?:my |the )?(?:wake[- ]?up|alarm|morning wake[- ]?up)$/.test(t)) {
+    return { tool: "wakeup", args: { action: "set", enabled: false }, reply: (r) => (r.ok === false ? null : "Wake-up is off.") };
+  }
 
   if ((m = t.match(/^(?:turn |switch |put )?(?:do not disturb|dnd) (on|off)$|^(?:turn|switch|put) (on|off) (?:do not disturb|dnd)$/))) {
     const v = m[1] || m[2];
