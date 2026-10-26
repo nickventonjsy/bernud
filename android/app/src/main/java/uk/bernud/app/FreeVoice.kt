@@ -1,5 +1,6 @@
 package uk.bernud.app
 
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
@@ -8,6 +9,7 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
 
@@ -18,8 +20,9 @@ class FreeVoice(private val activity: MainActivity, private val js: (String) -> 
     private var recognizer: SpeechRecognizer? = null
     private var tts: TextToSpeech? = null
     private var ttsReady = false
-    private var pendingSpeech: String? = null
+    private val waiting = mutableListOf<() -> Unit>()
     private var busyRetries = 0
+    private val prefs = activity.getSharedPreferences("bernud", Context.MODE_PRIVATE)
 
     private fun call(fn: String, arg: String?) = js("window.$fn && window.$fn(${if (arg == null) "null" else JSONObject.quote(arg)})")
 
@@ -68,28 +71,65 @@ class FreeVoice(private val activity: MainActivity, private val js: (String) -> 
     private fun release() { try { recognizer?.destroy() } catch (_: Exception) {}; recognizer = null }
     fun stopListening() = main.post { try { recognizer?.cancel() } catch (_: Exception) {}; release() }
 
-    fun speak(text: String) = main.post {
-        val t = tts
-        if (t == null) {
-            pendingSpeech = text
-            tts = TextToSpeech(activity) { status ->
-                ttsReady = status == TextToSpeech.SUCCESS
-                if (ttsReady) {
-                    tts?.language = Locale.UK
-                    tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                        override fun onStart(id: String?) {}
-                        override fun onDone(id: String?) { main.post { call("bernudSpoke", "") } }
-                        @Deprecated("Deprecated in Java") override fun onError(id: String?) { main.post { call("bernudSpoke", "") } }
-                        override fun onStop(id: String?, interrupted: Boolean) { main.post { call("bernudSpoke", "") } }
-                    })
-                    pendingSpeech?.let { say(it) }
-                } else call("bernudSpoke", "")
-                pendingSpeech = null
+    // Start the phone's text-to-speech once, then run whatever was waiting for it.
+    private fun withTts(then: () -> Unit) {
+        if (tts != null && ttsReady) { then(); return }
+        waiting.add(then)
+        if (tts != null) return
+        tts = TextToSpeech(activity) { status ->
+            ttsReady = status == TextToSpeech.SUCCESS
+            if (ttsReady) {
+                tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                    override fun onStart(id: String?) {}
+                    override fun onDone(id: String?) { main.post { call("bernudSpoke", "") } }
+                    @Deprecated("Deprecated in Java") override fun onError(id: String?) { main.post { call("bernudSpoke", "") } }
+                    override fun onStop(id: String?, interrupted: Boolean) { main.post { call("bernudSpoke", "") } }
+                })
+                applyVoice()
             }
-            return@post
+            main.post { val w = waiting.toList(); waiting.clear(); w.forEach { it() } }
         }
-        if (!ttsReady) { call("bernudSpoke", ""); return@post }
-        say(text)
+    }
+
+    // The voice, pitch and speed chosen in Bernard's settings (UK English by default).
+    private fun applyVoice() {
+        val t = tts ?: return
+        t.language = Locale.UK
+        val name = prefs.getString("ttsVoice", null)
+        if (name != null) try { t.voices?.firstOrNull { it.name == name }?.let { t.voice = it } } catch (_: Exception) {}
+        t.setPitch(prefs.getFloat("ttsPitch", 1f))
+        t.setSpeechRate(prefs.getFloat("ttsRate", 1f))
+    }
+
+    fun speak(text: String) = main.post {
+        withTts { if (ttsReady) say(text) else call("bernudSpoke", "") }
+    }
+
+    // Lists the phone's English voices for the settings picker (sent back to window.bernudVoices).
+    fun listVoices() = main.post {
+        withTts {
+            val out = JSONObject()
+            val arr = JSONArray()
+            try {
+                (tts?.voices ?: emptySet()).filter { it.locale.language == "en" }
+                    .sortedWith(compareBy({ it.locale.country != "GB" }, { it.isNetworkConnectionRequired }, { it.name }))
+                    .forEach { v ->
+                        arr.put(JSONObject().put("name", v.name).put("locale", v.locale.toLanguageTag())
+                            .put("network", v.isNetworkConnectionRequired)
+                            .put("installed", !v.features.contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED)))
+                    }
+            } catch (_: Exception) {}
+            out.put("voices", arr).put("current", tts?.voice?.name ?: "")
+                .put("pitch", prefs.getFloat("ttsPitch", 1f).toDouble()).put("rate", prefs.getFloat("ttsRate", 1f).toDouble())
+                .put("engine", tts?.defaultEngine ?: "")
+            js("window.bernudVoices && window.bernudVoices(${out})")
+        }
+    }
+
+    fun setVoice(name: String, pitch: Float, rate: Float) = main.post {
+        prefs.edit().apply { if (name.isNotBlank()) putString("ttsVoice", name) else remove("ttsVoice") }
+            .putFloat("ttsPitch", pitch.coerceIn(0.5f, 2f)).putFloat("ttsRate", rate.coerceIn(0.5f, 2f)).apply()
+        withTts { applyVoice() }
     }
 
     private fun say(text: String) {

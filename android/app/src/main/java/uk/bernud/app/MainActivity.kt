@@ -151,6 +151,8 @@ class MainActivity : ComponentActivity() {
         @JavascriptInterface fun stopListening() { free.stopListening() }
         @JavascriptInterface fun speak(text: String) { free.speak(text) }
         @JavascriptInterface fun stopSpeaking() { free.stopSpeaking() }
+        @JavascriptInterface fun ttsVoices() { free.listVoices() }
+        @JavascriptInterface fun setTtsVoice(name: String, pitch: Float, rate: Float) { free.setVoice(name, pitch, rate) }
         @JavascriptInterface fun wakeWordStatus(): String = WakeWord.status
         @JavascriptInterface fun phoneStatus(): String = Bus.phoneStatus?.invoke() ?: "service not running"
         @JavascriptInterface fun setPhoneConfig(topic: String, secret: String) {

@@ -469,8 +469,12 @@
       <option value="elevenlabs">ElevenLabs: Bernard's real voice (uses credits)</option>
     </select>
     <div id="voiceRow">
-      <label for="voiceSelect">Free-mode voice on this computer</label>
-      <div style="display:flex;gap:10px"><select id="voiceSelect" style="flex:1;padding:10px;background:transparent;color:var(--text);border:1px solid var(--line, #5a1a1f);border-radius:8px"></select><button class="btn" type="button" id="voiceTest">Test</button></div>
+      <label for="voiceSelect">Bernard's voice in free mode</label>
+      <div style="display:flex;gap:10px"><select id="voiceSelect" style="flex:1;min-width:0;padding:10px;background:transparent;color:var(--text);border:1px solid var(--line, #5a1a1f);border-radius:8px"></select><button class="btn" type="button" id="voiceTest">Test</button></div>
+      <label for="pitchInput">Pitch: <span id="pitchVal"></span></label>
+      <input id="pitchInput" type="range" min="0.6" max="1.4" step="0.05">
+      <label for="rateInput">Speed: <span id="rateVal"></span></label>
+      <input id="rateInput" type="range" min="0.6" max="1.5" step="0.05">
     </div>
     <div class="note" id="engineNote"></div>
     <hr style="border:0;border-top:1px solid var(--line, #5a1a1f);margin:16px 0">
@@ -1093,6 +1097,8 @@
       voices.find((v) => /en[-_]GB/i.test(v.lang) && /male|george|ryan|thomas|oliver|arthur|daniel/i.test(v.name) && !/female/i.test(v.name)) ||
       voices.find((v) => /en[-_]GB/i.test(v.lang)) || null;
   }
+  const vPitch = () => Number(store.get("bernud.pitch") || "1"), vRate = () => Number(store.get("bernud.rate") || "1");
+  function pcUtterance(text) { const u = new SpeechSynthesisUtterance(text); u.voice = pcVoice(); u.lang = "en-GB"; u.pitch = vPitch(); u.rate = vRate(); return u; }
   function freeSpeak(text) {
     return new Promise((resolve) => {
       if (!text) return resolve();
@@ -1100,8 +1106,7 @@
       const done = () => { clearTimeout(guard); resolve(); };
       if (APP && APP.speak) { freeCb.spoke = done; appCall("speak", text); return; }
       if (!window.speechSynthesis) return done();
-      const u = new SpeechSynthesisUtterance(text);
-      u.voice = pcVoice(); u.lang = "en-GB";
+      const u = pcUtterance(text);
       u.onend = u.onerror = done;
       freeCb.spoke = done;
       speechSynthesis.cancel(); speechSynthesis.speak(u);
@@ -1354,20 +1359,49 @@
     loadVoices();
     $("diag").textContent = `Speech recognition: ${SpeechRec ? "supported" : "not supported"} · On-device: ${useLocalSpeech ? "yes" : "no"} · Picovoice: ${hasPico() ? "set up" : "not set up"}`;
   }
+  // Google's UK voices have code names; these hints are best guesses, so use Test to be sure.
+  const VOICE_HINT = { gbb: "probably male", gbd: "probably male", rjs: "probably male", gba: "probably female", gbc: "probably female", gbg: "probably female", fis: "probably female" };
+  function phoneVoiceLabel(v, i) {
+    const code = (v.name.match(/-x-([a-z]{3})/) || [])[1];
+    const where = { "en-GB": "UK", "en-US": "US", "en-AU": "Australian", "en-IN": "Indian", "en-IE": "Irish", "en-ZA": "South African", "en-NG": "Nigerian" }[v.locale] || v.locale;
+    return `${where} voice ${code ? code.toUpperCase() : i + 1}${code && VOICE_HINT[code] && v.locale === "en-GB" ? " (" + VOICE_HINT[code] + ")" : ""}${v.network ? " · online" : ""}${v.installed ? "" : " · needs download"}`;
+  }
+  window.bernudVoices = (d) => {
+    const sel = $("voiceSelect"); sel.innerHTML = "";
+    const def = document.createElement("option"); def.value = ""; def.textContent = "Phone's default UK voice"; sel.appendChild(def);
+    (d.voices || []).forEach((v, i) => { const o = document.createElement("option"); o.value = v.name; o.textContent = phoneVoiceLabel(v, i); sel.appendChild(o); });
+    sel.value = [...sel.options].some((o) => o.value === d.current) ? d.current : "";
+    $("pitchInput").value = d.pitch || 1; $("rateInput").value = d.rate || 1; showVoiceNums();
+    if (!(d.voices || []).length) $("engineNote").textContent = "No English voices found. In Android Settings › Text-to-speech output, choose Speech Services by Google and install English (United Kingdom).";
+  };
+  function showVoiceNums() { $("pitchVal").textContent = Number($("pitchInput").value).toFixed(2); $("rateVal").textContent = Number($("rateInput").value).toFixed(2); }
+  function saveVoice() {
+    showVoiceNums();
+    if (APP) { appCall("setTtsVoice", $("voiceSelect").value, Number($("pitchInput").value), Number($("rateInput").value)); return; }
+    store.set(VOICE_KEY, $("voiceSelect").value); store.set("bernud.pitch", $("pitchInput").value); store.set("bernud.rate", $("rateInput").value);
+  }
   function loadVoices() {
-    $("voiceRow").style.display = APP ? "none" : "";
-    $("engineNote").textContent = APP ? "On the phone, free mode uses the phone's own voice: change it in Android Settings › Text-to-speech output." : "";
-    if (APP || !window.speechSynthesis) return;
+    $("voiceRow").style.display = "";
+    $("engineNote").textContent = APP ? "These are your phone's own voices. \"Online\" ones sound best but need internet; ones marked \"needs download\" install the first time you use them." : "";
+    if (APP) { $("voiceSelect").innerHTML = "<option>Loading voices…</option>"; appCall("ttsVoices"); return; }
+    if (!window.speechSynthesis) { $("voiceRow").style.display = "none"; return; }
     const sel = $("voiceSelect"), voices = speechSynthesis.getVoices().filter((v) => /^en/i.test(v.lang));
     const cur = (pcVoice() || {}).name;
     sel.innerHTML = "";
     for (const v of voices) { const o = document.createElement("option"); o.value = v.name; o.textContent = `${v.name} (${v.lang})`; sel.appendChild(o); }
     if (cur) sel.value = cur;
+    $("pitchInput").value = vPitch(); $("rateInput").value = vRate(); showVoiceNums();
   }
-  if (window.speechSynthesis) speechSynthesis.onvoiceschanged = () => { if ($("drawer").classList.contains("open")) loadVoices(); };
+  if (window.speechSynthesis) speechSynthesis.onvoiceschanged = () => { if ($("drawer").classList.contains("open") && !APP) loadVoices(); };
   $("engineSelect").addEventListener("change", (e) => store.set(ENGINE_KEY, e.target.value));
-  $("voiceSelect").addEventListener("change", (e) => store.set(VOICE_KEY, e.target.value));
-  $("voiceTest").addEventListener("click", () => { const u = new SpeechSynthesisUtterance("Good evening, Nicholas. Bernud at your service."); u.voice = pcVoice(); u.lang = "en-GB"; speechSynthesis.cancel(); speechSynthesis.speak(u); });
+  $("voiceSelect").addEventListener("change", saveVoice);
+  $("pitchInput").addEventListener("input", showVoiceNums); $("pitchInput").addEventListener("change", saveVoice);
+  $("rateInput").addEventListener("input", showVoiceNums); $("rateInput").addEventListener("change", saveVoice);
+  $("voiceTest").addEventListener("click", () => {
+    const line = "Good evening, Nicholas. Bernud at your service. Shall I turn the lights down?";
+    if (APP) { saveVoice(); setTimeout(() => appCall("speak", line), 150); return; }
+    speechSynthesis.cancel(); speechSynthesis.speak(pcUtterance(line));
+  });
 
   async function loadMics() {
     const sel = $("micSelect");
