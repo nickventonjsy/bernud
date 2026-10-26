@@ -25,9 +25,9 @@ assert.match(sent[0].t, /Motion at Cory's Shop, 19:00/); assert.equal(sent[0].o.
 clock = new Date(clock.getTime() + 60_000);
 r = await ca.handle({ did: "D1", msgType: "human", time: Math.round(clock.getTime() / 1000), picUrlArray: ["https://pic.lechange.com/a.jpg"] });
 assert.equal(r.notified, false); assert.equal(r.reason, "cooldown");
-// Living room is off by default (home camera); daytime shop isn't watched.
+// Living room alerts any time.
 r = await ca.handle({ did: "D2", msgType: "human", time: Math.round(clock.getTime() / 1000) });
-assert.equal(r.notified, false);
+assert.equal(r.notified, true); sent.pop();
 r = await ca.handle({ did: "D1", msgType: "human", time: Math.round(new Date("2026-10-27T11:00:00Z").getTime() / 1000) });
 assert.equal(r.reason, "not watching now");
 // Turn the living room on, people only.

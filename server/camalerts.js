@@ -7,7 +7,10 @@ export const DEFAULTS = {
   after_hours: { start: "18:00", end: "07:30", weekends: true },
   cooldown_min: 5,
   // Cameras matching these words alert after hours; everything else is off unless changed.
-  default_rules: [{ match: "shop|car ?park|garage|yard|unit|business|cory", mode: "after_hours", people_only: false }],
+  default_rules: [
+    { match: "shop|car ?park|garage|yard|unit|business|cory", mode: "after_hours", people_only: false },
+    { match: "living|lounge|bedroom", mode: "always", people_only: false }, // Nicholas asked for these on, 26 Oct
+  ],
   cameras: {},
 };
 
