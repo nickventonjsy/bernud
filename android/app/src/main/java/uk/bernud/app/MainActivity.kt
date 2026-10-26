@@ -153,6 +153,21 @@ class MainActivity : ComponentActivity() {
         @JavascriptInterface fun stopSpeaking() { free.stopSpeaking() }
         @JavascriptInterface fun ttsVoices() { free.listVoices() }
         @JavascriptInterface fun setTtsVoice(name: String, pitch: Float, rate: Float) { free.setVoice(name, pitch, rate) }
+        // The dashboard passcode, for the car conversation and the watch (sent to the watch over Wear OS's own link).
+        @JavascriptInterface fun setDashKey(key: String) {
+            if (key.isBlank()) return
+            val prefs = getSharedPreferences("bernud", MODE_PRIVATE)
+            val changed = prefs.getString("dashKey", null) != key
+            prefs.edit().putString("dashKey", key).apply()
+            if (!changed && prefs.getBoolean("watchSynced", false)) return
+            try {
+                val req = com.google.android.gms.wearable.PutDataMapRequest.create("/bernud/key").apply {
+                    dataMap.putString("key", key); dataMap.putLong("t", System.currentTimeMillis())
+                }.asPutDataRequest().setUrgent()
+                com.google.android.gms.wearable.Wearable.getDataClient(this@MainActivity).putDataItem(req)
+                    .addOnSuccessListener { prefs.edit().putBoolean("watchSynced", true).apply() }
+            } catch (_: Exception) {}
+        }
         @JavascriptInterface fun wakeWordStatus(): String = WakeWord.status
         @JavascriptInterface fun phoneStatus(): String = Bus.phoneStatus?.invoke() ?: "service not running"
         @JavascriptInterface fun setPhoneConfig(topic: String, secret: String) {

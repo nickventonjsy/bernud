@@ -26,6 +26,15 @@ class BernudService : Service() {
 
     private var wakeLock: PowerManager.WakeLock? = null
     private var listener: CommandListener? = null
+    private var car: androidx.car.app.connection.CarConnection? = null
+    private var inCar = false
+    private val carObserver = androidx.lifecycle.Observer<Int> { type ->
+        // Android Auto connected: open a Bernard conversation the car can read aloud and reply to by voice.
+        val now = type == androidx.car.app.connection.CarConnection.CONNECTION_TYPE_PROJECTION
+        if (now && !inCar) CarChat.start(this, "I'm here, Nicholas. Reply to talk to me.")
+        if (!now && inCar) CarChat.clear(this)
+        inCar = now
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -45,6 +54,7 @@ class BernudService : Service() {
         listener = CommandListener(this).also { it.start() }
         Bus.reloadCommands = { listener?.stop(); listener = CommandListener(this).also { it.start() } }
         Bus.phoneStatus = { listener?.status ?: "not running" }
+        try { car = androidx.car.app.connection.CarConnection(this).also { it.type.observeForever(carObserver) } } catch (_: Exception) {}
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -64,6 +74,7 @@ class BernudService : Service() {
     }
 
     override fun onDestroy() {
+        try { car?.type?.removeObserver(carObserver) } catch (_: Exception) {}
         WakeWord.stop()
         listener?.stop(); listener = null
         Bus.reloadCommands = null
@@ -76,6 +87,7 @@ class BernudService : Service() {
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), flags)
         val talk = PendingIntent.getService(this, 1, Intent(this, BernudService::class.java).setAction(ACTION_TALK), flags)
         val stop = PendingIntent.getService(this, 2, Intent(this, BernudService::class.java).setAction(ACTION_STOP), flags)
+        val chat = PendingIntent.getBroadcast(this, 4, Intent(this, ChatReceiver::class.java).setAction(CarChat.ACTION_START), flags)
         return Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_notify)
             .setContentTitle("Bernard is ready")
@@ -83,6 +95,7 @@ class BernudService : Service() {
             .setContentIntent(open)
             .setOngoing(true)
             .addAction(Notification.Action.Builder(null, "Talk", talk).build())
+            .addAction(Notification.Action.Builder(null, "Text chat", chat).build())
             .addAction(Notification.Action.Builder(null, "Close Bernard", stop).build())
             .build()
     }

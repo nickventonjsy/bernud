@@ -56,6 +56,11 @@
             android:exported="false"
             android:foregroundServiceType="microphone" />
 
+        <receiver android:name=".ChatReceiver" android:exported="false" />
+
+        <!-- Android Auto: Bernard's conversation shows on the car screen and is read aloud. -->
+        <meta-data android:name="com.google.android.gms.car.application" android:resource="@xml/automotive_app_desc" />
+
         <service
             android:name=".TalkTile"
             android:exported="true"

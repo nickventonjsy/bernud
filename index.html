@@ -1693,6 +1693,7 @@
     if (!APP || !APP.setPhoneConfig) return;
     const pass = store.get(PASS_KEY);
     if (!pass) return;
+    if (APP.setDashKey) appCall("setDashKey", pass); // for the car conversation and the watch
     try {
       const r = await fetch(`${SERVER}/device/phone/config`, { headers: { "x-dashboard-key": pass }, cache: "no-store" });
       const j = await r.json();

@@ -61,12 +61,16 @@ jobs:
         working-directory: android
         run: gradle --no-daemon assembleRelease
       - name: Rename
-        run: cp android/app/build/outputs/apk/release/app-release.apk Bernard.apk
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk Bernard.apk
+          cp android/wear/build/outputs/apk/release/wear-release.apk BernardWatch.apk
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: android-v${{ github.run_number }}
           name: Bernard Android app (build ${{ github.run_number }})
-          body: "Install Bernard.apk on your phone. Open this page on the phone and tap Bernard.apk to download. Wake word check: ${{ env.VOCAB }}. Self-test: ${{ env.WAKETEST }}"
-          files: Bernard.apk
+          body: "Install Bernard.apk on your phone. BernardWatch.apk is for the Galaxy Watch (install it from your PC with adb). Open this page on the phone and tap Bernard.apk to download. Wake word check: ${{ env.VOCAB }}. Self-test: ${{ env.WAKETEST }}"
+          files: |
+            Bernard.apk
+            BernardWatch.apk
           make_latest: true
