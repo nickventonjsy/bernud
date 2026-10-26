@@ -49,4 +49,13 @@ assert.equal(r.code, "quota");
 const b2 = createBrain({ geminiKey: "G", elevenKey: "E", agentId: "a", kv, port: 10000, bernudKey: "BK", zwKey: "ZK", fetchImpl: async (u, o) => (String(u).includes("elevenlabs") ? { ok: false, status: 500 } : fetchImpl(u, o)), log: { error() {} } });
 assert.equal((await b2.status()).source, "saved copy");
 assert.equal((await createBrain({ geminiKey: "", kv, fetchImpl }).chat({ text: "x" })).code, "not_set_up");
+// A retired model falls through to the next one.
+const tried = [];
+const b3 = createBrain({ geminiKey: "G", elevenKey: "E", agentId: "a", kv, port: 1, models: ["old", "new"], log: { error() {} }, fetchImpl: async (u, o) => {
+  if (String(u).includes("/old:")) { tried.push("old"); return { ok: false, status: 404, json: async () => ({ error: { message: "This model is no longer available to new users" } }) }; }
+  if (String(u).includes("/new:")) tried.push("new");
+  return fetchImpl(u, o);
+} });
+const r3 = await b3.chat({ session: "z", text: "hi" });
+assert.equal(r3.model, "new"); assert.deepEqual(tried, ["old", "new"]);
 console.log("brain ok");

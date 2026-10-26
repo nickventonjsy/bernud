@@ -48,7 +48,7 @@ export function toDeclaration(t) {
   return d;
 }
 
-export function createBrain({ geminiKey, elevenKey, agentId, kv, port, bernudKey, zwKey, models = ["gemini-2.5-flash", "gemini-2.5-flash-lite"], fetchImpl = fetch, now = () => new Date(), log = console }) {
+export function createBrain({ geminiKey, elevenKey, agentId, kv, port, bernudKey, zwKey, models = (process.env.GEMINI_MODELS || "gemini-3.8-flash,gemini-3.6-flash,gemini-3.5-flash-lite").split(",").map((m) => m.trim()).filter(Boolean), fetchImpl = fetch, now = () => new Date(), log = console }) {
   let cfg = null, cfgAt = 0;
   const sessions = new Map();
 
@@ -105,7 +105,17 @@ export function createBrain({ geminiKey, elevenKey, agentId, kv, port, bernudKey
     let last;
     for (const m of models) {
       try { return { model: m, res: await gemini(m, payload) }; }
-      catch (e) { last = e; if (!(e.status === 429 || e.status >= 500 || e.status === 404)) break; }
+      catch (e) {
+        last = e;
+        // Some models reject the "think less" setting: try once without it.
+        if (e.status === 400 && /thinking/i.test(e.message)) {
+          const { thinkingConfig, ...gc } = payload.generationConfig || {};
+          try { return { model: m, res: await gemini(m, { ...payload, generationConfig: gc }) }; } catch (e2) { last = e2; }
+        }
+        log.error?.("gemini", m, last.status, String(last.message).slice(0, 200));
+        const retired = /no longer available|not found|not supported|deprecated|model/i.test(last.message || "");
+        if (!(last.status === 429 || last.status >= 500 || last.status === 404 || (last.status === 400 && retired) || last.status === 403 && retired)) break;
+      }
     }
     if (last?.status === 429) throw Object.assign(new Error("Bernard's free allowance from Google is used up for now. It resets daily; switch to ElevenLabs mode in Settings meanwhile."), { code: "quota" });
     throw last;
@@ -132,7 +142,7 @@ export function createBrain({ geminiKey, elevenKey, agentId, kv, port, bernudKey
         systemInstruction: { parts: [{ text: system }] },
         contents,
         tools: [{ functionDeclarations: c.tools.map(toDeclaration) }],
-        generationConfig: { temperature: 0, maxOutputTokens: 1024, thinkingConfig: { thinkingBudget: 0 } },
+        generationConfig: { maxOutputTokens: 2048, thinkingConfig: { thinkingLevel: "low" } },
       });
       model = m;
       const content = res.candidates?.[0]?.content || { role: "model", parts: [] };
