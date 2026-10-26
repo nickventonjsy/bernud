@@ -8,6 +8,11 @@ const GROQ = "https://api.groq.com/openai/v1/chat/completions";
 const SKIP = new Set(["end_call"]);
 const SESSION_MS = 15 * 60_000;
 
+const MICHELLE = [
+  "Michelle? Quite simply the most beautiful woman in the universe, Nicholas. Her smile and her laugh light up any room she walks into. Quite frankly, she is beautiful.",
+  "Ah, Michelle. The most beautiful woman in the universe, and I don't say that lightly. When she smiles or laughs, the whole room lights up. Quite frankly, she is beautiful.",
+  "Michelle is, without question, the most beautiful woman in the universe. That smile, that laugh, they light up a room. Quite frankly, Nicholas, she is beautiful.",
+];
 const TEXT_MODE_NOTE = `
 
 # Text mode (push-to-talk)
@@ -132,7 +137,7 @@ export function createBrain({ briefHandler = null, dayLog = null, geminiKey, gro
   let lastSwitch = { name: "", at: 0 }; // last thing an instant command switched, for "turn it off"
 
   async function config() {
-    if (cfg && Date.now() - cfgAt < 10 * 60_000) return cfg;
+    if (cfg && Date.now() - cfgAt < 3 * 60_000) return cfg;
     try {
       if (!elevenKey) throw new Error("no ElevenLabs key");
       const r = await fetchImpl(`https://api.elevenlabs.io/v1/convai/agents/${agentId}`, { headers: { "xi-api-key": elevenKey }, signal: AbortSignal.timeout(15_000) });
@@ -149,7 +154,7 @@ export function createBrain({ briefHandler = null, dayLog = null, geminiKey, gro
         const s = JSON.parse(saved); cfg = { prompt: s.prompt, tools: s.tools, source: "saved copy" };
       }
       log.error?.("brain config", e.message);
-      cfgAt = Date.now() - 8 * 60_000; // retry in ~2 minutes
+      cfgAt = Date.now() - 2 * 60_000; // retry in ~1 minute
     }
     return cfg;
   }
@@ -360,6 +365,12 @@ export function createBrain({ briefHandler = null, dayLog = null, geminiKey, gro
     const used = [];
     const t0 = Date.now();
     const remember = (reply, model, groups = s.groups) => { s.turns = [...s.turns, { user: text, reply }].slice(-6); s.groups = groups; return reply; };
+    // Michelle: always the same verdict, in slightly different words (not when he just wants her playlist).
+    if (/\bmichelle\b/i.test(text) && !/\b(play|playlist|spotify|music|songs?|oldies|shuffle|put on)\b/i.test(text)) {
+      const reply = MICHELLE[Math.floor(Math.random() * MICHELLE.length)];
+      remember(reply, "instant", s.groups);
+      return { ok: true, reply, tools: [], model: "instant", ms: Date.now() - t0 };
+    }
 
     // 0. "My brief": read the saved CCP brief, or have one prepared (too big a job for the free AIs).
     if (briefHandler && /^(?:(?:hey |ok |okay )?(?:bernard|bernud|bernie)[, ]*)?(?:(?:can i (?:have|get)|give me|read me|get me|show me|what'?s in|let'?s have|do|run|prepare|i'?d like|please)\s+)?(?:a |an |my |the |today'?s )?(?:(?:new|fresh|latest|updated)\s+)?(?:ccp |cory'?s |daily |morning |work )*(?:brief|briefing)(?:\s+(?:please|again|for today|now))*[.!?]*$/i.test(text.trim())) {
