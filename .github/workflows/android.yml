@@ -59,7 +59,11 @@ jobs:
           python3 wt.py "$GITHUB_ENV" 2> wt.err || echo "WAKETEST=self-test failed: $(tail -c 200 wt.err | tr '\n' ' ')" >> $GITHUB_ENV
       - name: Build APK
         working-directory: android
-        run: gradle --no-daemon assembleRelease
+        run: |
+          set -o pipefail
+          gradle --no-daemon assembleRelease 2>&1 | tee build.log || {
+            grep -E "^e: |error:|What went wrong|Could not|Execution failed|> " build.log | grep -v "^> Task" | head -40 | while IFS= read -r l; do echo "::error::${l:0:900}"; done
+            exit 1; }
       - name: Rename
         run: |
           cp android/app/build/outputs/apk/release/app-release.apk Bernard.apk

@@ -156,6 +156,8 @@
   .core { grid-area: core; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 0; min-width: 0; }
   .core-canvas-wrap { position: relative; width: min(100%, 600px, 60vh); aspect-ratio: 1 / 1; }
   #core { position: absolute; inset: 0; width: 100%; height: 100%; cursor: pointer; }
+  #face { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  #core.blue, #wave.blue { filter: hue-rotate(200deg) saturate(1.15) brightness(1.08); }
   .verb { position: absolute; font-family: var(--mono); font-size: 11px; letter-spacing: 0.18em; color: var(--muted); text-transform: uppercase; display: flex; align-items: center; gap: 6px; pointer-events: none; }
   .verb::after, .verb.r::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--text); opacity: 0.7; }
   .verb.r::after { display: none; }
@@ -329,6 +331,7 @@
   <section class="core" aria-label="Bernard">
     <div class="core-canvas-wrap">
       <canvas id="core" role="button" tabindex="0" aria-label="Talk to Bernard"></canvas>
+      <canvas id="face" aria-hidden="true"></canvas>
       <span class="verb" style="top:17%;left:2%">Understand</span>
       <span class="verb" style="top:29%;left:0%">Reason</span>
       <span class="verb" style="top:39%;left:1%">Plan</span>
@@ -465,6 +468,13 @@
     <select id="connSelect" style="width:100%;padding:10px;background:transparent;color:var(--text);border:1px solid var(--line, #5a1a1f);border-radius:8px">
       <option value="webrtc">Standard (WebRTC)</option>
       <option value="websocket">Compatibility (WebSocket): try this if Bernard can't hear you</option>
+    </select>
+    <hr style="border:0;border-top:1px solid var(--line, #5a1a1f);margin:16px 0">
+    <label for="lookSelect">Bernard's look</label>
+    <select id="lookSelect" style="width:100%;padding:10px;background:transparent;color:var(--text);border:1px solid var(--line, #5a1a1f);border-radius:8px">
+      <option value="blue">Face: blue hologram</option>
+      <option value="red">Face: Bernard red</option>
+      <option value="orb">Classic orb (no face)</option>
     </select>
     <hr style="border:0;border-top:1px solid var(--line, #5a1a1f);margin:16px 0">
     <p><b style="color:var(--text)">Voice engine.</b> Free mode costs nothing: this device listens and speaks, and Bernard thinks on your server using Google's free Gemini allowance. ElevenLabs gives Bernard's real voice and natural back-and-forth, but uses credits. Photos always use ElevenLabs.</p>
@@ -650,6 +660,7 @@
     const lv = readLevel();
     voiceHistory.push(lv); voiceHistory.shift();
     drawCore(t, lv);
+    drawFace(t, lv);
     drawWave(t, lv);
     if (Math.round(t * 10) % 3 === 0) drawSpark($("sparkVoice"), voiceHistory, 1);
     requestAnimationFrame(frame);
@@ -679,13 +690,16 @@
     c.fillStyle = glow;
     c.beginPath(); c.arc(0, 0, R, 0, Math.PI * 2); c.fill();
 
+    const hideCentre = faceOn();
     // Crosshair lines
+    if (!hideCentre) {
     c.strokeStyle = "rgba(255,60,60,0.35)";
     c.lineWidth = 1 * DPR;
     c.beginPath(); c.moveTo(-R * 0.98, 0); c.lineTo(R * 0.98, 0); c.moveTo(0, -R * 0.98); c.lineTo(0, R * 0.98); c.stroke();
     for (const k of [-0.62, -0.34, 0.34, 0.62]) {
       c.fillStyle = "rgba(255,90,80,0.9)";
       c.beginPath(); c.arc(R * k * pulse, 0, 2.2 * DPR, 0, Math.PI * 2); c.arc(0, R * k * pulse, 2.2 * DPR, 0, Math.PI * 2); c.fill();
+    }
     }
 
     // Tick ring
@@ -730,6 +744,7 @@
     c.beginPath(); c.arc(0, 0, R * 0.69 * pulse, 0.12 * Math.PI * 2, 0.16 * Math.PI * 2); c.stroke();
     c.restore();
 
+    if (!hideCentre) {
     // Globe of dots
     const gR = R * 0.4 * pulse;
     const rot = spin * 0.18;
@@ -765,6 +780,7 @@
     c.shadowBlur = (30 + lv * 40) * DPR;
     c.fillStyle = hot;
     c.beginPath(); c.arc(0, 0, R * (0.09 + lv * 0.08), 0, Math.PI * 2); c.fill();
+    }
 
     // Speaking: expanding ripple rings
     if (speaking && !reduceMotion) {
@@ -777,6 +793,242 @@
     }
     c.restore();
   }
+
+  // =====================================================================
+  //  BERNARD'S FACE: a holographic wireframe head drawn live on #face.
+  //  Idle: drifts, blinks, glances about. Listening: looks at you, eyes wide.
+  //  Thinking: looks up, the network across his head races. Speaking: mouth follows his voice.
+  // =====================================================================
+  const faceCv = $("face");
+  const fctx = faceCv.getContext("2d");
+  const LOOKS = {
+    blue: { main: [90, 200, 255], accent: [255, 80, 215], hot: [225, 248, 255] },
+    red: { main: [255, 72, 60], accent: [255, 175, 80], hot: [255, 236, 230] },
+  };
+  let look = store.get("bernud.look") || "blue";   // blue | red | orb
+  const faceOn = () => look !== "orb";
+  function applyLook() {
+    core.classList.toggle("blue", look === "blue");
+    wave.classList.toggle("blue", look === "blue");
+    faceCv.style.display = faceOn() ? "" : "none";
+    const sel = $("lookSelect"); if (sel) sel.value = look;
+  }
+  const rgba = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+  const g2 = (dx, sx, dy, sy) => Math.exp(-((dx / sx) ** 2 + (dy / sy) ** 2));
+
+  // Head shape: half-width at height y (top 1, chin about -1), and the depth of the face at (x, y).
+  function halfWidth(y) {
+    if (y > 1 || y < -1.02) return 0;
+    let w = 0.74 * Math.sqrt(Math.max(0, 1 - (y / 1.02) ** 2));
+    if (y < -0.2) w *= 1 - 0.38 * Math.min(1, (-0.2 - y) / 0.8) ** 1.4;
+    return w;
+  }
+  function frontZ(x, y) {
+    const w = halfWidth(y);
+    if (!w || Math.abs(x) >= w) return 0;
+    const nx = x / w, ax = Math.abs(x);
+    let z = 0.78 * Math.sqrt(1 - nx * nx) * Math.pow(Math.max(0, 1 - (y / 1.05) ** 2), 0.35);
+    z += 0.05 * g2(ax - 0.3, 0.2, y - 0.34, 0.06);    // brow ridge
+    z -= 0.08 * g2(ax - 0.29, 0.12, y - 0.2, 0.08);   // eye sockets
+    z += 0.16 * g2(x, 0.06, y + 0.02, 0.2);           // nose ridge
+    z += 0.08 * g2(x, 0.08, y + 0.2, 0.07);           // nose tip
+    z += 0.04 * g2(ax - 0.09, 0.05, y + 0.25, 0.05);  // nostrils
+    z += 0.04 * g2(ax - 0.4, 0.13, y + 0.02, 0.12);   // cheekbones
+    z += 0.05 * g2(x, 0.17, y + 0.5, 0.08);           // lips
+    z += 0.04 * g2(x, 0.13, y + 0.83, 0.09);          // chin
+    return z;
+  }
+  const backZ = (x, y) => { const w = halfWidth(y); if (!w) return 0; const nx = x / w; return -0.86 * Math.sqrt(Math.max(0, 1 - nx * nx)) * Math.pow(Math.max(0, 1 - (y / 1.05) ** 2), 0.5); };
+
+  // Mesh: rows across the face, columns down it; front and back of the head.
+  const ROWS = 34, COLS = 27;
+  const mesh = { front: [], back: [] };
+  for (let r = 0; r < ROWS; r++) {
+    const y = 0.97 - (r / (ROWS - 1)) * 1.95;
+    const fr = [], bk = [];
+    for (let k = 0; k < COLS; k++) {
+      const nx = -0.98 + (k / (COLS - 1)) * 1.96, x = nx * halfWidth(y);
+      fr.push([x, y, frontZ(x, y)]); bk.push([x, y, backZ(x, y)]);
+    }
+    mesh.front.push(fr); mesh.back.push(bk);
+  }
+  // A network of nodes over the skull, each linked to its nearest neighbours.
+  const net = (() => {
+    let s = 7; const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647);
+    const nodes = [];
+    for (let i = 0; i < 34; i++) {
+      const y = 0.25 + rnd() * 0.72, w = halfWidth(y), x = (rnd() * 2 - 1) * w * 0.92;
+      const front = rnd() < 0.7;
+      nodes.push({ p: [x, y, (front ? frontZ(x, y) : backZ(x, y)) * 1.02], hot: rnd() < 0.3, ph: rnd() * 6.28 });
+    }
+    const links = [];
+    nodes.forEach((n, i) => {
+      nodes.map((m, j) => [j, Math.hypot(n.p[0] - m.p[0], n.p[1] - m.p[1], n.p[2] - m.p[2])])
+        .filter(([j]) => j !== i).sort((a, b) => a[1] - b[1]).slice(0, 2)
+        .forEach(([j]) => { if (!links.some((l) => (l.a === j && l.b === i))) links.push({ a: i, b: j, ph: rnd(), sp: 0.25 + rnd() * 0.5 }); });
+    });
+    return { nodes, links };
+  })();
+
+  const face = { yaw: 0, pitch: 0, gx: 0, gy: 0, gtx: 0, gty: 0, nextGlance: 0, nextBlink: 2, blinkAt: -1, mouth: 0, brow: 0, open: 1 };
+
+  function drawFace(t, lv) {
+    if (!faceOn()) return;
+    const [w, h] = sizeCanvas(faceCv);
+    const c = fctx, P = LOOKS[look] || LOOKS.blue;
+    c.clearRect(0, 0, w, h);
+    const R = Math.min(w, h) / 2, S = R * 0.42, CX = w / 2, CY = h / 2 - R * 0.07;
+    const listening = mode === "listening", speaking = mode === "speaking", thinking = mode === "connecting";
+    const still = reduceMotion;
+
+    // Where he's looking and how his head moves, eased towards a target for each state.
+    let ty = still ? 0 : 0.3 * Math.sin(t * 0.33) + 0.07 * Math.sin(t * 0.91);
+    let tp = still ? 0 : 0.06 * Math.sin(t * 0.27 + 1);
+    if (listening) { ty = still ? 0 : 0.06 * Math.sin(t * 0.5); tp = 0.02; }
+    if (speaking) { ty = still ? 0 : 0.12 * Math.sin(t * 0.6); tp = still ? 0 : 0.03 + lv * 0.08 * Math.sin(t * 7); }
+    if (thinking) { ty = still ? 0.15 : 0.22 * Math.sin(t * 0.8); tp = -0.12; }
+    face.yaw += (ty - face.yaw) * 0.04; face.pitch += (tp - face.pitch) * 0.05;
+    if (t > face.nextGlance) {
+      face.nextGlance = t + 0.8 + Math.random() * 2.4;
+      face.gtx = thinking ? -0.03 + Math.random() * 0.02 : listening ? 0 : (Math.random() - 0.5) * 0.05;
+      face.gty = thinking ? 0.025 : (Math.random() - 0.5) * 0.02;
+    }
+    face.gx += (face.gtx - face.gx) * 0.25; face.gy += (face.gty - face.gy) * 0.25;
+    if (t > face.nextBlink && !still) { face.blinkAt = t; face.nextBlink = t + 2.2 + Math.random() * 4; }
+    const bp = (t - face.blinkAt) / 0.17;
+    const blink = bp >= 0 && bp <= 1 ? Math.sin(bp * Math.PI) : 0;
+    face.open += ((listening ? 1.15 : thinking ? 0.85 : 1) - face.open) * 0.1;
+    const eyeOpen = Math.max(0.05, face.open * (1 - blink));
+    face.brow += ((listening ? 0.025 : thinking ? 0.02 : 0) - face.brow) * 0.1;
+    // Mouth: follows the real voice level when there is one, otherwise a speech-like rhythm.
+    let mt = 0;
+    if (speaking) mt = lv > 0.04 ? Math.min(1, lv * 1.3) : (still ? 0.3 : 0.08 + 0.55 * Math.abs(Math.sin(t * 9.5)) * (0.55 + 0.45 * Math.sin(t * 2.9 + 1)));
+    face.mouth += (mt - face.mouth) * 0.35;
+
+    const cy = Math.cos(face.yaw), sy = Math.sin(face.yaw), cp = Math.cos(face.pitch), sp = Math.sin(face.pitch);
+    const pr = (p) => {
+      const x1 = p[0] * cy + p[2] * sy, z1 = -p[0] * sy + p[2] * cy;
+      const y2 = p[1] * cp - z1 * sp, z2 = p[1] * sp + z1 * cp;
+      const k = 3.2 / (3.2 - z2);
+      return [CX + x1 * k * S, CY - y2 * k * S, z2, k];
+    };
+    const energy = 0.55 + lv * 0.45 + (listening ? 0.15 : 0) + (thinking ? 0.1 : 0);
+
+    // Glow behind the head
+    const glow = c.createRadialGradient(CX, CY, S * 0.1, CX, CY, S * 1.5);
+    glow.addColorStop(0, rgba(P.main, 0.2 * energy)); glow.addColorStop(1, rgba(P.main, 0));
+    c.fillStyle = glow; c.fillRect(0, 0, w, h);
+
+    // Neck and shoulders
+    c.strokeStyle = rgba(P.main, 0.35); c.lineWidth = 1 * DPR;
+    for (const side of [-1, 1]) {
+      c.beginPath();
+      const a = pr([side * 0.26, -0.82, -0.05]), b = pr([side * 0.3, -1.38, 0]), d = pr([side * 1.15, -1.72, 0]);
+      c.moveTo(a[0], a[1]); c.quadraticCurveTo(b[0], b[1], d[0], d[1]); c.stroke();
+    }
+    c.strokeStyle = rgba(P.main, 0.14);
+    for (let i = 1; i < 6; i++) { const yy = -0.95 - i * 0.12, ww = 0.27 + i * 0.012; const a = pr([-ww, yy, 0]), b = pr([ww, yy, 0]); c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); c.stroke(); }
+
+    // Back of the head: faint dots (it's a hologram, you see through it)
+    c.fillStyle = rgba(P.main, 1);
+    for (const row of mesh.back) for (const p of row) { const q = pr(p); c.globalAlpha = 0.1; c.fillRect(q[0] - DPR * 0.6, q[1] - DPR * 0.6, DPR * 1.2, DPR * 1.2); }
+
+    // Wireframe: rows across, columns down
+    const F = mesh.front.map((row) => row.map(pr));
+    c.lineWidth = 0.8 * DPR; c.strokeStyle = rgba(P.main, 1);
+    c.globalAlpha = 0.2 * energy;
+    for (const row of F) { c.beginPath(); row.forEach((q, i) => (i ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]))); c.stroke(); }
+    c.globalAlpha = 0.1 * energy;
+    for (let k = 0; k < COLS; k += 2) { c.beginPath(); F.forEach((row, i) => (i ? c.lineTo(row[k][0], row[k][1]) : c.moveTo(row[k][0], row[k][1]))); c.stroke(); }
+
+    // Surface dots, brighter nearer the front and where the scan line passes
+    const scanY = still ? 9 : 1.1 - ((t * (thinking ? 0.55 : 0.22)) % 1) * 2.4;
+    for (let r = 0; r < ROWS; r++) {
+      const y = mesh.front[r][0][1], scan = Math.max(0, 1 - Math.abs(y - scanY) / 0.12);
+      for (const q of F[r]) {
+        const depth = Math.max(0, Math.min(1, (q[2] + 0.4) / 1.2));
+        c.globalAlpha = Math.min(1, (0.18 + depth * 0.55) * energy + scan * 0.6);
+        const s = DPR * (0.8 + depth * 1.1 + scan);
+        c.fillRect(q[0] - s / 2, q[1] - s / 2, s, s);
+      }
+    }
+    c.globalAlpha = 1;
+
+    // Network over the skull, with pulses running along the links
+    const N = net.nodes.map((n) => pr(n.p));
+    c.lineWidth = 0.9 * DPR;
+    for (const l of net.links) {
+      const a = N[l.a], b = N[l.b], front = (a[2] + b[2]) / 2 > -0.1;
+      c.strokeStyle = rgba(P.main, front ? 0.35 : 0.12);
+      c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); c.stroke();
+      if (!still && front) {
+        const f = (l.ph + t * l.sp * (thinking ? 3.5 : speaking ? 1.6 : 1)) % 1;
+        c.fillStyle = rgba(P.accent, 0.9);
+        c.beginPath(); c.arc(a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, 1.6 * DPR, 0, Math.PI * 2); c.fill();
+      }
+    }
+    net.nodes.forEach((n, i) => {
+      const q = N[i]; if (q[2] < -0.2) return;
+      const tw = 0.6 + 0.4 * Math.sin(t * 2 + n.ph);
+      c.fillStyle = rgba(n.hot ? P.accent : P.hot, 0.5 + 0.5 * tw);
+      c.beginPath(); c.arc(q[0], q[1], (n.hot ? 2.3 : 1.6) * DPR, 0, Math.PI * 2); c.fill();
+    });
+
+    // Features: bright glowing lines on the surface
+    const on = (x, y, lift = 0.012) => pr([x, y, frontZ(x, y) + lift]);
+    const line = (pts, alpha, width = 1.4, close = false) => {
+      c.strokeStyle = rgba(P.hot, alpha); c.lineWidth = width * DPR;
+      c.beginPath(); pts.forEach((q, i) => (i ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]))); if (close) c.closePath(); c.stroke();
+    };
+    const steps = (n, f) => Array.from({ length: n + 1 }, (_, i) => f(i / n));
+    c.shadowColor = rgba(P.main, 1); c.shadowBlur = (6 + lv * 10) * DPR;
+    for (const side of [-1, 1]) {
+      const ex = side * 0.29, ey = 0.19, hw = 0.115, hh = 0.055 * eyeOpen;
+      // brows
+      line(steps(10, (u) => on(ex + (u - 0.5) * 0.27 * side, 0.32 + face.brow + 0.035 * Math.sin(u * Math.PI) - (side * (u - 0.5) * 0.02))), 0.75 * energy, 1.8);
+      // eyelids
+      line([...steps(12, (u) => on(ex + (u - 0.5) * 2 * hw, ey + hh * Math.sin(u * Math.PI))), ...steps(12, (u) => on(ex + (0.5 - u) * 2 * hw, ey - hh * 0.8 * Math.sin(u * Math.PI)))], 0.9, 1.4, true);
+      // iris and pupil, hidden as the eye closes
+      if (eyeOpen > 0.3) {
+        const ic = on(ex + face.gx, ey + face.gy, 0.02), ir = 0.036 * ic[3] * S * Math.min(1, eyeOpen);
+        const gi = c.createRadialGradient(ic[0], ic[1], 0, ic[0], ic[1], ir);
+        gi.addColorStop(0, rgba(P.hot, 1)); gi.addColorStop(0.45, rgba(P.main, 0.95)); gi.addColorStop(1, rgba(P.main, 0.1));
+        c.fillStyle = gi; c.beginPath(); c.arc(ic[0], ic[1], ir, 0, Math.PI * 2); c.fill();
+      }
+      // nostril curve
+      line(steps(6, (u) => on(side * (0.035 + 0.06 * Math.sin(u * Math.PI * 0.9)), -0.22 - 0.05 * u)), 0.6, 1.2);
+      // cheek contour
+      line(steps(8, (u) => on(side * (0.5 - 0.06 * u), 0.05 - u * 0.5, 0.005)), 0.18, 1);
+    }
+    // nose bridge
+    line(steps(8, (u) => on(0.028, 0.18 - u * 0.36)), 0.45, 1.1);
+    // mouth: lips part as he speaks
+    const m = face.mouth, my = -0.5;
+    const upper = steps(14, (u) => on((u - 0.5) * 0.34, my + 0.035 * Math.sin(u * Math.PI) + 0.012 * Math.cos(u * Math.PI * 4)));
+    const upperIn = steps(14, (u) => on((u - 0.5) * 0.3, my - 0.004 + 0.012 * m * Math.sin(u * Math.PI)));
+    const lowerIn = steps(14, (u) => on((u - 0.5) * 0.3, my - 0.01 - 0.1 * m * Math.sin(u * Math.PI)));
+    const lower = steps(14, (u) => on((u - 0.5) * 0.34, my - 0.04 - 0.1 * m * Math.sin(u * Math.PI) - 0.025 * Math.sin(u * Math.PI)));
+    if (m > 0.05) {
+      c.fillStyle = rgba(P.main, 0.18 + m * 0.25);
+      c.beginPath(); [...upperIn, ...lowerIn.reverse()].forEach((q, i) => (i ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]))); c.closePath(); c.fill();
+      lowerIn.reverse();
+    }
+    line(upper, 0.75, 1.5); line(lower, 0.6, 1.4); line(upperIn, 0.85, 1.2); if (m > 0.05) line(lowerIn, 0.85, 1.2);
+    // jawline
+    for (const side of [-1, 1]) line(steps(14, (u) => { const y = 0.1 - u * 1.05, wv = halfWidth(y) * 0.97; return pr([side * wv, y, frontZ(side * wv * 0.999, y)]); }), 0.35, 1.2);
+    c.shadowBlur = 0;
+
+    // Listening: soft rings pulse out from the face
+    if (listening && !still) {
+      for (let k = 0; k < 2; k++) {
+        const p = (t * 0.7 + k / 2) % 1;
+        c.strokeStyle = rgba(P.main, (1 - p) * (0.25 + lv * 0.5)); c.lineWidth = 1.5 * DPR;
+        c.beginPath(); c.ellipse(CX, CY, S * (0.85 + p * 0.5), S * (1.1 + p * 0.5), 0, 0, Math.PI * 2); c.stroke();
+      }
+    }
+  }
+  applyLook();
+  $("lookSelect").addEventListener("change", (e) => { look = e.target.value; store.set("bernud.look", look); applyLook(); });
 
   function drawWave(t, lv) {
     const [w, h] = sizeCanvas(wave);
