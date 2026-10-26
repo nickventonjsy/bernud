@@ -33,6 +33,7 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
     lint { abortOnError = false; checkReleaseBuilds = false }
+    packaging { resources { excludes += setOf("META-INF/LICENSE.md", "META-INF/LICENSE-notice.md", "META-INF/NOTICE.md", "META-INF/*.kotlin_module", "META-INF/versions/9/previous-compilation-data.bin") } }
 }
 
 dependencies {
