@@ -135,6 +135,8 @@ const { createHmac } = await import("node:crypto");
 // Short-lived signature so the video player (which can't send headers) can use the camera relay.
 const relaySig = (exp) => createHmac("sha256", "relay:" + DASHBOARD_KEY).update(String(exp)).digest("hex").slice(0, 32);
 const relayUrl = (u, exp) => `${PUBLIC_URL}/camera/relay?e=${exp}&s=${relaySig(exp)}&u=${encodeURIComponent(u)}`;
+const { createCamAlerts } = await import("./camalerts.js");
+export const camAlerts = createCamAlerts({ kv: db.kv, imou, notify, publicUrl: PUBLIC_URL, hookSecret: createHmac("sha256", "hook:" + DASHBOARD_KEY).update("imou").digest("hex").slice(0, 24) });
 async function cameraShow(name, quality = "HD") {
   const cam = await imou.find(name);
   const { url, quality: q } = await imou.stream(cam, quality);
@@ -360,6 +362,16 @@ export async function handle(req, res) {
   }
 
   if (path === "/" || path === "/health") return send(res, 200, { ok: true, service: "bernud", storage: db.kind }, req);
+
+  // Imou pushes camera alarms here (secret path). Reply straight away, then deal with it.
+  if (req.method === "POST" && path.startsWith("/camera/hook/")) {
+    const expect = createHmac("sha256", "hook:" + DASHBOARD_KEY).update("imou").digest("hex").slice(0, 24);
+    if (!DASHBOARD_KEY || path.slice("/camera/hook/".length) !== expect) return send(res, 404, { error: "not found" });
+    const b = await readJson(req).catch(() => ({}));
+    send(res, 200, { code: "0", msg: "ok" });
+    for (const m of Array.isArray(b) ? b : [b]) camAlerts.handle(m).catch((e) => console.error("camera hook", e.message));
+    return;
+  }
 
   // Camera video relay: passes Imou's live stream through this server (signed, time-limited, Imou hosts only),
   // so browsers and the TV can play it without cross-site restrictions.
@@ -616,6 +628,8 @@ export async function handle(req, res) {
         const action = String(b.action || "show");
         if (action === "list") return send(res, 200, { ok: true, cameras: (await imou.cameras()).map((c) => ({ name: c.name, online: c.online })) });
         if (action === "snapshot") { const cam = await imou.find(b.camera); return send(res, 200, { ok: true, camera: cam.name, image_url: await imou.snapshot(cam) }); }
+        if (action === "events") return send(res, 200, await camAlerts.events({ camera: b.camera, hours: b.hours }));
+        if (action === "alerts") return send(res, 200, await camAlerts.configure({ action: b.mode || b.people_only !== undefined || b.enabled !== undefined || b.start || b.end || b.weekends !== undefined ? "set" : "status", camera: b.camera, mode: b.mode, people_only: b.people_only, enabled: b.enabled, start: b.start, end: b.end, weekends: b.weekends }));
         const cam = await imou.find(b.camera);
         const tv = /tv|telly|television/i.test(String(b.screen || ""));
         return send(res, 200, { ok: true, show_camera: { id: cam.id, name: cam.name, screen: tv ? "tv" : "here" }, camera: cam.name, online: cam.online,
@@ -837,6 +851,7 @@ await db.init();
 if (ccp.configured() && process.env.NODE_ENV !== "test") ccp.startBackgroundIndex();
 if (process.env.NODE_ENV !== "test" && NTFY_TOPIC) { scheduler.start(); reminders.start(); orders.start(); }
 if (process.env.NODE_ENV !== "test") setTimeout(async () => { const s = await brain.status(); console.log("brain status", JSON.stringify(s)); if (s.ok && s.configured) console.log("brain selftest", JSON.stringify(await brain.selfTest()));
+  if (imou.configured() && DASHBOARD_KEY) camAlerts.start();
   if (imou.configured()) { try { const c = await imou.cameras(true); console.log("imou cameras", JSON.stringify(c.map((x) => ({ name: x.name, online: x.online })))); } catch (e) { console.log("imou failed", e.code, e.message); } }
   }, 5000);
 if (process.env.NODE_ENV !== "test") smartthings.startKeepAlive();

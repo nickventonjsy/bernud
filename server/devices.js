@@ -86,13 +86,14 @@ export async function ntfyPublish(topic, body, opts = {}) {
   try { return await ntfyPublishOnce(topic, body, opts); }
   catch (e) { await new Promise((r) => setTimeout(r, 1500)); return ntfyPublishOnce(topic, body, opts); } // ntfy.sh has occasional blips
 }
-async function ntfyPublishOnce(topic, body, { title, click, tags, priority, fetchImpl = fetch } = {}) {
+async function ntfyPublishOnce(topic, body, { title, click, tags, priority, attach, fetchImpl = fetch } = {}) {
   if (!topic) throw new Error("ntfy topic not configured");
   const headers = { "content-type": "text/plain; charset=utf-8" };
   if (title) headers.title = title;
   if (click) headers.click = click;
   if (tags) headers.tags = tags;
   if (priority) headers.priority = String(priority);
+  if (attach) { headers.attach = attach; headers.filename = "camera.jpg"; } // picture shown in the notification
   const r = await fetchImpl(`https://ntfy.sh/${encodeURIComponent(topic)}`, { method: "POST", headers, body, signal: AbortSignal.timeout(10_000) });
   if (!r.ok) throw new Error(`ntfy returned ${r.status}`);
   return true;

@@ -103,7 +103,14 @@ export function createImou({ appId, appSecret, fetchImpl = fetch, log = console,
     return d.url;
   }
 
-  return { configured: () => !!(appId && appSecret), cameras, find, stream, snapshot };
+  // Recent alarm messages (motion, people…) for a camera since a time. Times are the camera's local time (Jersey).
+  async function alarms(cam, since) {
+    const fmt = (d) => new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(d);
+    const d = await call("getAlarmMessage", { deviceId: cam.id, channelId: cam.channel || "0", count: "20", beginTime: fmt(since), endTime: fmt(new Date(now() + 3600_000)) });
+    return d.alarms || [];
+  }
+
+  return { configured: () => !!(appId && appSecret), cameras, find, stream, snapshot, alarms, call };
 }
 
 // Allowed hosts for the video relay (Imou / Lechange cloud only).

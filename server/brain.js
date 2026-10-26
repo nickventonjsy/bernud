@@ -47,7 +47,8 @@ export function toDeclaration(t) {
 // ---- Slimming: only the instructions and tools a question needs ----
 // Tool groups and the words that bring them in. Tools not listed in any group (added later in ElevenLabs) are always sent.
 export const GROUPS = {
-  home: { tools: ["lights", "tv_control", "goodnight", "home_arrival", "youtube", "camera"], re: /\b(cameras?|cctv|doorbell|front door|driveway|garden|garage|imou|lights?|lamps?|bulbs?|bright|dim|colou?r|ceiling|govee|hue|tv|telly|television|netflix|youtube|video|watch|good ?night|bed|arriv|home|leave|leaving)\b/ },
+  cameras: { tools: ["camera"], re: /\b(cameras?|cctv|doorbell|front door|driveway|garden|garage|imou|shop|car ?park|living room|bedroom|anyone|anybody|someone|motion|movement|alerts?|intruder|security|overnight|last night|snapshot|footage)\b/ },
+  home: { tools: ["lights", "tv_control", "goodnight", "home_arrival", "youtube"], re: /\b(lights?|lamps?|bulbs?|bright|dim|colou?r|ceiling|govee|hue|tv|telly|television|netflix|youtube|video|watch|good ?night|bed|arriv|home|leave|leaving)\b/ },
   music: { tools: ["spotify_info", "spotify_control"], re: /\b(spotify|music|songs?|play|playing|playlist|tracks?|album|artist|pause|resume|skip|next|previous|shuffle|repeat|louder|quieter|volume|speaker)\b/ },
   devices: { tools: ["pc_control", "phone_control"], re: /\b(pc|computer|laptop|desktop|phone|mobile|torch|flash|ring|whatsapp|call|ring|text|message|brightness|do not disturb|dnd|open|app|lock|shut ?down|restart|sleep|volume|script|powershell|window|type)\b/ },
   markets: { tools: ["zentrawire", "get_crypto_prices", "price_alert"], re: /\b(crypto|bitcoin|btc|eth|ethereum|coins?|xrp|ripple|solana|doge|market|markets|watchlist|zentrawire|signals?|stocks?|shares|nvidia|tesla|moving|movers)\b/ },
