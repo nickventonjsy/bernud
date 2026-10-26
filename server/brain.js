@@ -434,6 +434,7 @@ export function createBrain({ briefHandler = null, dayLog = null, geminiKey, gro
   return {
     chat,
     complete,
+    async prompt() { return (await config()).prompt; },
     selfTest,
     async status() { try { const c = await config(); return { ok: true, configured: !!(geminiKey || groqKey), gemini: !!geminiKey, groq: !!groqKey, tools: c.tools.length, source: c.source }; } catch (e) { return { ok: false, configured: !!(geminiKey || groqKey), error: e.message }; } },
     reset(session) { sessions.delete(session); },

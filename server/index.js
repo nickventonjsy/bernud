@@ -243,8 +243,36 @@ export const watchdog = createWatchdog({ kv: db.kv, notify, checks: [
   { name: "Work laptop", alert: false, run: async () => ({ ok: workPc.online(), detail: workPc.online() ? "" : "off or not signed in" }) },
 ] });
 export const youtube = createYouTube({ web, pc, notify, smartthings, zw: { url: (process.env.ZW_URL || "https://zentrawire.onrender.com").replace(/\/+$/, ""), key: process.env.ZW_ASSISTANT_KEY || "" } });
+// Everything the morning brief is built from (the same for Bernard's voice agent and the free-brain fallback).
+async function fullBriefContext() {
+  const prevBrief = await ccp.latestBrief().catch(() => null);
+  const ctx = await ccp.briefContext();
+  ctx.email = await emailForBrief(prevBrief && prevBrief.created_at);
+  ctx.calendar_today = await calendarForBrief();
+  try { const r = await orders.summary(); if (r.length) ctx.reorder_list = r; } catch {}
+  ctx.jersey_titbit = factFor();
+  try { ctx.crypto_usd = await coinPrices.usd(); } catch { ctx.crypto_usd_error = "Crypto prices couldn't be fetched just now."; }
+  if (ctx.email.connected) ctx.not_connected = (ctx.not_connected || []).filter((x) => x !== "email");
+  return ctx;
+}
+
+// If ElevenLabs won't run the brief (out of credits, outage), the free brain writes it from the same data,
+// following the CCP brief section of Bernard's own instructions, and saves it in the usual place.
+async function briefByFreeBrain() {
+  const ctx = await fullBriefContext();
+  const prompt = await brain.prompt();
+  const system = prompt.replaceAll("{{system__time}}", new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", dateStyle: "full", timeStyle: "short" }).format(new Date()))
+    + "\n\n# This run\nYou are writing the scheduled CCP morning brief as text only. Nobody is listening live. Follow the CCP morning brief format and headings from your instructions exactly. Use ONLY the context provided below; it is everything that was actually checked. Where a source is missing or says it isn't connected, say so under that heading rather than guessing. Reply with the finished written brief only (markdown), no preamble.";
+  const { brief_id, ...data } = ctx;
+  const text = await brain.complete({ system, text: "Context for today's brief (JSON):\n" + JSON.stringify(data).slice(0, 60_000), maxTokens: 3000, temperature: 0.3, prefer: "gemini" });
+  if (!text || text.length < 200) throw new Error("the free brain didn't produce a usable brief");
+  const saved = await ccp.saveBriefText(brief_id, text + "\n\n_Written by Bernard's free brain because ElevenLabs couldn't run the brief._");
+  if (!saved) throw new Error("couldn't save the brief");
+  return saved;
+}
+
 export const scheduler = createScheduler({
-  kv: db.kv, ccp, notify,
+  kv: db.kv, ccp, notify, fallback: briefByFreeBrain,
   agentId: process.env.AGENT_ID || "agent_0501m5q6cc15eqcrnamk2e1w84xc",
   config: { time: process.env.BRIEF_TIME, days: process.env.BRIEF_DAYS },
 });
@@ -974,15 +1002,7 @@ export async function handle(req, res) {
         }
         if (req.method === "GET" && path === "/ccp/folder-info") return send(res, 200, await ccp.folderInfo());
         if (req.method === "GET" && path === "/ccp/brief-context") {
-          const prevBrief = await ccp.latestBrief().catch(() => null);
-          const ctx = await ccp.briefContext();
-          ctx.email = await emailForBrief(prevBrief && prevBrief.created_at);
-          ctx.calendar_today = await calendarForBrief();
-          try { const r = await orders.summary(); if (r.length) ctx.reorder_list = r; } catch {}
-          ctx.jersey_titbit = factFor();
-          try { ctx.crypto_usd = await coinPrices.usd(); } catch { ctx.crypto_usd_error = "Crypto prices couldn't be fetched just now."; }
-          if (ctx.email.connected) ctx.not_connected = (ctx.not_connected || []).filter((x) => x !== "email");
-          return send(res, 200, ctx);
+          return send(res, 200, await fullBriefContext());
         }
         if (req.method === "POST" && path === "/ccp/brief") {
           const body = await readJson(req);
