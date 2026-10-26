@@ -48,7 +48,7 @@ export function toDeclaration(t) {
   return d;
 }
 
-export function createBrain({ geminiKey, elevenKey, agentId, kv, port, bernudKey, zwKey, models = (process.env.GEMINI_MODELS || "gemini-3.8-flash,gemini-3.6-flash,gemini-3.5-flash-lite").split(",").map((m) => m.trim()).filter(Boolean), fetchImpl = fetch, now = () => new Date(), log = console }) {
+export function createBrain({ geminiKey, elevenKey, agentId, kv, port, bernudKey, zwKey, models = (process.env.GEMINI_MODELS || "gemini-3.6-flash,gemini-3.8-flash,gemini-3.5-flash-lite").split(",").map((m) => m.trim()).filter(Boolean), fetchImpl = fetch, now = () => new Date(), log = console }) {
   let cfg = null, cfgAt = 0;
   const sessions = new Map();
 
