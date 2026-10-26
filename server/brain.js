@@ -103,24 +103,48 @@ export function createBrain({ geminiKey, elevenKey, agentId, kv, port, bernudKey
     return j;
   }
 
-  async function generate(payload) {
-    let last;
-    for (const m of models) {
-      try { return { model: m, res: await gemini(m, payload) }; }
-      catch (e) {
-        last = e;
-        // Some models reject the "think less" setting: try once without it.
-        if (e.status === 400 && /thinking/i.test(e.message)) {
-          const { thinkingConfig, ...gc } = payload.generationConfig || {};
-          try { return { model: m, res: await gemini(m, { ...payload, generationConfig: gc }) }; } catch (e2) { last = e2; }
-        }
-        log.error?.("gemini", m, last.status, String(last.message).slice(0, 200));
-        const retired = /no longer available|not found|not supported|deprecated|model/i.test(last.message || "");
-        if (!(last.status === 429 || last.status >= 500 || last.status === 404 || (last.status === 400 && retired) || last.status === 403 && retired)) break;
+  // Ask the first model; if it hasn't answered within a few seconds, ask the next one too and take whichever
+  // answers first. Models that are overloaded or out of free allowance sit out for a few minutes.
+  const cooldown = new Map();
+  async function attempt(m, payload) {
+    try { return await gemini(m, payload); }
+    catch (e) {
+      if (e.status === 400 && /thinking/i.test(e.message)) {
+        const { thinkingConfig, ...gc } = payload.generationConfig || {};
+        return await gemini(m, { ...payload, generationConfig: gc });
       }
+      throw e;
     }
-    if (last?.status === 429) throw Object.assign(new Error("Bernard's free allowance from Google is used up for now. It resets daily; switch to ElevenLabs mode in Settings meanwhile."), { code: "quota" });
-    throw last;
+  }
+  function generate(payload, hedgeMs = 6000) {
+    let order = models.filter((m) => (cooldown.get(m) || 0) < Date.now());
+    if (!order.length) order = [...models];
+    return new Promise((resolve, reject) => {
+      let idx = 0, pending = 0, done = false;
+      const errors = [];
+      const launch = () => {
+        if (done || idx >= order.length) return;
+        const m = order[idx++]; pending++;
+        const hedge = setTimeout(launch, hedgeMs);
+        attempt(m, payload).then((res) => {
+          clearTimeout(hedge); pending--;
+          if (!done) { done = true; resolve({ model: m, res }); }
+        }, (e) => {
+          clearTimeout(hedge); pending--; errors.push(e);
+          log.error?.("gemini", m, e.status, String(e.message).slice(0, 200));
+          if ([429, 503, 504].includes(e.status) || /no longer available|not found/i.test(e.message)) cooldown.set(m, Date.now() + (e.status === 429 ? 15 : e.status === 404 || e.status === 400 ? 24 * 60 : 3) * 60_000);
+          if (done) return;
+          if (idx < order.length) launch();
+          else if (pending === 0) {
+            done = true;
+            if (errors.every((x) => x.status === 429)) reject(Object.assign(new Error("Bernard's free allowance from Google is used up for now. It resets daily; switch to ElevenLabs mode in Settings meanwhile."), { code: "quota" }));
+            else if (errors.every((x) => [429, 503, 504].includes(x.status))) reject(Object.assign(new Error("Google's free AI is too busy right now. Try again in a minute, or switch to ElevenLabs mode in Settings."), { code: "busy" }));
+            else reject(errors.find((x) => ![429, 503, 504].includes(x.status)) || errors[0]);
+          }
+        });
+      };
+      launch();
+    });
   }
 
   async function chat({ session = "default", text }) {

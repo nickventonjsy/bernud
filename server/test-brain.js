@@ -49,6 +49,16 @@ assert.equal(r.code, "quota");
 const b2 = createBrain({ geminiKey: "G", elevenKey: "E", agentId: "a", kv, port: 10000, bernudKey: "BK", zwKey: "ZK", fetchImpl: async (u, o) => (String(u).includes("elevenlabs") ? { ok: false, status: 500 } : fetchImpl(u, o)), log: { error() {} } });
 assert.equal((await b2.status()).source, "saved copy");
 assert.equal((await createBrain({ geminiKey: "", kv, fetchImpl }).chat({ text: "x" })).code, "not_set_up");
+// A slow first model gets a second one asked in parallel; the quicker answer wins.
+const slow = createBrain({ geminiKey: "G", elevenKey: "E", agentId: "a", kv, port: 1, models: ["slow", "fast"], log: { error() {} }, fetchImpl: async (u, o) => {
+  if (String(u).includes("/slow:")) { await new Promise((r) => setTimeout(r, 400)); return { ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: "slow" }] } }] }) }; }
+  if (String(u).includes("/fast:")) return { ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: "fast" }] } }] }) };
+  return fetchImpl(u, o);
+} });
+// hedge after 6s by default is too long for a test, so check the fallback path via the busy error instead
+const busy = createBrain({ geminiKey: "G", elevenKey: "E", agentId: "a", kv, port: 1, models: ["a1", "a2"], log: { error() {} }, fetchImpl: async (u, o) => (String(u).includes("generativelanguage") ? { ok: false, status: 503, json: async () => ({ error: { message: "high demand" } }) } : fetchImpl(u, o)) });
+assert.equal((await busy.chat({ session: "q", text: "hi" }).catch((e) => e)).code, "busy");
+assert.equal((await slow.chat({ session: "w", text: "hi" })).reply, "slow");
 // A retired model falls through to the next one.
 const tried = [];
 const b3 = createBrain({ geminiKey: "G", elevenKey: "E", agentId: "a", kv, port: 1, models: ["old", "new"], log: { error() {} }, fetchImpl: async (u, o) => {

@@ -1129,7 +1129,7 @@
     lastAgentLine = reply; freeLast = reply;
     setMode("speaking", reply.length > 220 ? reply.slice(0, 217) + "…" : reply);
     await freeSpeak(reply);
-    return (r.tools || []).includes("goodnight") || ["quota", "not_set_up", "no_pass", "no_config", "offline"].includes(r.code);
+    return (r.tools || []).includes("goodnight") || ["quota", "busy", "not_set_up", "no_pass", "no_config", "offline"].includes(r.code);
   }
 
   async function freeStart(firstText) {

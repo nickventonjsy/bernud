@@ -361,7 +361,7 @@ export async function handle(req, res) {
     if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
     const b = await readJson(req);
     try { return send(res, 200, await brain.chat({ session: String(b.session || "default").slice(0, 64), text: b.text }), req); }
-    catch (e) { console.error("brain", e.message); return send(res, 200, { ok: false, code: e.code || "error", reply: e.code === "quota" || e.code === "no_config" ? e.message : "Sorry, my free brain hit a problem: " + String(e.message).slice(0, 160) }, req); }
+    catch (e) { console.error("brain", e.message); return send(res, 200, { ok: false, code: e.code || "error", reply: ["quota", "busy", "no_config"].includes(e.code) ? e.message : "Sorry, my free brain hit a problem: " + String(e.message).slice(0, 160) }, req); }
   }
   if (path === "/brain/status" && req.method === "GET") {
     if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
