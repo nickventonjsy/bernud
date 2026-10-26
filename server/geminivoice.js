@@ -42,6 +42,9 @@ export function toWav(buf, rate = 24000) {
 
 export function createGeminiVoice({ apiKey, models = ["gemini-3.8-flash-tts", "gemini-3.8-flash-lite-tts"], fetchImpl = fetch, log = console }) {
   let library = null, libraryAt = 0;
+  // Google allows only a handful of free voice clips a day: once a model says so, leave it alone until it resets.
+  const restUntil = new Map();
+  const retryMs = (msg) => { const m = String(msg).match(/retry in (?:(\d+)h)?(?:(\d+)m)?/i); return m && (m[1] || m[2]) ? ((+m[1] || 0) * 60 + (+m[2] || 0) + 1) * 60_000 : 60 * 60_000; };
 
   async function voices() {
     if (library && Date.now() - libraryAt < 24 * 3600_000) return library;
@@ -67,7 +70,9 @@ export function createGeminiVoice({ apiKey, models = ["gemini-3.8-flash-tts", "g
     text = sayName(String(text || "").trim().slice(0, 3000), String(nameSound || DEFAULT_NAME_SOUND).slice(0, 40));
     if (!text) throw Object.assign(new Error("Nothing to say"), { status: 400 });
     let last;
-    for (const model of models) {
+    const usable = models.filter((m) => (restUntil.get(m) || 0) < Date.now());
+    if (!usable.length) throw Object.assign(new Error("Today's free Gemini voice allowance is used up"), { status: 429, until: Math.min(...models.map((m) => restUntil.get(m))) });
+    for (const model of usable) {
       try {
         const body = {
           model,
@@ -84,11 +89,12 @@ export function createGeminiVoice({ apiKey, models = ["gemini-3.8-flash-tts", "g
       } catch (e) {
         last = e.name === "TimeoutError" ? Object.assign(new Error("Google's voice took too long"), { status: 504 }) : e;
         log.error?.("gemini tts", model, last.status, String(last.message).slice(0, 200));
+        if (last.status === 429) restUntil.set(model, Date.now() + (/per day|daily/i.test(last.message) ? retryMs(last.message) : 2 * 60_000));
         if (!(last.status === 429 || last.status >= 500 || last.status === 404)) break;
       }
     }
     throw last;
   }
 
-  return { voices, speak, configured: () => !!apiKey };
+  return { voices, speak, configured: () => !!apiKey, resting: () => models.every((m) => (restUntil.get(m) || 0) > Date.now()) };
 }

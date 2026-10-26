@@ -337,12 +337,7 @@ export function createBrain({ geminiKey, groqKey = "", elevenKey, agentId, kv, p
   // Startup self-test: which models answer, and how fast (logged for diagnosis).
   async function selfTest() {
     const out = [];
-    for (const m of models) {
-      const t0 = Date.now();
-      try { const j = await gemini(m, { contents: [{ role: "user", parts: [{ text: "Reply with the single word OK." }] }] }, 30_000); out.push(`${m}: ${(j.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("").trim().slice(0, 20)} in ${Date.now() - t0}ms`); }
-      catch (e) { out.push(`${m}: ${e.status || ""} ${String(e.message).slice(0, 120)} after ${Date.now() - t0}ms`); }
-    }
-    for (const q of ["Say hello in five words, without using any tools.", "What's on my calendar tomorrow? Just tell me whether you could check, don't call any tools."]) {
+    for (const q of ["Say hello in five words, without using any tools."]) {
       const t0 = Date.now();
       try { const r = await chat({ session: "selftest", text: q }); out.push(`chat: ${r.model} [${(r.groups || []).join(",")}] "${String(r.reply).slice(0, 60)}" in ${Date.now() - t0}ms`); }
       catch (e) { out.push(`chat failed after ${Date.now() - t0}ms: ${String(e.message).slice(0, 120)}`); }

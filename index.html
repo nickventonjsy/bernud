@@ -1114,6 +1114,7 @@
     if (!voice || !pass) return null;
     try {
       const r = await fetch(`${SERVER}/brain/speak`, { method: "POST", headers: { "content-type": "application/json", "x-dashboard-key": pass }, body: JSON.stringify({ text, voice, style: store.get("bernud.gstyle") || undefined, name_sound: store.get("bernud.gname") || undefined }), signal: AbortSignal.timeout(30000) });
+      if (r.status === 429) { store.set("bernud.gvoiceRest", String(Date.now() + 60 * 60_000)); return null; }  // daily free allowance used up
       if (!r.ok) return null;
       return URL.createObjectURL(await r.blob());
     } catch { return null; }
@@ -1137,7 +1138,8 @@
     return out;
   }
   async function geminiSpeak(text) {
-    const parts = speechChunks(text);
+    // One clip per reply: Google's free voice allowance is small, so don't spend it sentence by sentence.
+    const parts = [String(text)];
     let next = geminiAudio(parts[0]);
     for (let i = 0; i < parts.length; i++) {
       const url = await next;
@@ -1152,7 +1154,8 @@
   async function freeSpeak(text) {
     if (!text) return;
     const quick = shortOnDevice() && text.length <= 45;
-    if (store.get("bernud.gvoice") && !quick && await geminiSpeak(text)) return;
+    const resting = Number(store.get("bernud.gvoiceRest") || 0) > Date.now();
+    if (store.get("bernud.gvoice") && !quick && !resting && await geminiSpeak(text)) return;
     return deviceSpeak(text);
   }
   function deviceSpeak(text) {
@@ -1475,7 +1478,7 @@
     $("gStyle").value = store.get("bernud.gstyle") || "";
     $("gName").value = store.get("bernud.gname") || "";
     $("shortDevice").checked = shortOnDevice();
-    $("engineNote").textContent = "Gemini voices sound natural and are free, but take a second or two and need internet; if one fails, Bernard uses the " + (APP ? "phone's" : "computer's") + " own voice instead." + (store.get("bernud.dashKey") ? "" : " Enter your passcode in the CCP brief to see the Gemini voices.");
+    $("engineNote").textContent = "Gemini voices sound natural, but Google's free allowance is only about 10 clips a day and each takes a few seconds; when they run out or fail, Bernard uses the " + (APP ? "phone's" : "computer's") + " own voice instead." + (store.get("bernud.dashKey") ? "" : " Enter your passcode in the CCP brief to see the Gemini voices.");
     gList = null; renderVoices(); loadGeminiVoices();
     if (APP) { appCall("ttsVoices"); return; }
     if (!window.speechSynthesis) return;
@@ -1495,10 +1498,11 @@
   $("voiceTest").addEventListener("click", async () => {
     const line = "Good evening, Nicholas. Bernud at your service. Shall I turn the lights down?";
     saveVoice();
+    store.del("bernud.gvoiceRest");
     if ($("voiceSelect").value.startsWith("g:")) {
       $("voiceTest").textContent = "…"; gTesting = true;
       const ok = await geminiSpeak(line); gTesting = false; $("voiceTest").textContent = "Test";
-      if (!ok) $("engineNote").textContent = "That Gemini voice didn't come through (Google may be busy). Try again in a moment, or pick another.";
+      if (!ok) $("engineNote").textContent = Number(store.get("bernud.gvoiceRest") || 0) > Date.now() ? "Google's free Gemini voices are limited to about 10 clips a day, and today's are used up. Bernard uses the device voice until they reset." : "That Gemini voice didn't come through (Google may be busy). Try again in a moment, or pick another.";
       return;
     }
     if (APP) { setTimeout(() => appCall("speak", line), 150); return; }
