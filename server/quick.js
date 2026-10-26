@@ -51,6 +51,7 @@ function goodnightReply(r) {
   if (t.events?.length) parts.push(`Tomorrow you've got ${t.events.slice(0, 2).map((e) => `${e.title}${e.time && e.time !== "all day" ? " at " + e.time : ""}`).join(", then ")}${t.events.length > 2 ? `, plus ${t.events.length - 2} more` : ""}.`);
   else if (t.events) parts.push("Nothing in the calendar tomorrow.");
   if (t.weather) parts.push(`It'll be ${t.weather.summary}, ${t.weather.high_c} degrees${t.weather.rain_chance_pct >= 40 ? `, with a ${t.weather.rain_chance_pct} percent chance of rain` : ""}.`);
+  if (r.verdict) parts.push(r.verdict);
   parts.push("Sleep well.");
   return parts.join(" ");
 }
@@ -89,6 +90,11 @@ export function matchQuick(text, lastDevice = "") {
     return { tool: "lights", args: { action: "brightness", device: name, value: "30" }, reply: (r) => (r.ok === false || r.error ? null : `${cap(name === "all lights" ? "the lights" : name)} dimmed.`) };
   }
 
+  // Spotify DJ: "play something for a Friday evening", "make me a mix for a long drive".
+  if ((m = t.match(/^(?:(?:play|put on)(?: me)? (?:something|some (?:music|songs|tunes)|a mix|music|a playlist)|(?:make|build|do)(?: me)? (?:a )?(?:mix|playlist)|dj(?: me)?(?: something)?) (?:for|to suit|that suits|that fits|that'?s good for|good for|while i'?m|while i|to) (.{3,60})$/))) {
+    const mood = m[1].replace(/ on spotify$/, "");
+    return { tool: "spotify_dj", args: { mood, count: 25 }, reply: (r) => (r.ok === false ? null : `Here's ${r.title}: ${r.tracks} songs from your liked songs, starting with ${r.starts_with[0]}.`) };
+  }
   if (/^(?:pause|stop)(?: (?:the |my )?(?:music|song|spotify|track|playing))?$/.test(t)) return { tool: "spotify_control", args: { action: "pause", device_id: "", uri: "", value: "" }, reply: (r) => (r.ok === false || r.error ? null : "Paused.") };
   if (/^(?:resume|unpause|carry on|play(?: (?:the |my )?music)?|resume (?:the )?music|start (?:the )?music again)$/.test(t)) return { tool: "spotify_control", args: { action: "play", device_id: "", uri: "", value: "" }, reply: (r) => (r.ok === false || r.error ? null : "Playing.") };
   if (/^(?:next|skip)(?: (?:this|the))?(?: (?:song|track|one))?$|^next (?:song|track)$/.test(t)) return { tool: "spotify_control", args: { action: "next", device_id: "", uri: "", value: "" }, reply: (r) => (r.ok === false || r.error ? null : "Skipped.") };

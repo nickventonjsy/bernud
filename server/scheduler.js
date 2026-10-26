@@ -1,3 +1,4 @@
+import { factFor } from "./jerseyfacts.js";
 // Scheduled CCP morning brief: at the set time on set days (Europe/London), start a
 // text-only Bernard conversation, wait for him to save the written brief, then notify the phone.
 
@@ -88,7 +89,7 @@ export function createScheduler({ kv, ccp, notify, agentId, config = {}, log = c
     catch (e) { error = e; }
     const brief = await saved().catch(() => null);
     try {
-      if (brief) await notify(notificationText(brief.text), { title: "CCP morning brief ready", tags: "briefcase", click: "https://bernud.onrender.com/?open=brief" });
+      if (brief) await notify(notificationText(brief.text) + "\n\nJersey titbit: " + factFor(), { title: "CCP morning brief ready", tags: "briefcase", click: "https://bernud.onrender.com/?open=brief" });
       else await notify(`Bernard couldn't prepare this morning's CCP brief (${error ? error.message : "unknown reason"}). Ask him for it directly or check the dashboard.`, { title: "CCP brief failed", tags: "warning", priority: 4, click: "https://bernud.onrender.com/" });
     } catch (e) { log("notify failed: " + e.message); }
     last = { reason, at: new Date(started).toISOString(), ok: Boolean(brief), error: error && !brief ? error.message : null };

@@ -1,11 +1,11 @@
 // "Goodnight Bernard": one command that settles the house for the night and gives a look at tomorrow.
 // Each step is optional (settings stored in kv) and runs independently, so one failure doesn't stop the rest.
-const DEFAULTS = { lights_off: true, tvs_off: true, music_pause: true, phone_dnd: true, pc_sleep: false };
+const DEFAULTS = { lights_off: true, tvs_off: true, music_pause: true, phone_dnd: true, pc_sleep: false, verdict: true };
 
 const WEATHER_CODES = [[0, "clear"], [3, "cloudy"], [48, "foggy"], [57, "drizzly"], [67, "rainy"], [77, "snowy"], [82, "showery"], [99, "stormy"]];
 const describe = (c) => (WEATHER_CODES.find(([max]) => c <= max) || [0, "mixed"])[1];
 
-export function createRoutines({ kv, lights, smartthings, phone, pc, zw, events, fetchImpl = fetch, now = () => new Date() }) {
+export function createRoutines({ kv, lights, smartthings, phone, pc, zw, events, verdict = null, fetchImpl = fetch, now = () => new Date() }) {
   const config = async () => { try { return { ...DEFAULTS, ...JSON.parse((await kv.get("goodnight_config")) || "{}") } } catch { return { ...DEFAULTS }; } };
   const londonDate = (d) => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(d);
 
@@ -65,7 +65,12 @@ export function createRoutines({ kv, lights, smartthings, phone, pc, zw, events,
         return "PC going to sleep in 20 seconds";
       }, done, failed),
     ]);
-    return { ok: true, done, failed: failed.length ? failed : undefined, tomorrow: await tomorrow() };
+    // Bernard's verdict on the day: a dry one-liner from what Nicholas asked him today. Never holds up goodnight.
+    const opinion = cfg.verdict && verdict
+      ? Promise.race([verdict({ done }).catch(() => null), new Promise((r) => setTimeout(() => r(null), 12_000))])
+      : null;
+    const [tmr, v] = await Promise.all([tomorrow(), opinion]);
+    return { ok: true, done, failed: failed.length ? failed : undefined, verdict: v || undefined, tomorrow: tmr };
   }
 
   return {

@@ -138,8 +138,10 @@ async function sayOnPhone(text) {
 const { createHome } = await import("./home.js");
 export const home = createHome({ kv: db.kv, smartthings: lights, sayOnPhone, todayEvents: async () => (await calendarForBrief()).events });
 const { createYouTube } = await import("./youtube.js");
+const { createDayLog } = await import("./daylog.js");
+export const dayLog = createDayLog({ kv: db.kv });
 const { createRoutines } = await import("./routines.js");
-export const routines = createRoutines({ kv: db.kv, lights, smartthings, phone, pc, zw: { url: (process.env.ZW_URL || "https://zentrawire.onrender.com").replace(/\/+$/, ""), key: process.env.ZW_ASSISTANT_KEY || "" }, events: async () => (await calendarForBrief()).events });
+export const routines = createRoutines({ kv: db.kv, lights, smartthings, phone, pc, zw: { url: (process.env.ZW_URL || "https://zentrawire.onrender.com").replace(/\/+$/, ""), key: process.env.ZW_ASSISTANT_KEY || "" }, events: async () => (await calendarForBrief()).events, verdict: (ctx) => dayVerdict(ctx) });
 const { briefSummary } = await import("./briefsummary.js");
 const { createImou, STREAM_HOST, rewritePlaylist } = await import("./imou.js");
 export const imou = createImou({ appId: (process.env.IMOU_APP_ID || "").trim(), appSecret: (process.env.IMOU_APP_SECRET || "").trim() });
@@ -157,8 +159,47 @@ async function cameraShow(name, quality = "HD") {
 }
 const { createGeminiVoice } = await import("./geminivoice.js");
 export const geminiVoice = createGeminiVoice({ apiKey: process.env.GEMINI_API_KEY || "" });
+const { factFor } = await import("./jerseyfacts.js");
 const { createBrain } = await import("./brain.js");
-export const brain = createBrain({ briefHandler: (text) => briefForBrain(text), geminiKey: (process.env.GEMINI_API_KEY || "").trim(), groqKey: (process.env.GROQ_API_KEY || "").trim(), elevenKey: process.env.ELEVENLABS_API_KEY || "", agentId: process.env.AGENT_ID || "agent_0501m5q6cc15eqcrnamk2e1w84xc", kv: db.kv, port: PORT, bernudKey: API_KEY, zwKey: process.env.ZW_ASSISTANT_KEY || "" });
+export const brain = createBrain({ briefHandler: (text) => briefForBrain(text), dayLog, geminiKey: (process.env.GEMINI_API_KEY || "").trim(), groqKey: (process.env.GROQ_API_KEY || "").trim(), elevenKey: process.env.ELEVENLABS_API_KEY || "", agentId: process.env.AGENT_ID || "agent_0501m5q6cc15eqcrnamk2e1w84xc", kv: db.kv, port: PORT, bernudKey: API_KEY, zwKey: process.env.ZW_ASSISTANT_KEY || "" });
+const { createDJ } = await import("./dj.js");
+export const dj = createDJ({ zw: { url: (process.env.ZW_URL || "https://zentrawire.onrender.com").replace(/\/+$/, ""), key: process.env.ZW_ASSISTANT_KEY || "" }, complete: (o) => brain.complete(o) });
+
+// Goodnight: Bernard's verdict on the day, from what Nicholas asked him (free mode and voice mode) and his calendar.
+const VERDICT_SYSTEM = `You are Bernud, Nicholas's AI butler: calm, polished and quietly witty, with a dry British sense of humour.
+It's bedtime and you give your verdict on his day, to be spoken aloud.
+Rules: one or two short sentences, at most 35 words. Base it only on the notes you're given and never invent anything that isn't in them.
+Gentle, affectionate teasing is welcome; never be unkind, and never comment on money, health, weight, sleep habits or other people in his life.
+No emojis, lists or quotation marks. Don't start with "Goodnight" and don't say "sleep well" (that comes after you).
+If the notes are thin, wryly remark that he barely needed you today.`;
+async function voiceRequestsToday() {
+  const key = process.env.ELEVENLABS_API_KEY || "", agent = process.env.AGENT_ID || "agent_0501m5q6cc15eqcrnamk2e1w84xc";
+  if (!key) return [];
+  const day = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(new Date());
+  const since = Math.floor(londonToDate(day + "T00:00").getTime() / 1000);
+  const get = async (p) => { const r = await fetch("https://api.elevenlabs.io/v1/convai" + p, { headers: { "xi-api-key": key }, signal: AbortSignal.timeout(6000) }); if (!r.ok) throw new Error("ElevenLabs " + r.status); return r.json(); };
+  const list = ((await get(`/conversations?agent_id=${agent}&call_start_after_unix=${since}&page_size=15`)).conversations || []).slice(0, 8);
+  const convs = await Promise.all(list.map((c) => get(`/conversations/${c.conversation_id}`).catch(() => null)));
+  const fmt = (t) => new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", hour: "2-digit", minute: "2-digit" }).format(new Date(t * 1000));
+  return convs.filter(Boolean).flatMap((c) => (c.transcript || [])
+    .filter((m) => m.role === "user" && m.message && m.message.length < 300 && !String(m.message).startsWith("This is your scheduled"))
+    .map((m) => `${fmt((c.metadata?.start_time_unix_secs || since) + (m.time_in_call_secs || 0))} ${String(m.message).trim().slice(0, 120)}`)).slice(-30);
+}
+async function dayVerdict({ done = [] } = {}) {
+  const [log, voice, cal] = await Promise.all([dayLog.today(), voiceRequestsToday().catch(() => []), calendarForBrief().catch(() => ({ events: [] }))]);
+  const day = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(new Date());
+  const events = (cal.events || []).filter((e) => String(e.start).slice(0, 10) === day).map((e) => e.title);
+  const asked = [...voice, ...log.asked].sort().filter((x) => !/good ?night|bed ?time/i.test(x));
+  const used = Object.entries(log.used).filter(([k]) => k && k !== "undefined").map(([k, n]) => `${k} x${n}`);
+  const notes = [
+    `Things Nicholas asked Bernud today (time, request):\n${asked.length ? asked.join("\n") : "(nothing)"}`,
+    `Bernud's tools used today: ${used.length ? used.join(", ") : "none"}`,
+    `His work calendar today: ${events.length ? events.join("; ") : "nothing booked"}`,
+    `Just done for bedtime: ${done.join(", ") || "nothing"}`,
+  ].join("\n\n");
+  const out = await brain.complete({ system: VERDICT_SYSTEM, text: notes, maxTokens: 120, temperature: 0.9 });
+  return String(out).replace(/^["'“]+|["'”]+$/g, "").replace(/\s+/g, " ").trim().slice(0, 280) || null;
+}
 export const youtube = createYouTube({ web, pc, notify, smartthings, zw: { url: (process.env.ZW_URL || "https://zentrawire.onrender.com").replace(/\/+$/, ""), key: process.env.ZW_ASSISTANT_KEY || "" } });
 export const scheduler = createScheduler({
   kv: db.kv, ccp, notify,
@@ -173,7 +214,7 @@ async function briefForBrain(text) {
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(new Date());
   const day = b && new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(new Date(b.created_at));
   const fresh = /\b(new|fresh|again|update|redo|latest)\b/i.test(String(text));
-  if (b && day === today && !fresh) return { reply: `Here's today's brief. ${briefSummary(b.text)} The full version is open on your screen.`, ui: { brief: true } };
+  if (b && day === today && !fresh) return { reply: `Here's today's brief. ${briefSummary(b.text)} And today's Jersey titbit: ${factFor()} The full version is open on your screen.`, ui: { brief: true } };
   // Preparing takes a minute or two: start it and reply now; it arrives as a phone notification and in "CCP brief".
   const running = (await scheduler.status()).running;
   if (!running) scheduler.runBrief("asked").catch(() => {});
@@ -582,6 +623,7 @@ export async function handle(req, res) {
   }
 
   if (!API_KEY || req.headers["x-bernud-key"] !== API_KEY) return send(res, 401, { error: "unauthorised" });
+  { const label = dayLog.routeLabel(path); if (label && req.method !== "OPTIONS") dayLog.add("tool", label); }
 
   try {
     if (req.method === "POST" && path === "/memory/save") {
@@ -648,6 +690,10 @@ export async function handle(req, res) {
     if (path === "/ccp/delete" && req.method === "POST") {
       try { return send(res, 200, await ccpDelete.handle(await readJson(req))); }
       catch (e) { return send(res, 200, { ok: false, error: e.code || "error", message: String(e.message).slice(0, 300), connect_link: e.link }); }
+    }
+    if (path === "/music/dj" && req.method === "POST") {
+      try { return send(res, 200, await dj.mix(await readJson(req))); }
+      catch (e) { return send(res, 200, { ok: false, error: e.code || "dj_error", message: String(e.message).slice(0, 300) }); }
     }
     if (path === "/routine/goodnight" && req.method === "POST") {
       const b = await readJson(req);
@@ -879,6 +925,7 @@ export async function handle(req, res) {
           ctx.email = await emailForBrief(prevBrief && prevBrief.created_at);
           ctx.calendar_today = await calendarForBrief();
           try { const r = await orders.summary(); if (r.length) ctx.reorder_list = r; } catch {}
+          ctx.jersey_titbit = factFor();
           if (ctx.email.connected) ctx.not_connected = (ctx.not_connected || []).filter((x) => x !== "email");
           return send(res, 200, ctx);
         }

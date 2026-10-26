@@ -1,6 +1,7 @@
 // Bernard's free "brain": Gemini (Google's free tier) running Bernard's own instructions and tools on this server.
 // The prompt and tool list are read live from the ElevenLabs agent (single source of truth, nothing private in
 // the public repo), cached in kv in case ElevenLabs can't be reached, and executed here by calling the same webhooks.
+import { randomFact } from "./jerseyfacts.js";
 import { matchQuick } from "./quick.js";
 const GEMINI = "https://generativelanguage.googleapis.com/v1beta/models";
 const GROQ = "https://api.groq.com/openai/v1/chat/completions";
@@ -49,7 +50,8 @@ export function toDeclaration(t) {
 export const GROUPS = {
   cameras: { tools: ["camera"], re: /\b(cameras?|cctv|doorbell|front door|driveway|garden|garage|imou|shop|car ?park|living room|bedroom|anyone|anybody|someone|motion|movement|alerts?|intruder|security|overnight|last night|snapshot|footage)\b/ },
   home: { tools: ["lights", "tv_control", "goodnight", "home_arrival", "youtube"], re: /\b(lights?|lamps?|bulbs?|bright|dim|colou?r|ceiling|govee|hue|tv|telly|television|netflix|youtube|video|watch|good ?night|bed|arriv|home|leave|leaving)\b/ },
-  music: { tools: ["spotify_info", "spotify_control"], re: /\b(spotify|music|songs?|play|playing|playlist|tracks?|album|artist|pause|resume|skip|next|previous|shuffle|repeat|louder|quieter|volume|speaker)\b/ },
+  music: { tools: ["spotify_info", "spotify_control", "spotify_dj"], re: /\b(spotify|music|songs?|play|playing|playlist|tracks?|album|artist|pause|resume|skip|next|previous|shuffle|repeat|louder|quieter|volume|speaker|dj|mix|tunes|vibe|mood)\b/ },
+  meals: { tools: ["send_to_phone"], re: /\b(cook|cooking|recipes?|meals?|dinner|lunch|breakfast|supper|tea tonight|eat|hungry|ingredients|fridge|cupboard|make with|bake|baking)\b/ },
   devices: { tools: ["pc_control", "phone_control"], re: /\b(pc|computer|laptop|desktop|phone|mobile|torch|flash|ring|whatsapp|call|ring|text|message|brightness|do not disturb|dnd|open|app|lock|shut ?down|restart|sleep|volume|script|powershell|window|type)\b/ },
   markets: { tools: ["zentrawire", "get_crypto_prices", "price_alert"], re: /\b(crypto|bitcoin|btc|eth|ethereum|coins?|xrp|ripple|solana|doge|market|markets|watchlist|zentrawire|signals?|stocks?|shares|nvidia|tesla|moving|movers)\b/ },
   email: { tools: ["gmail_search", "gmail_read", "gmail_draft"], re: /\b(e-?mails?|mail|inbox|gmail|drafts?|reply|replies|wrote|sent|supplier|invoice)\b/ },
@@ -64,7 +66,7 @@ const ALWAYS = ["recall", "remember", "forget"];
 const DEFAULT_GROUPS = ["web", "weather", "calendar", "reminders"];
 // Which prompt sections go with which tools. Sections not listed here (identity, speaking, safety…) are always sent.
 const SECTION_TOOLS = [
-  [/^Samsung TVs/, ["tv_control"]], [/^ZentraWire/, ["zentrawire"]], [/^Spotify/, ["spotify_control", "spotify_info"]],
+  [/^Samsung TVs/, ["tv_control"]], [/^ZentraWire/, ["zentrawire"]], [/^Spotify/, ["spotify_control", "spotify_info", "spotify_dj"]], [/^Meal ideas/, "meals"],
   [/^Calendar/, ["calendar"]], [/^Reminders/, ["reminder", "price_alert"]], [/^Photos/, []], [/^The web/, ["web_search"]],
   [/^Ordering food/, "food"], [/^CCP email/, ["gmail_search", "gmail_draft"]], [/^Controlling his PC/, ["pc_control", "phone_control"]],
   [/^The CCP Brain/, ["ccp_search", "ccp_delete"]], [/^CCP morning brief/, ["ccp_brief_context"]], [/^CCP pricing/, ["ccp_search"]],
@@ -92,6 +94,7 @@ export function slimConfig(cfg, text, groups) {
     const rule = SECTION_TOOLS.find(([re]) => re.test(title));
     if (!rule) return true;
     if (rule[1] === "food") return FOOD.test(String(text).toLowerCase());
+    if (rule[1] === "meals") return groups.includes("meals");
     return rule[1].some((n) => names.has(n));
   }).map((sec) => {
     if (!/^# Tools/.test(sec)) return sec;
@@ -120,7 +123,7 @@ export function toOpenAiTool(t) {
 }
 const estTokens = (x) => Math.ceil(JSON.stringify(x).length / 3.6);
 
-export function createBrain({ briefHandler = null, geminiKey, groqKey = "", elevenKey, agentId, kv, port, bernudKey, zwKey,
+export function createBrain({ briefHandler = null, dayLog = null, geminiKey, groqKey = "", elevenKey, agentId, kv, port, bernudKey, zwKey,
   models = (process.env.GEMINI_MODELS || "gemini-3.6-flash,gemini-3.8-flash,gemini-3.5-flash-lite").split(",").map((m) => m.trim()).filter(Boolean),
   groqModels = (process.env.GROQ_MODELS || "openai/gpt-oss-120b,openai/gpt-oss-20b,qwen/qwen3.8-27b").split(",").map((m) => m.trim()).filter(Boolean),
   groqMaxTokens = 7000, fetchImpl = fetch, now = () => new Date(), log = console }) {
@@ -309,11 +312,46 @@ export function createBrain({ briefHandler = null, geminiKey, groqKey = "", elev
     return { reply: "That took more steps than I'd like. Could you ask again more simply?", model: "groq:" + model };
   }
 
+  // ---------------- Plain text jobs (no tools): DJ picks, goodnight verdict ----------------
+  // prefer "gemini" for big inputs (Groq's free allowance is ~8k tokens a minute).
+  async function complete({ system, text, maxTokens = 300, temperature = 0.8, prefer = "groq", json = false }) {
+    const viaGroq = async () => {
+      if (!groqKey) return null;
+      const body = { messages: [{ role: "system", content: system }, { role: "user", content: text }], temperature, max_completion_tokens: maxTokens + 1500, reasoning_effort: "low", ...(json ? { response_format: { type: "json_object" } } : {}) };
+      if (estTokens(body) > groqMaxTokens) return null;
+      for (const m of groqModels.filter((x) => !cooling("groq:" + x))) {
+        try { const j = await groqOnce(m, { ...body }); const out = String(j.choices?.[0]?.message?.content || "").trim(); if (out) return out; }
+        catch (e) {
+          log.error?.("groq complete", m, e.status, String(e.message).slice(0, 160));
+          if (e.status === 429) cooldown.set("groq:" + m, Date.now() + Math.max(0.5, (waitFor(e.message) || 30000) / 60000) * 60_000);
+        }
+      }
+      return null;
+    };
+    const viaGemini = async () => {
+      if (!geminiKey) return null;
+      try {
+        const { res } = await generate({ systemInstruction: { parts: [{ text: system }] }, contents: [{ role: "user", parts: [{ text }] }],
+          generationConfig: { maxOutputTokens: maxTokens + 2000, temperature, thinkingConfig: { thinkingLevel: "low" }, ...(json ? { responseMimeType: "application/json" } : {}) } });
+        return (res.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("").trim() || null;
+      } catch (e) { log.error?.("gemini complete", String(e.message).slice(0, 160)); return null; }
+    };
+    const order = prefer === "gemini" ? [viaGemini, viaGroq] : [viaGroq, viaGemini];
+    for (const f of order) { const out = await f(); if (out) return out; }
+    throw Object.assign(new Error("Both free AIs are busy right now."), { code: "busy" });
+  }
+
   // ---------------- One question ----------------
   async function chat({ session = "default", text }) {
     if (!geminiKey && !groqKey) return { ok: false, code: "not_set_up", reply: "Free mode isn't set up yet: the Gemini API key needs adding on the server." };
     text = String(text || "").trim().slice(0, 4000);
     if (!text) return { ok: false, reply: "I didn't catch anything." };
+    if (session !== "selftest") dayLog?.add("asked", text);
+    // A Jersey titbit on request: from the checked list, never made up.
+    if (/\b(?:jersey|the island)\b.*\b(?:fact|titbit|trivia|history)\b|\b(?:fact|titbit|trivia)\b.*\bjersey\b/i.test(text) && text.length < 90) {
+      const reply = `Here's one: ${randomFact()}`;
+      return { ok: true, reply, tools: [], model: "instant", ms: 0 };
+    }
     const c = await config();
     const byName = new Map(c.tools.map((t) => [t.name, t]));
     for (const [k, s] of sessions) if (Date.now() - s.at > SESSION_MS) sessions.delete(k);
@@ -380,6 +418,7 @@ export function createBrain({ briefHandler = null, geminiKey, groqKey = "", elev
 
   return {
     chat,
+    complete,
     selfTest,
     async status() { try { const c = await config(); return { ok: true, configured: !!(geminiKey || groqKey), gemini: !!geminiKey, groq: !!groqKey, tools: c.tools.length, source: c.source }; } catch (e) { return { ok: false, configured: !!(geminiKey || groqKey), error: e.message }; } },
     reset(session) { sessions.delete(session); },
