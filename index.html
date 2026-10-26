@@ -439,6 +439,11 @@
   </div>
 </div>
 
+<!-- CAMERA VIEW (Imou live video, opened by Bernard) -->
+<div id="camOverlay" style="display:none;position:fixed;inset:0;z-index:60;background:#000">
+  <iframe id="camFrame" title="Camera" style="width:100%;height:100%;border:0" allow="fullscreen; autoplay"></iframe>
+</div>
+
 <!-- SETTINGS -->
 <div class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="setTitle">
   <div class="panel">
@@ -989,6 +994,7 @@
       conversation = await Conversation.startSession({
         agentId: AGENT_ID,
         overrides: { agent: { firstMessage: pickGreeting() } },
+        clientTools: { show_camera: async ({ camera } = {}) => { openCamera(camera || ""); return "The camera is now showing on Nicholas's screen."; } },
         connectionType: store.get(STORE.conn) === "websocket" ? "websocket" : "webrtc",
         ...(store.get(STORE.mic) ? { inputDeviceId: store.get(STORE.mic) } : {}),
         onConnect: () => {
@@ -1064,6 +1070,17 @@
   }
 
   function ask(text) { startConversation(text); }
+
+  // ---- Camera view: Bernard opens it when you ask to see a camera ----
+  function openCamera(name) {
+    const o = $("camOverlay"), f = $("camFrame");
+    if (o.style.display === "block" && f.contentWindow) { f.contentWindow.postMessage({ bernud: "showCamera", camera: name || "" }, "*"); return; }
+    f.src = `camera.html?embed=1&camera=${encodeURIComponent(name || "")}`;
+    o.style.display = "block";
+  }
+  function closeCamera() { $("camOverlay").style.display = "none"; $("camFrame").src = "about:blank"; }
+  window.addEventListener("message", (e) => { if (e.data && e.data.bernud === "closeCamera") closeCamera(); });
+  window.bernudShowCamera = openCamera;
 
   // =====================================================================
   //  FREE MODE (£0): the device listens and speaks, Bernard's Gemini brain on the server thinks.
@@ -1189,6 +1206,7 @@
     setMode("connecting", "Thinking…");
     const r = await freeAsk(text);
     if (!freeActive) return true;
+    if (r.ui && r.ui.camera) openCamera(r.ui.camera.name);
     const reply = String(r.reply || "Sorry, no answer came back.");
     lastAgentLine = reply; freeLast = reply;
     setMode("speaking", reply.length > 220 ? reply.slice(0, 217) + "…" : reply);

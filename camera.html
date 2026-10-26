@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Bernard Cameras</title>
+<style>
+  :root { --bg: #0b0506; --panel: #140809; --line: #5a1a1f; --text: #f4e9e9; --dim: #b89a9c; --red: #ff3b4a; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 15px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  body { display: flex; flex-direction: column; }
+  header { display: flex; gap: 10px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  header b { color: var(--red); letter-spacing: .12em; font-size: 13px; margin-right: auto; }
+  select, button, input { background: transparent; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; font: inherit; }
+  button { cursor: pointer; }
+  button:hover, button:focus-visible, select:focus-visible { border-color: var(--red); outline: none; }
+  main { flex: 1; display: grid; place-items: center; min-height: 0; position: relative; background: #000; }
+  video, img.snap { width: 100%; height: 100%; object-fit: contain; background: #000; }
+  .msg { position: absolute; inset: auto 16px 16px 16px; text-align: center; color: var(--dim); font-size: 14px; pointer-events: none; }
+  .pass { display: grid; gap: 10px; padding: 24px; max-width: 360px; }
+  .embed header b { display: none; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <b>BERNARD · CAMERAS</b>
+  <select id="cam" aria-label="Camera"></select>
+  <button id="quality" type="button" title="Switch picture quality">HD</button>
+  <button id="reload" type="button">Reload</button>
+  <button id="full" type="button">Full screen</button>
+  <button id="close" type="button" class="hidden">Close</button>
+</header>
+<main id="stage">
+  <form class="pass hidden" id="passForm">
+    <label for="pass">Dashboard passcode</label>
+    <input id="pass" type="password" autocomplete="off">
+    <button type="submit">View cameras</button>
+  </form>
+  <video id="video" playsinline muted autoplay controls class="hidden"></video>
+  <img id="snap" class="snap hidden" alt="Latest camera snapshot">
+  <div class="msg" id="msg">Loading…</div>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.13/hls.min.js"></script>
+<script>
+  const SERVER = "https://bernud-server.onrender.com";
+  const $ = (id) => document.getElementById(id);
+  const params = new URLSearchParams(location.search);
+  const embed = params.get("embed") === "1";
+  if (embed) { document.body.classList.add("embed"); $("close").classList.remove("hidden"); }
+  const store = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
+  let quality = store.get("bernud.camQuality") || "HD";
+  let hls = null, retries = 0;
+  const msg = (t) => { $("msg").textContent = t || ""; };
+
+  async function api(path) {
+    const pass = store.get("bernud.dashKey");
+    if (!pass) { showPass(); throw new Error("passcode"); }
+    const r = await fetch(SERVER + path, { headers: { "x-dashboard-key": pass } });
+    if (r.status === 401) { showPass("That passcode wasn't accepted."); throw new Error("passcode"); }
+    return r.json();
+  }
+  function showPass(note) {
+    $("passForm").classList.remove("hidden"); $("video").classList.add("hidden"); $("snap").classList.add("hidden");
+    msg(note || "Enter Bernard's dashboard passcode once on this device.");
+  }
+  $("passForm").addEventListener("submit", (e) => { e.preventDefault(); store.set("bernud.dashKey", $("pass").value.trim()); $("passForm").classList.add("hidden"); start(); });
+
+  function stopVideo() { if (hls) { hls.destroy(); hls = null; } const v = $("video"); v.removeAttribute("src"); v.load(); }
+
+  async function snapshotFallback(name) {
+    try {
+      const j = await api(`/camera/snapshot?camera=${encodeURIComponent(name)}`);
+      if (j.ok) { $("snap").src = j.url; $("snap").classList.remove("hidden"); $("video").classList.add("hidden"); msg("Live video wouldn't load, so this is a still snapshot. Tap Reload to try live again."); return; }
+    } catch {}
+    msg("Couldn't load this camera. Check it's online in the Imou app, then tap Reload.");
+  }
+
+  async function play(name) {
+    stopVideo();
+    $("snap").classList.add("hidden");
+    msg("Connecting to the camera…");
+    let j;
+    try { j = await api(`/camera/stream?camera=${encodeURIComponent(name)}&quality=${quality}`); } catch { return; }
+    if (!j.ok) { msg(j.error || "Couldn't get the camera stream."); return; }
+    if (j.camera && j.camera.online === false) msg(`${j.camera.name} looks offline, trying anyway…`);
+    const v = $("video"); v.classList.remove("hidden");
+    const ready = () => { msg(""); retries = 0; };
+    v.onplaying = ready;
+    if (window.Hls && Hls.isSupported()) {
+      hls = new Hls({ liveSyncDurationCount: 2, maxBufferLength: 10 });
+      hls.loadSource(j.url); hls.attachMedia(v);
+      hls.on(Hls.Events.MANIFEST_PARSED, () => v.play().catch(() => {}));
+      hls.on(Hls.Events.ERROR, (_, d) => {
+        if (!d.fatal) return;
+        if (retries++ < 2) { msg("Reconnecting…"); setTimeout(() => play(name), 1500); }
+        else snapshotFallback(name);
+      });
+    } else if (v.canPlayType("application/vnd.apple.mpegurl")) {
+      v.src = j.url; v.play().catch(() => {});
+      v.onerror = () => (retries++ < 2 ? setTimeout(() => play(name), 1500) : snapshotFallback(name));
+    } else snapshotFallback(name);
+  }
+
+  async function start() {
+    let j;
+    try { j = await api("/camera/list"); } catch { return; }
+    if (!j.ok) { msg(j.error || "Couldn't reach the Imou account."); return; }
+    const sel = $("cam"); sel.innerHTML = "";
+    for (const c of j.cameras) { const o = document.createElement("option"); o.value = c.name; o.textContent = c.name + (c.online ? "" : " (offline)"); sel.appendChild(o); }
+    if (!j.cameras.length) { msg("No cameras found on your Imou account."); return; }
+    const want = (params.get("camera") || store.get("bernud.lastCam") || "").toLowerCase();
+    const match = j.cameras.find((c) => c.id.toLowerCase() === want || c.name.toLowerCase() === want) || j.cameras.find((c) => want && c.name.toLowerCase().includes(want));
+    sel.value = (match || j.cameras[0]).name;
+    play(sel.value);
+  }
+
+  $("cam").addEventListener("change", (e) => { store.set("bernud.lastCam", e.target.value); play(e.target.value); });
+  $("quality").textContent = quality;
+  $("quality").addEventListener("click", () => { quality = quality === "HD" ? "SD" : "HD"; store.set("bernud.camQuality", quality); $("quality").textContent = quality; play($("cam").value); });
+  $("reload").addEventListener("click", () => { retries = 0; play($("cam").value); });
+  $("full").addEventListener("click", () => { const el = $("stage"); (el.requestFullscreen || el.webkitRequestFullscreen || (() => {})).call(el); });
+  $("close").addEventListener("click", () => { stopVideo(); parent.postMessage({ bernud: "closeCamera" }, "*"); });
+  window.addEventListener("message", (e) => { if (e.data && e.data.bernud === "showCamera") { const n = e.data.camera || ""; const sel = $("cam"); const o = [...sel.options].find((x) => x.value.toLowerCase().includes(n.toLowerCase())); if (o) { sel.value = o.value; play(o.value); } } });
+  start();
+</script>
+</body>
+</html>
