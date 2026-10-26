@@ -4,7 +4,8 @@
 const DAY_MS = 24 * 3600_000;
 export const DEFAULTS = {
   enabled: true,
-  after_hours: { start: "18:00", end: "07:30", weekends: true },
+  // Shop hours (set by Nicholas, 26 Oct): watched 17:30–08:30 on weekdays, and from Saturday 12:30 right through to Monday 08:30.
+  after_hours: { start: "17:30", end: "08:30", weekends: false, saturday_from: "12:30", sunday: true },
   cooldown_min: 5,
   // Cameras matching these words alert after hours; everything else is off unless changed.
   default_rules: [
@@ -22,6 +23,8 @@ const toMin = (hhmm) => { const [h, m] = String(hhmm).split(":").map(Number); re
 export function isAfterHours(d, ah = DEFAULTS.after_hours) {
   const { weekday, minutes } = londonParts(d);
   if (ah.weekends && (weekday === "Sat" || weekday === "Sun")) return true;
+  if (ah.sunday && weekday === "Sun") return true;
+  if (ah.saturday_from && weekday === "Sat" && minutes >= toMin(ah.saturday_from)) return true;
   const s = toMin(ah.start), e = toMin(ah.end);
   return s > e ? minutes >= s || minutes < e : minutes >= s && minutes < e;
 }
@@ -150,7 +153,7 @@ export function createCamAlerts({ kv, imou, notify, publicUrl, hookSecret, now =
     const stored = JSON.parse((await kv.get("camera_alerts")) || "{}");
     if (b.action === "set") {
       if (typeof b.enabled === "boolean") stored.enabled = b.enabled;
-      if (b.start || b.end || typeof b.weekends === "boolean") stored.after_hours = { ...cfg.after_hours, ...(b.start ? { start: b.start } : {}), ...(b.end ? { end: b.end } : {}), ...(typeof b.weekends === "boolean" ? { weekends: b.weekends } : {}) };
+      if (b.start || b.end || b.saturday_from || typeof b.weekends === "boolean" || typeof b.sunday === "boolean") stored.after_hours = { ...cfg.after_hours, ...(b.start ? { start: b.start } : {}), ...(b.end ? { end: b.end } : {}), ...(b.saturday_from ? { saturday_from: b.saturday_from } : {}), ...(typeof b.weekends === "boolean" ? { weekends: b.weekends } : {}), ...(typeof b.sunday === "boolean" ? { sunday: b.sunday } : {}) };
       if (b.camera) {
         const cam = await imou.find(b.camera);
         const cur = ruleFor(cfg, cam.name);

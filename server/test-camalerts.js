@@ -1,10 +1,19 @@
 import assert from "node:assert/strict";
 import { createCamAlerts, isAfterHours, kindOf, parseTime } from "./camalerts.js";
 // Monday 26 Oct 2026 is GMT (clocks went back on the 25th).
-assert.equal(isAfterHours(new Date("2026-10-26T12:00:00Z")), false);
-assert.equal(isAfterHours(new Date("2026-10-26T19:00:00Z")), true);
-assert.equal(isAfterHours(new Date("2026-10-26T06:00:00Z")), true);
-assert.equal(isAfterHours(new Date("2026-10-25T12:00:00Z")), true); // Sunday
+// GMT dates: Mon 26 Oct 2026 … Sun 1 Nov 2026.
+const AH = (iso) => isAfterHours(new Date(iso));
+assert.equal(AH("2026-10-26T12:00:00Z"), false);  // Mon noon
+assert.equal(AH("2026-10-26T17:29:00Z"), false);  // Mon 17:29
+assert.equal(AH("2026-10-26T17:30:00Z"), true);   // Mon 17:30
+assert.equal(AH("2026-10-27T08:29:00Z"), true);   // Tue 08:29
+assert.equal(AH("2026-10-27T08:30:00Z"), false);  // Tue 08:30
+assert.equal(AH("2026-10-31T08:00:00Z"), true);   // Sat 08:00 (Friday night)
+assert.equal(AH("2026-10-31T10:00:00Z"), false);  // Sat 10:00 (open)
+assert.equal(AH("2026-10-31T12:30:00Z"), true);   // Sat 12:30
+assert.equal(AH("2026-11-01T14:00:00Z"), true);   // Sun afternoon
+assert.equal(AH("2026-11-02T08:00:00Z"), true);   // Mon 08:00
+assert.equal(AH("2026-11-02T09:00:00Z"), false);  // Mon 09:00
 assert.equal(kindOf("videoMotion"), "motion"); assert.equal(kindOf("human"), "person"); assert.equal(kindOf("aiFaceDetect"), "person"); assert.equal(kindOf("offline"), "offline");
 assert.equal(parseTime(1793040000).getTime(), 1793040000000);
 assert.equal(parseTime("20261026T190000Z").toISOString(), "2026-10-26T19:00:00.000Z");

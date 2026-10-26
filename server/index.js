@@ -631,7 +631,7 @@ export async function handle(req, res) {
         if (action === "list") return send(res, 200, { ok: true, cameras: (await imou.cameras()).map((c) => ({ name: c.name, online: c.online })) });
         if (action === "snapshot") { const cam = await imou.find(b.camera); return send(res, 200, { ok: true, camera: cam.name, image_url: await imou.snapshot(cam) }); }
         if (action === "events") return send(res, 200, await camAlerts.events({ camera: b.camera, hours: b.hours }));
-        if (action === "alerts") return send(res, 200, await camAlerts.configure({ action: b.mode || b.people_only !== undefined || b.enabled !== undefined || b.start || b.end || b.weekends !== undefined ? "set" : "status", camera: b.camera, mode: b.mode, people_only: b.people_only, enabled: b.enabled, start: b.start, end: b.end, weekends: b.weekends }));
+        if (action === "alerts") return send(res, 200, await camAlerts.configure({ action: b.mode || b.people_only !== undefined || b.enabled !== undefined || b.start || b.end || b.saturday_from || b.weekends !== undefined ? "set" : "status", camera: b.camera, mode: b.mode, people_only: b.people_only, enabled: b.enabled, start: b.start, end: b.end, saturday_from: b.saturday_from, weekends: b.weekends }));
         const cam = await imou.find(b.camera);
         const tv = /tv|telly|television/i.test(String(b.screen || ""));
         return send(res, 200, { ok: true, show_camera: { id: cam.id, name: cam.name, screen: tv ? "tv" : "here" }, camera: cam.name, online: cam.online,
