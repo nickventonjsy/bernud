@@ -41,6 +41,7 @@ object CarChat {
         NotificationManagerCompat.from(ctx).cancel(ID)
     }
 
+    @android.annotation.SuppressLint("MissingPermission")   // notify() is wrapped in try/catch for when notifications are off
     private fun post(ctx: Context, silent: Boolean) {
         val nm = ctx.getSystemService(NotificationManager::class.java)
         if (nm.getNotificationChannel(CHANNEL) == null) {
