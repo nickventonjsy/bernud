@@ -1,0 +1,32 @@
+import assert from "node:assert/strict";
+import { createRoutines } from "./routines.js";
+const store = new Map(); const kv = { get: async (k) => store.get(k), set: async (k, v) => store.set(k, v) };
+const calls = [];
+const lights = { control: async (b) => (calls.push(["lights", b.action]), { ok: true, devices: ["hall", "Ceiling Light"] }) };
+const smartthings = { configured: () => true, connected: async () => true, list: async () => [{ name: "Living Room TV", type: "tv" }, { name: "hall", type: "light" }], control: async (b) => calls.push(["st", b.device, b.action]) };
+const phone = { online: () => true, send: async (a, v) => (calls.push(["phone", a, v]), { ok: true }) };
+const pc = { online: () => false, send: async () => ({}) };
+const now = () => new Date("2026-10-26T22:00:00Z");
+const fetchImpl = async (url, o) => {
+  if (String(url).includes("open-meteo")) return { json: async () => ({ daily: { weather_code: [3, 61], temperature_2m_max: [14, 13.4], temperature_2m_min: [9, 8.6], precipitation_probability_max: [10, 70], wind_speed_10m_max: [20, 31.2] } }) };
+  calls.push(["zw", JSON.parse(o.body).action]); return { json: async () => ({ ok: true }) };
+};
+const events = async () => [{ title: "Site visit", start: "2026-10-27T09:30:00Z" }, { title: "Today thing", start: "2026-10-26T15:00:00Z" }];
+const r = createRoutines({ kv, lights, smartthings, phone, pc, zw: { url: "https://zw", key: "k" }, events, fetchImpl, now });
+const out = await r.goodnight();
+assert.equal(out.ok, true);
+assert.equal(out.failed, undefined);
+assert.deepEqual(out.tomorrow.events, [{ title: "Site visit", time: "9:30 am" }]);
+assert.equal(out.tomorrow.weather.summary, "rainy");
+assert.equal(out.tomorrow.weather.rain_chance_pct, 70);
+assert.ok(calls.some((c) => c[0] === "st" && c[1] === "Living Room TV" && c[2] === "off"));
+assert.ok(calls.some((c) => c[0] === "phone" && c[1] === "dnd" && c[2] === "on"));
+assert.ok(calls.some((c) => c[0] === "zw" && c[1] === "pause"));
+assert.ok(!calls.some((c) => c[0] === "st" && c[1] === "hall"));
+// Settings switch steps off; phone offline is reported as a failure, not a success.
+await r.settings({ action: "set", tvs_off: false });
+calls.length = 0; phone.online = () => false;
+const out2 = await r.goodnight();
+assert.ok(!calls.some((c) => c[0] === "st"));
+assert.match(out2.failed.join(), /phone/);
+console.log("routines ok");

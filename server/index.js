@@ -126,6 +126,8 @@ async function sayOnPhone(text) {
 const { createHome } = await import("./home.js");
 export const home = createHome({ kv: db.kv, smartthings: lights, sayOnPhone, todayEvents: async () => (await calendarForBrief()).events });
 const { createYouTube } = await import("./youtube.js");
+const { createRoutines } = await import("./routines.js");
+export const routines = createRoutines({ kv: db.kv, lights, smartthings, phone, pc, zw: { url: (process.env.ZW_URL || "https://zentrawire.onrender.com").replace(/\/+$/, ""), key: process.env.ZW_ASSISTANT_KEY || "" }, events: async () => (await calendarForBrief()).events });
 export const youtube = createYouTube({ web, pc, notify, smartthings, zw: { url: (process.env.ZW_URL || "https://zentrawire.onrender.com").replace(/\/+$/, ""), key: process.env.ZW_ASSISTANT_KEY || "" } });
 export const scheduler = createScheduler({
   kv: db.kv, ccp, notify,
@@ -504,6 +506,11 @@ export async function handle(req, res) {
     if (path === "/ccp/delete" && req.method === "POST") {
       try { return send(res, 200, await ccpDelete.handle(await readJson(req))); }
       catch (e) { return send(res, 200, { ok: false, error: e.code || "error", message: String(e.message).slice(0, 300), connect_link: e.link }); }
+    }
+    if (path === "/routine/goodnight" && req.method === "POST") {
+      const b = await readJson(req);
+      try { return send(res, 200, b.action === "settings" || b.action === "set" ? await routines.settings(b) : await routines.goodnight(b)); }
+      catch (e) { return send(res, 200, { ok: false, message: String(e.message).slice(0, 300) }); }
     }
     if (path === "/home/settings" && req.method === "POST") return send(res, 200, await home.settings(await readJson(req)));
     if (path === "/orders" && req.method === "POST") {
