@@ -10,7 +10,7 @@ const ROUTES = [
   [/^\/calendar/, "calendar"], [/^\/gmail/, "email"], [/^\/ccp\/document/, "printing"], [/^\/ccp\/brief/, "morning brief"],
   [/^\/ccp/, "CCP documents"], [/^\/web/, "web search"], [/^\/device\/pc|^\/pc/, "PC"], [/^\/device\/phone|^\/phone/, "phone"],
   [/^\/camera/, "cameras"], [/^\/memory/, "memory"], [/^\/notify/, "sent to phone"], [/^\/routine\/goodnight/, null],
-  [/^\/priorities/, "priorities"], [/^\/receipts/, "receipts"], [/^\/youtube/, "YouTube"], [/^\/orders|^\/reorder/, "order list"], [/^\/home/, "home"], [/^\/shopping/, "shopping list"], [/^\/wakeup/, "wake-up"], [/^\/firetv/, "Fire TV"], [/^\/system/, null],
+  [/^\/priorities/, "priorities"], [/^\/receipts/, "receipts"], [/^\/claude/, "note for Claude"], [/^\/youtube/, "YouTube"], [/^\/orders|^\/reorder/, "order list"], [/^\/home/, "home"], [/^\/shopping/, "shopping list"], [/^\/wakeup/, "wake-up"], [/^\/firetv/, "Fire TV"], [/^\/system/, null],
 ];
 export const routeLabel = (path) => { const r = ROUTES.find(([re]) => re.test(path)); return r ? r[1] : undefined; };
 

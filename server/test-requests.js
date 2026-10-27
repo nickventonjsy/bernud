@@ -1,0 +1,15 @@
+import assert from "node:assert/strict";
+import { createRequests } from "./requests.js";
+const mem = {}; const kv = { get: async (k) => mem[k] ?? null, set: async (k, v) => { mem[k] = v; } };
+let n = 0; const rq = createRequests({ kv, now: () => new Date(1793210000000 + (n++) * 1000) });
+let r = await rq.handle({ action: "add", text: "put the weather in the morning brief", via: "voice" }); assert.ok(r.ok); assert.equal(r.open, 1);
+r = await rq.handle({ action: "add", text: "Put the weather in the morning brief" }); assert.ok(r.duplicate);
+r = await rq.handle({ action: "add", text: "hm" }); assert.equal(r.ok, false);
+r = await rq.handle({ action: "add", text: "make the face blink less", via: "telegram" }); assert.equal(r.open, 2);
+r = await rq.handle({ action: "list" }); assert.equal(r.requests.length, 2); assert.match(r.message, /1\. put the weather/);
+assert.match(await rq.asText(), /Requests I gave Bernard for you \(2\):\n1\. put the weather.*by voice/);
+r = await rq.handle({ action: "done", text: "weather" }); assert.equal(r.open, 1); assert.match(r.done, /weather/);
+r = await rq.handle({ action: "remove", id: (await rq.handle({ action: "list" })).requests[0].id }); assert.equal(r.open, 0);
+r = await rq.handle({ action: "clear_done" }); assert.equal(r.cleared, 1);
+assert.equal(await rq.asText(), "");
+console.log("requests ok");

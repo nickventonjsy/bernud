@@ -250,6 +250,8 @@ async function dayVerdict({ done = [] } = {}) {
 // ---------------- Shopping list, wake-up, Fire TV, watchdog ----------------
 const { createPriorities } = await import("./priorities.js");
 export const priorities = createPriorities({ kv: db.kv });
+const { createRequests } = await import("./requests.js");
+export const claudeRequests = createRequests({ kv: db.kv });
 const { createReceipts } = await import("./receipts.js");
 export const receipts = createReceipts({ kv: db.kv, vision: (a) => brain.vision(a), drive: personalGoogle });
 const { createShopping } = await import("./shopping.js");
@@ -291,7 +293,7 @@ async function speakMp3(text) {
 }
 const { createTelegram } = await import("./telegram.js");
 export const telegram = createTelegram({ token: (process.env.TELEGRAM_BOT_TOKEN || "").trim(), kv: db.kv, shopping, chat: (a) => brain.chat(a), transcribe: transcribeAudio, speak: speakMp3,
-  photo: (a) => { dayLog.add("asked", "receipt photo", "telegram"); return receipts.ingest({ ...a, via: "telegram" }); } });
+  photo: (a) => { dayLog.add("asked", "receipt photo", "telegram"); return receipts.ingest({ ...a, via: "telegram" }); }, requests: claudeRequests });
 if (telegram.configured) telegramAlert = telegram.alert;
 dayLogRef = dayLog;
 // Sunday evening: Bernard's week in review.
@@ -795,6 +797,13 @@ export async function handle(req, res) {
     if (b.action === "add" && out.added?.length) dayLog.add("asked", "add priority: " + out.added.join(", "), "dashboard");
     return send(res, 200, out, req);
   }
+  // Requests for Claude, from the dashboard: list, tick off, add, copy text.
+  if (path === "/dash/claude" && (req.method === "GET" || req.method === "POST")) {
+    if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
+    if (req.method === "GET") return send(res, 200, { ...(await claudeRequests.handle({ action: "list" })), text: await claudeRequests.asText() }, req);
+    const b = await readJson(req);
+    return send(res, 200, await claudeRequests.handle({ ...b, via: b.action === "add" ? "dashboard" : "" }), req);
+  }
   // A receipt photo from the dashboard / phone app: { image: base64, mime, note }.
   if (path === "/receipts/photo" && req.method === "POST") {
     if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
@@ -831,6 +840,7 @@ export async function handle(req, res) {
     out.status = { watchdog: watchdog.last(), phone: phone.online(), pc: pc.online(), work_laptop: workPc.online(), storage: db.kind, telegram: await telegram.status().catch(() => null) };
     try { out.credits = await creditsStatus(); } catch {}
     try { out.spend = await receipts.dash(); } catch {}
+    try { out.claude = await claudeRequests.handle({ action: "list" }); } catch {}
     try {
       const g = {};
       for (const [k, a] of Object.entries(googleAccounts)) { const c = a.configured() && (await a.connected()); g[k] = { account: a.account, connected: c, mail: c && (await a.hasScope(SCOPES.gmailRead)), calendar: c && (await a.hasScope(SCOPES.calendar)) }; }
@@ -1054,6 +1064,7 @@ export async function handle(req, res) {
       catch (e) { return send(res, 200, { ok: false, error: e.code || "error", message: String(e.message).slice(0, 300), connect_link: e.link }); }
     }
     if (path === "/shopping" && req.method === "POST") return send(res, 200, await shopping.handle(await readJson(req)));
+    if (path === "/claude/requests" && req.method === "POST") { const b = await readJson(req); return send(res, 200, await claudeRequests.handle({ ...b, via: b.action === "add" ? String(req.headers["x-bernud-via"] || "voice").slice(0, 12) : "" })); }
     if (path === "/receipts" && req.method === "POST") return send(res, 200, await receipts.handle(await readJson(req)));
     if (path === "/priorities" && req.method === "POST") { const b = await readJson(req); return send(res, 200, await priorities.handle({ ...b, brief: await briefPriorities() })); }
     if (path === "/wakeup" && req.method === "POST") return send(res, 200, await wakeup.handle(await readJson(req)));

@@ -7,7 +7,7 @@ const chunks = (t, n = 3900) => { const out = []; t = String(t || ""); while (t.
 
 // transcribe(buffer, mime) -> text; speak(text) -> { mp3: Buffer } or null. Both optional.
 // photo({ data: Buffer, mime, note }) -> { ok, message } handles a photo (a receipt). Optional.
-export function createTelegram({ token, kv, chat, shopping, transcribe = null, speak = null, photo = null, log = console, fetchImpl = fetch }) {
+export function createTelegram({ token, kv, chat, shopping, transcribe = null, speak = null, photo = null, requests = null, log = console, fetchImpl = fetch }) {
   const base = `https://api.telegram.org/bot${token}`;
   let me = null, running = false, lastError = null;
 
@@ -118,6 +118,7 @@ export function createTelegram({ token, kv, chat, shopping, transcribe = null, s
       return say(id, "Hello. I'm Bernard, a private assistant. This chat isn't linked: send the 6-digit code shown in Bernard's dashboard settings.");
     }
     if (/^\/(start|help)\b/i.test(text)) return say(id, "Text me as you'd talk to me: \"we need milk\", \"lights off\", \"what's the weather\".\n/list shows the shopping list with tick-off buttons.");
+    if (/^\/claude\b/i.test(text) && requests) { const r = await requests.handle({ action: "list" }); return say(id, r.message); }
     if (/^\/list\b|^(?:show|send)(?: me)?(?: the)? shopping list\??$|^shopping list\??$/i.test(text)) return sendList(id);
     api("sendChatAction", { chat_id: id, action: "typing" }).catch(() => {});
     let reply;

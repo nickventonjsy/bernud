@@ -56,6 +56,7 @@ export const GROUPS = {
   cameras: { tools: ["camera"], re: /\b(cameras?|cctv|doorbell|front door|driveway|garden|garage|imou|shop|car ?park|living room|bedroom|anyone|anybody|someone|motion|movement|alerts?|intruder|security|overnight|last night|snapshot|footage)\b/ },
   home: { tools: ["lights", "tv_control", "goodnight", "home_arrival", "youtube"], re: /\b(lights?|lamps?|bulbs?|bright|dim|colou?r|ceiling|govee|hue|tv|telly|television|netflix|youtube|video|watch|good ?night|bed|arriv|home|leave|leaving)\b/ },
   music: { tools: ["spotify_info", "spotify_control", "spotify_dj", "spotify_play_on"], re: /\b(echo|alexa|spotify|music|songs?|play|playing|playlist|tracks?|album|artist|pause|resume|skip|next|previous|shuffle|repeat|louder|quieter|volume|speaker|dj|mix|tunes|vibe|mood)\b/ },
+  claude: { tools: ["tell_claude"], re: /\b(claude|pass (it|this|that) on|feature request|change request|can you (add|change|fix)|i'?d like (you|bernard) to)\b/ },
   receipts: { tools: ["receipts", "shopping_list"], re: /\b(receipts?|spent|spend|spending|bill|cost me|running low|usual shop|how much (did|have) i)\b/ },
   priorities: { tools: ["priorities"], re: /\b(priorit(y|ies)|to-?do|todo|must do|top three|done with|tick off|ticked|finished)\b/ },
   shopping: { tools: ["shopping_list"], re: /\b(shopping|groceries|grocery|we need|run out|ran out|buy)\b/ },
