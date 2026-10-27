@@ -64,6 +64,7 @@ class PhoneCommands(private val ctx: Context) {
                 "wa_video" -> waCall(arg.trim(), video = true)
                 "wa_message" -> waMessage(arg)
                 "firetv" -> FireTv.run(ctx, arg)
+                "note" -> openNote(arg)
                 else -> throw Fail("The phone app doesn't know '$action' yet.")
             }
             true to done
@@ -170,6 +171,19 @@ class PhoneCommands(private val ctx: Context) {
     }
 
     private fun openUri(u: Uri) = start(Intent(Intent.ACTION_VIEW, u))
+
+    // Opens a new note (Samsung Notes, else Google Keep, else a pick-an-app list) with the text filled in.
+    private fun openNote(text: String): String {
+        if (text.isBlank()) throw Fail("There's nothing to put in the note.")
+        val base = Intent(Intent.ACTION_SEND).setType("text/plain")
+            .putExtra(Intent.EXTRA_TEXT, text).putExtra(Intent.EXTRA_SUBJECT, text.lineSequence().first().take(60))
+        for ((pkg, name) in listOf("com.samsung.android.app.notes" to "Samsung Notes", "com.google.android.keep" to "Google Keep")) {
+            val i = Intent(base).setPackage(pkg)
+            if (i.resolveActivity(ctx.packageManager) != null) { start(i); return "Opened it in $name. Tap save there to keep it." }
+        }
+        start(Intent.createChooser(base, "Save the list in…"))
+        return "Opened the phone's share list: pick your notes app."
+    }
 
     private fun openApp(name: String): String {
         val pm = ctx.packageManager

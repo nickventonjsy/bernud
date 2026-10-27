@@ -113,7 +113,16 @@ const googleBase = { kv: db.kv, clientId: process.env.GOOGLE_OAUTH_CLIENT_ID || 
 export const gmail = createGmail({ ...googleBase, name: "ccp", account: process.env.GMAIL_ADDRESS || "corycarpaints@gmail.com", kvKey: "gmail_refresh_token", scopes: [SCOPES.gmailRead, SCOPES.gmailCompose, SCOPES.calendar, SCOPES.drive], signature: CCP_SIGNATURE });
 export const personalGoogle = createGmail({ ...googleBase, name: "personal", account: process.env.PERSONAL_GOOGLE_ADDRESS || "nickventon@gmail.com", kvKey: "google_personal_refresh_token", scopes: [SCOPES.calendar] });
 const googleAccounts = { ccp: gmail, personal: personalGoogle };
-export const notify = (text, opts) => devices.ntfyPublish(NTFY_TOPIC, text, opts);
+// Phone notification (ntfy), mirrored to Bernard's Telegram chat once that's linked.
+let telegramAlert = null;
+export const notify = async (text, opts = {}) => {
+  const r = await devices.ntfyPublish(NTFY_TOPIC, text, opts);
+  if (telegramAlert && opts.telegram !== false) {
+    const link = opts.click && !/bernud\.onrender\.com/.test(opts.click) ? "\n" + opts.click : "";
+    telegramAlert(text + link, { title: opts.title }).catch(() => {});
+  }
+  return r;
+};
 const { createReminders } = await import("./reminders.js");
 export const reminders = createReminders({ kv: db.kv, notify });
 const { createSmartThings } = await import("./smartthings.js");
@@ -206,7 +215,15 @@ async function dayVerdict({ done = [] } = {}) {
 }
 // ---------------- Shopping list, wake-up, Fire TV, watchdog ----------------
 const { createShopping } = await import("./shopping.js");
-export const shopping = createShopping({ kv: db.kv, notify });
+export const shopping = createShopping({ kv: db.kv, notify, telegram: () => telegram,
+  openNote: async (text) => {
+    if (!phone.online()) return { ok: false, message: "The Bernard app on your phone isn't connected right now, so I can't open Notes. Open Bernard on the phone and ask again." };
+    const r = await phone.send("note", text);
+    return r.ok ? { ok: true, done: r.output } : { ok: false, message: r.message || r.output || "The phone couldn't open Notes." };
+  } });
+const { createTelegram } = await import("./telegram.js");
+export const telegram = createTelegram({ token: (process.env.TELEGRAM_BOT_TOKEN || "").trim(), kv: db.kv, shopping, chat: (a) => brain.chat(a) });
+if (telegram.configured) telegramAlert = telegram.alert;
 const { createWakeup } = await import("./wakeup.js");
 export const wakeup = createWakeup({ kv: db.kv, lights, speakers, sayOnPhone, todayEvents: async () => (await calendarForBrief()).events });
 const FIRETV_ACTIONS = ["on", "off", "home", "back", "play_pause", "up", "down", "left", "right", "select", "volume_up", "volume_down", "mute", "rewind", "fast_forward", "menu", "open", "apps", "status"];
@@ -239,6 +256,7 @@ export const watchdog = createWatchdog({ kv: db.kv, notify, checks: [
   { name: "Bernard app on the phone", run: async () => (PHONE_TOPIC && PHONE_SECRET) ? (phone.online() ? { ok: true } : { ok: false, detail: "not connected; open the Bernard app on the phone" }) : { skip: true } },
   { name: "Free mode brain", run: async () => { const s = await brain.status(); return s.ok && s.configured ? { ok: true } : { ok: false, detail: s.error || "no AI keys" }; } },
   { name: "Morning brief", run: async () => { const last = JSON.parse((await db.kv.get("brief_last_result")) || "null"); return !last || last.ok ? { ok: true } : { ok: false, detail: "the last brief failed: " + (last.error || "unknown reason") }; } },
+  ...(telegram.configured ? [{ name: "Telegram", run: async () => { const s = await telegram.status(); return s.running && !s.error ? { ok: true } : { ok: false, detail: s.error || "not running" }; } }] : []),
   { name: "Home PC", alert: false, run: async () => ({ ok: pc.online(), detail: pc.online() ? "" : "off or asleep" }) },
   { name: "Work laptop", alert: false, run: async () => ({ ok: workPc.online(), detail: workPc.online() ? "" : "off or not signed in" }) },
 ] });
@@ -505,6 +523,12 @@ export async function handle(req, res) {
     if (!f || f.exp < Date.now()) return send(res, 404, { error: "gone" });
     res.writeHead(200, { "content-type": "application/pdf", "content-length": f.buf.length, "cache-control": "no-store" });
     return res.end(f.buf);
+  }
+  // Telegram: status and link code for the dashboard settings (dashboard passcode).
+  if (path === "/telegram/status" || path === "/telegram/unlink") {
+    if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
+    if (req.method === "GET" && path === "/telegram/status") return send(res, 200, await telegram.status(), req);
+    if (req.method === "POST" && path === "/telegram/unlink") return send(res, 200, await telegram.unlink((await readJson(req)).id), req);
   }
   // Set-up line for the work laptop (dashboard passcode).
   if (req.method === "GET" && path === "/device/pc/work-setup") {
@@ -1025,6 +1049,7 @@ export async function handle(req, res) {
 
 await db.init();
 if (ccp.configured() && process.env.NODE_ENV !== "test") ccp.startBackgroundIndex();
+if (process.env.NODE_ENV !== "test") telegram.start();
 if (process.env.NODE_ENV !== "test" && NTFY_TOPIC) { scheduler.start(); reminders.start(); orders.start(); watchdog.start(); wakeup.start(); }
 if (process.env.NODE_ENV !== "test") setTimeout(async () => { const s = await brain.status(); console.log("brain status", JSON.stringify(s)); if (s.ok && s.configured) console.log("brain selftest", JSON.stringify(await brain.selfTest()));
   if (imou.configured() && DASHBOARD_KEY) camAlerts.start();

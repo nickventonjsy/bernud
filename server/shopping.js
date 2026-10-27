@@ -20,7 +20,7 @@ export function parseItems(text) {
     .filter((s) => s && s.length <= 60);
 }
 
-export function createShopping({ kv, notify }) {
+export function createShopping({ kv, notify, openNote = null, telegram = null }) {
   const load = async () => { try { return JSON.parse((await kv.get("shopping_list")) || "[]"); } catch { return []; } };
   const save = (l) => kv.set("shopping_list", JSON.stringify(l));
   const same = (a, b) => a.toLowerCase() === b.toLowerCase();
@@ -50,11 +50,19 @@ export function createShopping({ kv, notify }) {
       return { ok: true, removed, not_found: asked.filter((i) => !removed.some((r) => r.toLowerCase().includes(i.toLowerCase()))), count: list.length };
     }
     if (action === "clear") { await save([]); return { ok: true, cleared: list.length }; }
+    const body = () => grouped(list).map((g) => `${g.aisle}:\n${g.items.map((i) => "• " + i).join("\n")}`).join("\n\n");
     if (action === "send") {
       if (!list.length) return { ok: true, empty: true, message: "The shopping list is empty." };
-      const body = grouped(list).map((g) => `${g.aisle}:\n${g.items.map((i) => "• " + i).join("\n")}`).join("\n\n");
-      await notify(body, { title: `Shopping list (${list.length})`, tags: "shopping_cart" });
-      return { ok: true, sent: true, count: list.length };
+      // Telegram gets it with tick-off buttons; the phone notification is the fallback.
+      const tg = telegram ? await telegram().sendList().catch(() => ({ sent: 0 })) : { sent: 0 };
+      if (!tg.sent) await notify(body(), { title: `Shopping list (${list.length})`, tags: "shopping_cart", telegram: false });
+      return { ok: true, sent: true, count: list.length, via: tg.sent ? "Telegram (with tick-off buttons)" : "phone notification" };
+    }
+    if (action === "note") {
+      if (!list.length) return { ok: true, empty: true, message: "The shopping list is empty, so there's nothing to put in a note." };
+      if (!openNote) return { ok: false, message: "Opening notes needs the Bernard phone app." };
+      const r = await openNote("Shopping list\n\n" + body());
+      return r.ok ? { ok: true, opened: true, done: r.done, count: list.length } : { ok: false, message: r.message };
     }
     return { ok: true, count: list.length, items: list.map((x) => x.item), by_aisle: grouped(list) };
   }

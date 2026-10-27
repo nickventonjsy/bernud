@@ -507,6 +507,11 @@
     <textarea id="workSetup" readonly rows="4" style="display:none;width:100%;margin-top:8px;padding:10px;background:transparent;color:var(--text);border:1px solid var(--line, #5a1a1f);border-radius:8px;font:12px ui-monospace,monospace"></textarea>
     <div class="note" id="workNote"></div>
     <hr style="border:0;border-top:1px solid var(--line, #5a1a1f);margin:16px 0">
+    <p><b style="color:var(--text)">Telegram.</b> Text Bernard from anywhere and get the shopping list with tick-off buttons. His alerts come here too. To link a chat: open Bernard's bot in Telegram, then send it the code below. Michelle can link her own chat the same way.</p>
+    <div class="btnrow"><button class="btn" type="button" id="tgBtn">Show Telegram status</button></div>
+    <div class="note" id="tgNote"></div>
+    <div id="tgLinked"></div>
+    <hr style="border:0;border-top:1px solid var(--line, #5a1a1f);margin:16px 0">
     <p><b style="color:var(--text)">"Hey Bernard" wake word.</b> Press the grid button left of the ask bar to put Bernard on standby. He listens using Chrome's speech recognition (on-device where your computer supports it).</p>
     <p>Optional: for a private wake word, add a Picovoice AccessKey and your "Hey Bernud" file (Web / WASM). Both stay on this device only.</p>
     <label for="keyInput">Picovoice AccessKey</label>
@@ -532,7 +537,7 @@
 
   // ---- Version numbers (bottom of the screen) ----
   // DASH_VERSION goes up by one with every dashboard change (a git hook bumps it automatically).
-  const DASH_VERSION = 8;
+  const DASH_VERSION = 9;
   (async () => {
     const set = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
     set("dashVer", DASH_VERSION);
@@ -2083,6 +2088,29 @@
     if (APP) { setTimeout(() => appCall("speak", line), 150); return; }
     speechSynthesis.cancel(); speechSynthesis.speak(pcUtterance(line));
   });
+
+  // ---- Telegram: bot link, link code and linked chats (behind the dashboard passcode) ----
+  async function tgStatus() {
+    const pass = store.get("bernud.dashKey");
+    if (!pass) { $("tgNote").textContent = "Enter your passcode in the CCP brief first."; return; }
+    $("tgNote").textContent = "Checking…";
+    try {
+      const j = await (await fetch(`${SERVER}/telegram/status`, { headers: { "x-dashboard-key": pass } })).json();
+      if (!j.configured) { $("tgNote").textContent = "No Telegram bot token on the server yet (TELEGRAM_BOT_TOKEN in Render)."; return; }
+      if (!j.bot) { $("tgNote").textContent = "Telegram isn't running: " + (j.error || "unknown problem") + ". Check the bot token in Render."; return; }
+      $("tgNote").innerHTML = `Bot: <a href="${j.link}" target="_blank" rel="noopener" style="color:var(--red)">${j.bot}</a> (tap to open in Telegram).<br>Link code: <b style="color:var(--text);font-size:18px;letter-spacing:.15em">${j.link_code}</b>${j.error ? `<br>Last problem: ${j.error}` : ""}`;
+      const box = $("tgLinked"); box.innerHTML = "";
+      if (!j.linked.length) { box.innerHTML = '<p class="note">No chats linked yet.</p>'; return; }
+      j.linked.forEach((c, i) => {
+        const row = document.createElement("div"); row.className = "btnrow";
+        const label = document.createElement("span"); label.textContent = `${c.name}${i === 0 ? " (gets alerts)" : ""}`; label.style.flex = "1";
+        const b = document.createElement("button"); b.className = "btn"; b.type = "button"; b.textContent = "Unlink";
+        b.onclick = async () => { await fetch(`${SERVER}/telegram/unlink`, { method: "POST", headers: { "content-type": "application/json", "x-dashboard-key": pass }, body: JSON.stringify({ id: c.id }) }); tgStatus(); };
+        row.append(label, b); box.appendChild(row);
+      });
+    } catch { $("tgNote").textContent = "Couldn't reach Bernard's server."; }
+  }
+  $("tgBtn").addEventListener("click", tgStatus);
 
   // ---- Work laptop set-up line (behind the dashboard passcode) ----
   $("workSetupBtn").addEventListener("click", async () => {

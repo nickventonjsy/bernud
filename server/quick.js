@@ -86,7 +86,10 @@ export function matchQuick(text, lastDevice = "") {
     return { tool: "shopping_list", args: { action: "list" }, reply: (r) => (r.ok === false ? null : r.count ? `You've got ${r.count} on the list: ${listWords(r.items)}.` : "The shopping list is empty.") };
   }
   if (/^(?:send|text|give)(?: me)? (?:the |my )?shopping list(?: to (?:my|the) phone)?$/.test(t)) {
-    return { tool: "shopping_list", args: { action: "send" }, reply: (r) => (r.ok === false ? null : r.empty ? "The shopping list is empty." : `Sent the shopping list to your phone, sorted by aisle.`) };
+    return { tool: "shopping_list", args: { action: "send" }, reply: (r) => (r.ok === false ? null : r.empty ? "The shopping list is empty." : `Sent the shopping list${r.via && /telegram/i.test(r.via) ? " to Telegram, with tick-off buttons" : " to your phone"}, sorted by aisle.`) };
+  }
+  if (/^(?:open|put|save|copy|stick|make)(?: the| my)? shopping list (?:in|into|to|on|as)(?: a)? (?:samsung )?(?:notes?|keep|google keep)(?: app)?$|^(?:open|put|save) (?:it|that) (?:in|into) (?:samsung )?(?:notes?|keep)$/.test(t)) {
+    return { tool: "shopping_list", args: { action: "note" }, reply: (r) => (r.ok === false ? r.message || null : r.empty ? r.message : r.done || "Opened it in Notes.") };
   }
 
   // Watchdog: "is everything working?"
