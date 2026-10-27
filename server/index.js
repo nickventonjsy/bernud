@@ -204,7 +204,9 @@ const { factFor } = await import("./jerseyfacts.js");
 const { createCrypto, spokenCrypto } = await import("./crypto.js");
 export const coinPrices = createCrypto();
 const { createBrain } = await import("./brain.js");
-export const brain = createBrain({ briefHandler: (text) => briefForBrain(text), dayLog, geminiKey: (process.env.GEMINI_API_KEY || "").trim(), groqKey: (process.env.GROQ_API_KEY || "").trim(), elevenKey: process.env.ELEVENLABS_API_KEY || "", agentId: process.env.AGENT_ID || "agent_0501m5q6cc15eqcrnamk2e1w84xc", kv: db.kv, port: PORT, bernudKey: API_KEY, zwKey: process.env.ZW_ASSISTANT_KEY || "" });
+const { createLearner } = await import("./learn.js");
+export const learner = createLearner({ db, complete: (a) => brain.complete(a) });
+export const brain = createBrain({ briefHandler: (text) => briefForBrain(text), dayLog, learner, geminiKey: (process.env.GEMINI_API_KEY || "").trim(), groqKey: (process.env.GROQ_API_KEY || "").trim(), elevenKey: process.env.ELEVENLABS_API_KEY || "", agentId: process.env.AGENT_ID || "agent_0501m5q6cc15eqcrnamk2e1w84xc", kv: db.kv, port: PORT, bernudKey: API_KEY, zwKey: process.env.ZW_ASSISTANT_KEY || "" });
 const { createDJ } = await import("./dj.js");
 export const dj = createDJ({ zw: { url: (process.env.ZW_URL || "https://zentrawire.onrender.com").replace(/\/+$/, ""), key: process.env.ZW_ASSISTANT_KEY || "" }, complete: (o) => brain.complete(o) });
 const { createSpeakers } = await import("./speakers.js");
@@ -298,6 +300,48 @@ async function voiceWeek() {
   const list = ((await r.json()).conversations || []).filter((c) => c.status !== "failed" && (c.call_duration_secs || 0) > 0);
   return { conversations: list.length, seconds: list.reduce((a, c) => a + (c.call_duration_secs || 0), 0) };
 }
+// Self-learning, part 2: learn from ElevenLabs voice conversations too, and keep what he's learnt in his
+// ElevenLabs instructions (the server updates the agent's prompt itself, a few minutes after something new is learnt).
+const LEARN_HEADING = "\n\n# What you've learnt about Nicholas";
+async function learnFromVoice() {
+  const key = process.env.ELEVENLABS_API_KEY || "", agent = process.env.AGENT_ID || "agent_0501m5q6cc15eqcrnamk2e1w84xc";
+  if (!key) return;
+  const since = Number(await db.kv.get("learn_voice_since")) || Math.floor(Date.now() / 1000) - 3600;
+  const h = { "xi-api-key": key };
+  const r = await fetch(`https://api.elevenlabs.io/v1/convai/conversations?agent_id=${agent}&call_start_after_unix=${since}&page_size=20`, { headers: h, signal: AbortSignal.timeout(8000) });
+  if (!r.ok) return;
+  const list = ((await r.json()).conversations || []).filter((c) => c.status === "done" && (c.message_count || 0) > 1).sort((a, b) => a.start_time_unix_secs - b.start_time_unix_secs);
+  let newest = since, learntAny = false;
+  for (const c of list) {
+    try {
+      const full = await (await fetch(`https://api.elevenlabs.io/v1/convai/conversations/${c.conversation_id}`, { headers: h, signal: AbortSignal.timeout(8000) })).json();
+      if (!full.metadata?.text_only) { const got = await learner.fromTranscript(full.transcript || [], { source: "voice" }); if (got.length) learntAny = true; }
+    } catch {}
+    newest = Math.max(newest, c.start_time_unix_secs + 1);
+  }
+  if (newest !== since) await db.kv.set("learn_voice_since", String(newest));
+  if (learntAny) scheduleAgentPromptSync();
+}
+let promptSyncTimer = null;
+function scheduleAgentPromptSync() { clearTimeout(promptSyncTimer); promptSyncTimer = setTimeout(() => syncAgentPrompt().catch((e) => console.error("prompt sync", e.message)), 3 * 60_000); promptSyncTimer.unref?.(); }
+async function syncAgentPrompt() {
+  const key = process.env.ELEVENLABS_API_KEY || "", agent = process.env.AGENT_ID || "agent_0501m5q6cc15eqcrnamk2e1w84xc";
+  if (!key) return false;
+  const h = { "xi-api-key": key, "content-type": "application/json" };
+  const cur = await (await fetch(`https://api.elevenlabs.io/v1/convai/agents/${agent}`, { headers: h, signal: AbortSignal.timeout(10_000) })).json();
+  const prompt = cur?.conversation_config?.agent?.prompt?.prompt;
+  if (!prompt) return false;
+  const base = prompt.split(LEARN_HEADING)[0].trimEnd();
+  const next = base + (await learner.promptBlock());
+  if (next === prompt) return true;
+  const r = await fetch(`https://api.elevenlabs.io/v1/convai/agents/${agent}`, { method: "PATCH", headers: h, body: JSON.stringify({ conversation_config: { agent: { prompt: { prompt: next } } } }), signal: AbortSignal.timeout(15_000) });
+  if (!r.ok) { console.error("prompt sync: ElevenLabs said", r.status, (await r.text().catch(() => "")).slice(0, 200)); return false; }
+  console.log("prompt sync: Bernard's instructions updated with what he's learnt");
+  return true;
+}
+learner.onLearned = scheduleAgentPromptSync;
+if (process.env.NODE_ENV !== "test" && process.env.ELEVENLABS_API_KEY) { const t = setInterval(() => learnFromVoice().catch(() => {}), 3 * 60_000); t.unref?.(); setTimeout(() => learnFromVoice().catch(() => {}), 60_000); }
+
 export const weekly = createWeekly({ kv: db.kv, dayLog, notify, credits: creditsStatus, voiceWeek, complete: (a) => brain.complete(a),
   failing: async () => (await watchdog.status()).not_working.map((f) => f.name) });
 const { createWakeup } = await import("./wakeup.js");
@@ -674,6 +718,11 @@ export async function handle(req, res) {
     catch (e) { console.error("brain", e.message); return send(res, 200, { ok: false, code: e.code || "error", reply: ["quota", "busy", "no_config"].includes(e.code) ? e.message : "Sorry, my free brain hit a problem: " + String(e.message).slice(0, 160) }, req); }
   }
   // Gemini's natural voices for free mode: the list, and a reply turned into a WAV.
+  if (path === "/memory/learned" && (req.method === "GET" || req.method === "POST")) {
+    if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
+    if (req.method === "POST") { const b = await readJson(req); if (b.forget) await db.remove(String(b.forget)); else if (b.add) await learner.save(b.add, { source: "dashboard" }); scheduleAgentPromptSync(); }
+    return send(res, 200, { learned: (await learner.learned()).map((r) => ({ id: r.id, text: r.text, at: r.created_at })) }, req);
+  }
   if (path === "/weekly/run" && req.method === "POST") {
     if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
     try { return send(res, 200, { ok: true, text: await weekly.run("manual") }, req); } catch (e) { return send(res, 200, { ok: false, error: e.message }, req); }

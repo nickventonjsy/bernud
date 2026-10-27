@@ -132,7 +132,7 @@ export function toOpenAiTool(t) {
 }
 const estTokens = (x) => Math.ceil(JSON.stringify(x).length / 3.6);
 
-export function createBrain({ briefHandler = null, dayLog = null, geminiKey, groqKey = "", elevenKey, agentId, kv, port, bernudKey, zwKey,
+export function createBrain({ briefHandler = null, dayLog = null, learner = null, geminiKey, groqKey = "", elevenKey, agentId, kv, port, bernudKey, zwKey,
   models = (process.env.GEMINI_MODELS || "gemini-3.6-flash,gemini-3.8-flash,gemini-3.5-flash-lite").split(",").map((m) => m.trim()).filter(Boolean),
   groqModels = (process.env.GROQ_MODELS || "openai/gpt-oss-120b,openai/gpt-oss-20b,qwen/qwen3.8-27b").split(",").map((m) => m.trim()).filter(Boolean),
   groqMaxTokens = 7000, fetchImpl = fetch, now = () => new Date(), log = console }) {
@@ -368,7 +368,24 @@ export function createBrain({ briefHandler = null, dayLog = null, geminiKey, gro
     s.at = Date.now(); sessions.set(session, s);
     const used = [];
     const t0 = Date.now();
-    const remember = (reply, model, groups = s.groups) => { s.turns = [...s.turns, { user: text, reply }].slice(-6); s.groups = groups; return reply; };
+    const remember = (reply, model, groups = s.groups) => {
+      s.turns = [...s.turns, { user: text, reply }].slice(-6); s.groups = groups;
+      if (learner && session !== "selftest") learner.fromExchange({ user: text, reply, source: session.startsWith("tg-") ? "telegram" : "chat" }).catch(() => {});
+      return reply;
+    };
+    // What he's learnt: list it, or drop the last thing.
+    if (learner && /^(?:what (?:have you|did you) learn(?:t|ed)?(?: about me)?|what do you know about me|what have you got on me)[?.!]*$/i.test(text)) {
+      const rows = await learner.learned();
+      const reply = rows.length ? `Here's what I've picked up: ${rows.slice(0, 12).map((r) => r.text.replace(/\.$/, "")).join(". ")}.${rows.length > 12 ? ` And ${rows.length - 12} more on the dashboard.` : ""}` : "Nothing yet. I pick things up as we talk: tell me a preference or correct me and I'll keep it.";
+      s.turns = [...s.turns, { user: text, reply }].slice(-6);
+      return { ok: true, reply, tools: [], model: "instant", ms: Date.now() - t0 };
+    }
+    if (learner && /^(?:forget (?:that|the last thing|what you just learn(?:t|ed))|that'?s wrong,? forget it|no,? forget that)[.!]*$/i.test(text)) {
+      const gone = await learner.forgetLast();
+      const reply = gone ? `Forgotten: ${gone.text}` : "There's nothing recent to forget.";
+      s.turns = [...s.turns, { user: text, reply }].slice(-6);
+      return { ok: true, reply, tools: [], model: "instant", ms: Date.now() - t0 };
+    }
     // Michelle: always the same verdict, in slightly different words (not when he just wants her playlist).
     if (/\bmichelle\b/i.test(text) && !/\b(play|playlist|spotify|music|songs?|oldies|shuffle|put on|echo|alexa|speaker)\b/i.test(text)) {
       const reply = MICHELLE[Math.floor(Math.random() * MICHELLE.length)];
@@ -399,7 +416,8 @@ export function createBrain({ briefHandler = null, dayLog = null, geminiKey, gro
     const groups = pickGroups(text, s.groups);
     const slim = slimConfig(c, text, groups);
     const time = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", dateStyle: "full", timeStyle: "short" }).format(now());
-    const system = slim.prompt.replaceAll("{{system__time}}", time) + TEXT_MODE_NOTE;
+    const learnt = learner ? await learner.promptBlock().catch(() => "") : "";
+    const system = slim.prompt.replaceAll("{{system__time}}", time) + (slim.prompt.includes("# What you've learnt") ? "" : learnt) + TEXT_MODE_NOTE;
     const job = { system, turns: s.turns, text, tools: slim.tools, byName: new Map(slim.tools.map((t) => [t.name, t])), used };
 
     let out = null;
