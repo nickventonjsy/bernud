@@ -142,6 +142,8 @@ class MainActivity : ComponentActivity() {
 
     // Lets the dashboard tell the app when a conversation starts and ends (the wake word gives up the mic meanwhile).
     inner class Bridge {
+        // The installed app's build number (the same N as the android-vN release), shown on the dashboard.
+        @JavascriptInterface fun appVersion(): String = try { packageManager.getPackageInfo(packageName, 0).versionName ?: "" } catch (_: Exception) { "" }
         @JavascriptInterface fun conversationStarted() { runOnUiThread { WakeWord.conversationStarted(); AudioRoute.conversationStarted(this@MainActivity) } }
         @JavascriptInterface fun conversationEnded() { runOnUiThread { WakeWord.conversationEnded(); AudioRoute.conversationEnded(this@MainActivity) } }
         // Free mode: phone listens and speaks itself; the wake word just gives up the mic meanwhile.

@@ -73,7 +73,7 @@ class WearActivity : ComponentActivity() {
             setPadding(pad, pad / 2, pad, pad)
         }
         col.addView(TextView(this).apply {
-            text = "BERNARD"; setTextColor(0xFFFF3B4A.toInt()); letterSpacing = 0.2f
+            text = "BERNARD  v" + (try { packageManager.getPackageInfo(packageName, 0).versionName } catch (_: Exception) { "?" }); setTextColor(0xFFFF3B4A.toInt()); letterSpacing = 0.2f
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f); typeface = Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER
         })
         val mic = TextView(this).apply {

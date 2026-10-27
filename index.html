@@ -418,7 +418,7 @@
   </div>
 
   <footer>
-    <span>Bernard OS / v.06</span>
+    <span id="versions">Dashboard v<span id="dashVer"></span><span id="appVer"></span><span id="srvVer"></span></span>
     <span>Privacy &nbsp;|&nbsp; Cloud first &nbsp;&nbsp;|&nbsp;&nbsp; A more capable tomorrow</span>
   </footer>
 </div>
@@ -529,6 +529,28 @@
 <script type="module">
   const AGENT_ID = "agent_0501m5q6cc15eqcrnamk2e1w84xc";
   const SERVER = "https://bernud-server.onrender.com";
+
+  // ---- Version numbers (bottom of the screen) ----
+  // DASH_VERSION goes up by one with every dashboard change (a git hook bumps it automatically).
+  const DASH_VERSION = 7;
+  (async () => {
+    const set = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
+    set("dashVer", DASH_VERSION);
+    const app = window.BernudApp && typeof window.BernudApp.appVersion === "function" ? String(window.BernudApp.appVersion() || "") : "";
+    if (window.BernudApp) set("appVer", " · App " + (app ? "v" + app : "(old version)"));
+    try { const h = await (await fetch(SERVER + "/health", { cache: "no-store" })).json(); set("srvVer", " · Server " + (h.version || "?")); } catch { set("srvVer", " · Server offline"); }
+    // In the phone app: compare with the newest release and offer the update.
+    if (window.BernudApp) try {
+      const r = await (await fetch("https://api.github.com/repos/nickventonjsy/bernud/releases/latest", { cache: "no-store" })).json();
+      const latest = Number(String(r.tag_name || "").replace(/\D/g, "")), mine = Number(app) || 0;
+      if (latest && mine < latest) {
+        const a = document.createElement("a");
+        a.href = `https://github.com/nickventonjsy/bernud/releases/download/${r.tag_name}/Bernard.apk`;
+        a.textContent = ` · Update to v${latest}`; a.style.color = "var(--red)";
+        document.getElementById("versions").appendChild(a);
+      } else if (latest) set("appVer", ` · App v${app} (latest)`);
+    } catch {}
+  })();
   const MODEL_URL = "https://cdn.jsdelivr.net/gh/Picovoice/porcupine@v3.0/lib/common/porcupine_params.pv";
   const STORE = { key: "bernud.pvKey", ppn: "bernud.ppn", ppnName: "bernud.ppnName", sens: "bernud.sens", topic: "bernud.topic", mic: "bernud.micId", conn: "bernud.conn", boost: "bernud.boost", raw: "bernud.rawMic" };
   const TZ = "Europe/Jersey";

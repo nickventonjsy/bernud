@@ -485,7 +485,7 @@ export async function handle(req, res) {
     return res.end();
   }
 
-  if (path === "/" || path === "/health") return send(res, 200, { ok: true, service: "bernud", storage: db.kind }, req);
+  if (path === "/" || path === "/health") return send(res, 200, { ok: true, service: "bernud", storage: db.kind, version: (process.env.RENDER_GIT_COMMIT || "dev").slice(0, 7) }, req);
 
   // Imou pushes camera alarms here (secret path). Reply straight away, then deal with it.
   if (path.startsWith("/camera/hook/")) {
