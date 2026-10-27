@@ -532,7 +532,7 @@
 
   // ---- Version numbers (bottom of the screen) ----
   // DASH_VERSION goes up by one with every dashboard change (a git hook bumps it automatically).
-  const DASH_VERSION = 7;
+  const DASH_VERSION = 8;
   (async () => {
     const set = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
     set("dashVer", DASH_VERSION);
@@ -1615,19 +1615,52 @@
   const BYE_RE = /^(?:ok(?:ay)?[ ,]*)?(?:bye|goodbye|good night|goodnight|that'?s all|that is all|that'?s it|nothing|no(?:pe)?(?:,? thanks?| thank you)?|thanks?(?: you)?(?: bernard| bernie| bernud)?|cheers|stop|cancel|never ?mind)[.!, ]*$/i;
   const oneOf = (a) => a[Math.floor(Math.random() * a.length)];
 
-  function freeListen() {          // resolves with what was said ("" = nothing, null = not supported)
+  // Bernard waits for a proper pause before answering, so a short breath mid-sentence doesn't cut you off.
+  const PAUSE_MS = 2000;           // PC: how long a silence counts as "finished"
+  const MORE_MS = 2600;            // phone: how long to wait for you to carry on after a pause
+  let freePrefix = "";
+
+  function appListenOnce(graceMs = 0) {   // one phone recognition; with graceMs, gives up if you don't start talking in time
     return new Promise((resolve) => {
-      if (APP && APP.listenOnce) { freeCb.heard = resolve; appCall("listenOnce"); return; }
-      if (!SpeechRec) return resolve(null);
+      let done = false, spoke = false, timer = null;
+      const finish = (t) => { if (done) return; done = true; clearTimeout(timer); freeCb.heard = null; freeCb.partial = null; resolve(t); };
+      freeCb.heard = finish;
+      freeCb.partial = () => { spoke = true; clearTimeout(timer); };
+      if (graceMs) timer = setTimeout(() => { if (!spoke) { appCall("stopListening"); finish(""); } }, graceMs);
+      appCall("listenOnce");
+    });
+  }
+
+  async function freeListen() {    // resolves with what was said ("" = nothing, null = not supported)
+    if (APP && APP.listenOnce) {
+      freePrefix = "";
+      let text = await appListenOnce();
+      if (!text) return text;
+      // The phone stops at the first pause: listen again briefly and join the pieces if you carry on.
+      for (let i = 0; i < 6 && freeActive; i++) {
+        freePrefix = text + " ";
+        $("subline").textContent = "You: " + text + " …";
+        const more = await appListenOnce(MORE_MS);
+        if (!more) break;
+        text = (text + " " + more).trim();
+      }
+      freePrefix = "";
+      return text;
+    }
+    if (!SpeechRec) return null;
+    return new Promise((resolve) => {
       const r = new SpeechRec(); freeRec = r;
-      r.lang = "en-GB"; r.interimResults = true; r.continuous = false; r.maxAlternatives = 1;
-      let finalText = "", done = false;
-      const finish = (t) => { if (done) return; done = true; if (freeRec === r) freeRec = null; resolve(t); };
+      r.lang = "en-GB"; r.interimResults = true; r.continuous = true; r.maxAlternatives = 1;
+      let finalText = "", done = false, quiet = null;
+      const finish = (t) => { if (done) return; done = true; clearTimeout(quiet); if (freeRec === r) freeRec = null; resolve(t); };
       freeCb.heard = finish;
       r.onresult = (e) => {
         let interim = "";
-        for (let i = e.resultIndex; i < e.results.length; i++) { const t = e.results[i][0].transcript; if (e.results[i].isFinal) finalText += t; else interim += t; }
+        for (let i = e.resultIndex; i < e.results.length; i++) { const t = e.results[i][0].transcript; if (e.results[i].isFinal) finalText += t + " "; else interim += t; }
         $("subline").textContent = "You: " + (finalText + interim);
+        // Only finish once you've been quiet for PAUSE_MS.
+        clearTimeout(quiet);
+        quiet = setTimeout(() => { try { r.stop(); } catch { finish(finalText.trim()); } }, PAUSE_MS);
       };
       r.onerror = (e) => { if (e.error === "not-allowed" || e.error === "service-not-allowed") $("subline").textContent = "Microphone blocked. Allow it for this site."; };
       r.onend = () => finish(finalText.trim());
@@ -1635,7 +1668,7 @@
     });
   }
   window.bernudHeard = (t) => { const f = freeCb.heard; freeCb.heard = null; if (f) f(t === null ? null : String(t || "").trim()); };
-  window.bernudPartial = (t) => { if (freeActive) $("subline").textContent = "You: " + t; };
+  window.bernudPartial = (t) => { if (freeCb.partial) freeCb.partial(); if (freeActive) $("subline").textContent = "You: " + freePrefix + t; };
 
   function pcVoice() {
     const voices = window.speechSynthesis ? speechSynthesis.getVoices() : [];
