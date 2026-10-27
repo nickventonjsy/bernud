@@ -27,6 +27,8 @@ export function createSpeech({ apiKey, publicUrl, voice = BERNUD_VOICE, fetchImp
 
   return {
     enabled: () => Boolean(apiKey),
+    // The spoken clip as MP3 bytes (for Telegram voice notes).
+    mp3(text) { text = String(text || "").trim().slice(0, 1500); if (!text) throw new Error("nothing to say"); return tts(text); },
     // Returns a public URL for the spoken clip.
     async clip(text) {
       sweep();

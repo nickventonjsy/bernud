@@ -113,15 +113,16 @@ const googleBase = { kv: db.kv, clientId: process.env.GOOGLE_OAUTH_CLIENT_ID || 
 export const gmail = createGmail({ ...googleBase, name: "ccp", account: process.env.GMAIL_ADDRESS || "corycarpaints@gmail.com", kvKey: "gmail_refresh_token", scopes: [SCOPES.gmailRead, SCOPES.gmailCompose, SCOPES.calendar, SCOPES.drive], signature: CCP_SIGNATURE });
 export const personalGoogle = createGmail({ ...googleBase, name: "personal", account: process.env.PERSONAL_GOOGLE_ADDRESS || "nickventon@gmail.com", kvKey: "google_personal_refresh_token", scopes: [SCOPES.calendar] });
 const googleAccounts = { ccp: gmail, personal: personalGoogle };
-// Phone notification (ntfy), mirrored to Bernard's Telegram chat once that's linked.
-let telegramAlert = null;
+// Bernard's alerts go to his Telegram chat (Nicholas's choice, 27 Oct). The phone notification app (ntfy)
+// is only the fallback, for when Telegram isn't linked or can't be reached.
+let telegramAlert = null, dayLogRef = null;
 export const notify = async (text, opts = {}) => {
-  const r = await devices.ntfyPublish(NTFY_TOPIC, text, opts);
+  dayLogRef?.add("alert", opts.title || "Alert");
   if (telegramAlert && opts.telegram !== false) {
-    const link = opts.click && !/bernud\.onrender\.com/.test(opts.click) ? "\n" + opts.click : "";
-    telegramAlert(text + link, { title: opts.title }).catch(() => {});
+    const ok = await telegramAlert(text, { title: opts.title, click: opts.click, photo: opts.attach }).catch(() => false);
+    if (ok) return true;
   }
-  return r;
+  return devices.ntfyPublish(NTFY_TOPIC, text, opts);
 };
 const { createReminders } = await import("./reminders.js");
 export const reminders = createReminders({ kv: db.kv, notify });
@@ -152,6 +153,13 @@ async function elevenCredits() {
   } catch (e) { return { ok: false, error: String(e.message).slice(0, 120) }; }
 }
 const CREDIT_WARN = Number(process.env.CREDIT_WARN || 5000);
+// Credit-saving mode: below this many credits, the dashboard uses free mode and Telegram voice replies use the free voice.
+const DEFAULT_SAVE_AT = 15000;
+async function saveAt() { const n = Number(await db.kv.get("credit_save_at")); return n > 0 ? n : DEFAULT_SAVE_AT; }
+async function creditsStatus() {
+  const c = await elevenCredits(), threshold = await saveAt();
+  return { ...c, threshold, saving: c.ok ? c.left < threshold : false };
+}
 // "ElevenLabs credits: 48,000 (about 98 minutes of talking), renews 12 Nov." for the brief; "" if unknown.
 async function creditsLine() {
   const c = await elevenCredits();
@@ -245,9 +253,53 @@ export const shopping = createShopping({ kv: db.kv, notify, telegram: () => tele
     const r = await phone.send("note", text);
     return r.ok ? { ok: true, done: r.output } : { ok: false, message: r.message || r.output || "The phone couldn't open Notes." };
   } });
+// Voice notes: Groq's Whisper (free tier) turns speech into text.
+async function transcribeAudio(buf, mime = "audio/ogg") {
+  const key = (process.env.GROQ_API_KEY || "").trim();
+  if (!key) throw new Error("no Groq key for transcription");
+  const fd = new FormData();
+  fd.append("file", new Blob([buf], { type: mime }), mime.includes("mp4") || mime.includes("m4a") ? "note.m4a" : mime.includes("mpeg") ? "note.mp3" : "note.ogg");
+  fd.append("model", "whisper-large-v3-turbo"); fd.append("language", "en"); fd.append("temperature", "0");
+  fd.append("prompt", "Bernard, Bernud, Nicholas, Michelle, CCP, Cory Car Paints, Jersey, ZentraWire, Spotify, Fire TV.");
+  const r = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", { method: "POST", headers: { authorization: "Bearer " + key }, body: fd, signal: AbortSignal.timeout(30_000) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error?.message || "Groq transcription " + r.status);
+  return String(j.text || "").trim();
+}
+// A spoken reply as MP3: Bernard's ElevenLabs voice while credits are healthy, the free Gemini voice in credit-saving mode.
+const { pcmToMp3 } = await import("./mp3.js");
+async function speakMp3(text) {
+  text = String(text || "").replace(/\s+/g, " ").trim().slice(0, 1200);
+  if (!text) return null;
+  const c = await creditsStatus().catch(() => ({ ok: false }));
+  if (speech.enabled() && !(c.ok && c.saving)) {
+    try { return { mp3: await speech.mp3(text), voice: "elevenlabs" }; } catch (e) { console.error("voice reply (elevenlabs)", e.message); }
+  }
+  if (geminiVoice.configured()) {
+    try {
+      const { wav } = await geminiVoice.speak({ text, voice: (await db.kv.get("tg_voice")) || "Charon" });
+      return { mp3: pcmToMp3(wav.subarray(44), 24000), voice: "gemini" };
+    } catch (e) { console.error("voice reply (gemini)", e.message); }
+  }
+  return null;
+}
 const { createTelegram } = await import("./telegram.js");
-export const telegram = createTelegram({ token: (process.env.TELEGRAM_BOT_TOKEN || "").trim(), kv: db.kv, shopping, chat: (a) => brain.chat(a) });
+export const telegram = createTelegram({ token: (process.env.TELEGRAM_BOT_TOKEN || "").trim(), kv: db.kv, shopping, chat: (a) => brain.chat(a), transcribe: transcribeAudio, speak: speakMp3 });
 if (telegram.configured) telegramAlert = telegram.alert;
+dayLogRef = dayLog;
+// Sunday evening: Bernard's week in review.
+const { createWeekly } = await import("./weekly.js");
+async function voiceWeek() {
+  const key = process.env.ELEVENLABS_API_KEY || "", agent = process.env.AGENT_ID || "agent_0501m5q6cc15eqcrnamk2e1w84xc";
+  if (!key) return null;
+  const since = Math.floor((Date.now() - 7 * 864e5) / 1000);
+  const r = await fetch(`https://api.elevenlabs.io/v1/convai/conversations?agent_id=${agent}&call_start_after_unix=${since}&page_size=100`, { headers: { "xi-api-key": key }, signal: AbortSignal.timeout(8000) });
+  if (!r.ok) throw new Error("ElevenLabs " + r.status);
+  const list = ((await r.json()).conversations || []).filter((c) => c.status !== "failed" && (c.call_duration_secs || 0) > 0);
+  return { conversations: list.length, seconds: list.reduce((a, c) => a + (c.call_duration_secs || 0), 0) };
+}
+export const weekly = createWeekly({ kv: db.kv, dayLog, notify, credits: creditsStatus, voiceWeek, complete: (a) => brain.complete(a),
+  failing: async () => (await watchdog.status()).not_working.map((f) => f.name) });
 const { createWakeup } = await import("./wakeup.js");
 export const wakeup = createWakeup({ kv: db.kv, lights, speakers, sayOnPhone, todayEvents: async () => (await calendarForBrief()).events });
 const FIRETV_ACTIONS = ["on", "off", "home", "back", "play_pause", "up", "down", "left", "right", "select", "volume_up", "volume_down", "mute", "rewind", "fast_forward", "menu", "open", "apps", "status"];
@@ -622,9 +674,14 @@ export async function handle(req, res) {
     catch (e) { console.error("brain", e.message); return send(res, 200, { ok: false, code: e.code || "error", reply: ["quota", "busy", "no_config"].includes(e.code) ? e.message : "Sorry, my free brain hit a problem: " + String(e.message).slice(0, 160) }, req); }
   }
   // Gemini's natural voices for free mode: the list, and a reply turned into a WAV.
-  if (path === "/elevenlabs/credits" && req.method === "GET") {
+  if (path === "/weekly/run" && req.method === "POST") {
     if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
-    return send(res, 200, await elevenCredits(), req);
+    try { return send(res, 200, { ok: true, text: await weekly.run("manual") }, req); } catch (e) { return send(res, 200, { ok: false, error: e.message }, req); }
+  }
+  if (path === "/elevenlabs/credits" && (req.method === "GET" || req.method === "POST")) {
+    if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
+    if (req.method === "POST") { const n = Number((await readJson(req)).threshold); if (n >= 0 && n <= 1_000_000) await db.kv.set("credit_save_at", String(Math.round(n))); }
+    return send(res, 200, await creditsStatus(), req);
   }
   if (path === "/brain/voices" && req.method === "GET") {
     if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
@@ -1083,7 +1140,7 @@ export async function handle(req, res) {
 
 await db.init();
 if (ccp.configured() && process.env.NODE_ENV !== "test") ccp.startBackgroundIndex();
-if (process.env.NODE_ENV !== "test") telegram.start();
+if (process.env.NODE_ENV !== "test") { telegram.start(); weekly.start(); }
 if (process.env.NODE_ENV !== "test" && NTFY_TOPIC) { scheduler.start(); reminders.start(); orders.start(); watchdog.start(); wakeup.start(); }
 if (process.env.NODE_ENV !== "test") setTimeout(async () => { const s = await brain.status(); console.log("brain status", JSON.stringify(s)); if (s.ok && s.configured) console.log("brain selftest", JSON.stringify(await brain.selfTest()));
   if (imou.configured() && DASHBOARD_KEY) camAlerts.start();

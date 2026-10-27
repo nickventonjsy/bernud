@@ -5,7 +5,8 @@ import { randomInt } from "node:crypto";
 const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const chunks = (t, n = 3900) => { const out = []; t = String(t || ""); while (t.length > n) { let i = t.lastIndexOf("\n", n); if (i < n / 2) i = n; out.push(t.slice(0, i)); t = t.slice(i); } if (t.trim()) out.push(t); return out; };
 
-export function createTelegram({ token, kv, chat, shopping, log = console, fetchImpl = fetch }) {
+// transcribe(buffer, mime) -> text; speak(text) -> { mp3: Buffer } or null. Both optional.
+export function createTelegram({ token, kv, chat, shopping, transcribe = null, speak = null, log = console, fetchImpl = fetch }) {
   const base = `https://api.telegram.org/bot${token}`;
   let me = null, running = false, lastError = null;
 
@@ -23,6 +24,23 @@ export function createTelegram({ token, kv, chat, shopping, log = console, fetch
     let c = await kv.get("tg_link_code");
     if (!c) { c = String(randomInt(100000, 1000000)); await kv.set("tg_link_code", c); }
     return c;
+  }
+
+  // Multipart call (files): fields are strings, files are { name, data: Buffer, type }.
+  async function apiForm(method, fields, files, timeoutMs = 30_000) {
+    const fd = new FormData();
+    for (const [k, v] of Object.entries(fields)) if (v !== undefined && v !== null) fd.append(k, typeof v === "string" ? v : JSON.stringify(v));
+    for (const [k, f] of Object.entries(files)) fd.append(k, new Blob([f.data], { type: f.type }), f.name);
+    const r = await fetchImpl(`${base}/${method}`, { method: "POST", body: fd, signal: AbortSignal.timeout(timeoutMs) });
+    const j = await r.json().catch(() => ({}));
+    if (!j.ok) throw Object.assign(new Error(j.description || `Telegram ${method} failed (${r.status})`), { status: r.status });
+    return j.result;
+  }
+  async function download(fileId) {
+    const f = await api("getFile", { file_id: fileId });
+    const r = await fetchImpl(`https://api.telegram.org/file/bot${token}/${f.file_path}`, { signal: AbortSignal.timeout(30_000) });
+    if (!r.ok) throw new Error("Telegram file download failed " + r.status);
+    return Buffer.from(await r.arrayBuffer());
   }
 
   // ---- sending ----
@@ -48,20 +66,35 @@ export function createTelegram({ token, kv, chat, shopping, log = console, fetch
     return { sent };
   }
 
-  // Alerts (morning brief, watchdog, reminders…) go to the first linked chat: Nicholas.
-  async function alert(text, { title = "" } = {}) {
+  // Alerts (morning brief, watchdog, reminders, camera…) go to the first linked chat: Nicholas.
+  // A camera picture is sent as a photo with the text as its caption; a link goes on the end.
+  async function alert(text, { title = "", click = "", photo = "" } = {}) {
     const owner = (await getChats())[0];
     if (!owner || !token) return false;
-    try { await say(owner.id, (title ? `<b>${esc(title)}</b>\n` : "") + esc(text), { parse_mode: "HTML" }); return true; }
-    catch (e) { log.error?.("telegram alert", e.message); return false; }
+    const body = (title ? `<b>${esc(title)}</b>\n` : "") + esc(text) + (click ? `\n<a href="${esc(click)}">Open</a>` : "");
+    try {
+      if (photo && body.length <= 1000) { try { await api("sendPhoto", { chat_id: owner.id, photo, caption: body, parse_mode: "HTML" }); return true; } catch (e) { log.error?.("telegram photo", e.message); } }
+      await say(owner.id, body, { parse_mode: "HTML" }); return true;
+    } catch (e) { log.error?.("telegram alert", e.message); return false; }
   }
 
   // ---- receiving ----
   async function onMessage(m) {
-    const id = m.chat?.id, text = String(m.text || "").trim();
-    if (!id || !text) return;
+    const id = m.chat?.id;
+    let text = String(m.text || "").trim();
+    const voiceIn = m.voice || m.audio || null;
+    if (!id || (!text && !voiceIn)) return;
     const chats = await getChats();
     const linked = chats.find((c) => c.id === id);
+    if (voiceIn && linked) {
+      if (!transcribe) return say(id, "I can't listen to voice notes yet; type it for me.");
+      try {
+        api("sendChatAction", { chat_id: id, action: "typing" }).catch(() => {});
+        text = String(await transcribe(await download(voiceIn.file_id), voiceIn.mime_type || "audio/ogg") || "").trim();
+      } catch (e) { log.error?.("telegram transcribe", e.message); return say(id, "I couldn't make out that voice note. Try again, or type it."); }
+      if (!text) return say(id, "I couldn't hear anything in that voice note.");
+    }
+    if (!text) return;
     if (!linked) {
       if (text.replace(/\D/g, "") === (await linkCode())) {
         const name = [m.from?.first_name, m.from?.last_name].filter(Boolean).join(" ") || m.chat.username || "someone";
@@ -77,7 +110,15 @@ export function createTelegram({ token, kv, chat, shopping, log = console, fetch
     let reply;
     try { reply = (await chat({ session: "tg-" + id, text })).reply; }
     catch (e) { reply = "Sorry, that didn't work: " + String(e.message).slice(0, 150); }
-    await say(id, reply || "Done.");
+    reply = reply || "Done.";
+    // A voice note gets a voice note back (with the words as the caption), when a voice is available.
+    if (voiceIn && speak) {
+      try {
+        const v = await speak(reply);
+        if (v?.mp3) { await apiForm("sendVoice", { chat_id: String(id), caption: `🎙 ${text}\n\n${reply}`.slice(0, 1024) }, { voice: { name: "bernard.mp3", data: v.mp3, type: "audio/mpeg" } }); return; }
+      } catch (e) { log.error?.("telegram voice reply", e.message); }
+    }
+    await say(id, (voiceIn ? `🎙 ${text}\n\n` : "") + reply);
   }
 
   async function onButton(q) {
@@ -118,6 +159,7 @@ export function createTelegram({ token, kv, chat, shopping, log = console, fetch
   return {
     configured: Boolean(token),
     alert, sendList,
+    stop() { running = false; },
     async start() {
       if (!token || running) return;
       try { me = await api("getMe"); await api("deleteWebhook", {}).catch(() => {}); }

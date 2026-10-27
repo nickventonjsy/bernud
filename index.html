@@ -482,9 +482,12 @@
     <p><b style="color:var(--text)">Voice engine.</b> Free mode costs nothing: this device listens and speaks, and Bernard thinks on your server using Google's free Gemini allowance. ElevenLabs gives Bernard's real voice and natural back-and-forth, but uses credits. Photos always use ElevenLabs.</p>
     <label for="engineSelect">Engine</label>
     <select id="engineSelect" style="width:100%;padding:10px;background:transparent;color:var(--text);border:1px solid var(--line, #5a1a1f);border-radius:8px">
-      <option value="free">Free (£0): device voice + Gemini</option>
+      <option value="auto">Auto: Bernard's real voice, switching to free mode when credits run low</option>
       <option value="elevenlabs">ElevenLabs: Bernard's real voice (uses credits)</option>
+      <option value="free">Free (£0): device voice + Gemini</option>
     </select>
+    <div id="saveAtRow" style="margin-top:8px"><label for="saveAtInput">Switch to free mode below this many credits</label>
+      <div style="display:flex;gap:10px"><input id="saveAtInput" type="number" min="0" step="1000" style="flex:1" placeholder="15000"><button class="btn" type="button" id="saveAtBtn">Save</button></div></div>
     <div id="voiceRow">
       <label for="voiceSelect">Bernard's voice in free mode</label>
       <div style="display:flex;gap:10px"><select id="voiceSelect" style="flex:1;min-width:0;padding:10px;background:transparent;color:var(--text);border:1px solid var(--line, #5a1a1f);border-radius:8px"></select><button class="btn" type="button" id="voiceTest">Test</button></div>
@@ -509,7 +512,7 @@
     <div class="note" id="workNote"></div>
     <hr style="border:0;border-top:1px solid var(--line, #5a1a1f);margin:16px 0">
     <p><b style="color:var(--text)">Telegram.</b> Text Bernard from anywhere and get the shopping list with tick-off buttons. His alerts come here too. To link a chat: open Bernard's bot in Telegram, then send it the code below. Michelle can link her own chat the same way.</p>
-    <div class="btnrow"><button class="btn" type="button" id="tgBtn">Show Telegram status</button></div>
+    <div class="btnrow"><button class="btn" type="button" id="tgBtn">Show Telegram status</button><button class="btn" type="button" id="weeklyBtn">Send me this week's summary</button></div>
     <div class="note" id="tgNote"></div>
     <div id="tgLinked"></div>
     <hr style="border:0;border-top:1px solid var(--line, #5a1a1f);margin:16px 0">
@@ -538,7 +541,7 @@
 
   // ---- Version numbers (bottom of the screen) ----
   // DASH_VERSION goes up by one with every dashboard change (a git hook bumps it automatically).
-  const DASH_VERSION = 10;
+  const DASH_VERSION = 11;
   (async () => {
     const set = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
     set("dashVer", DASH_VERSION);
@@ -1616,8 +1619,18 @@
   // =====================================================================
   const ENGINE_KEY = "bernud.engine", VOICE_KEY = "bernud.voice";
   // One-off switch to ElevenLabs (Nicholas's choice, 27 Oct); he can still change it in Settings.
-  if (store.get("bernud.engineSwitch") !== "1") { store.set(ENGINE_KEY, "elevenlabs"); store.set("bernud.engineSwitch", "1"); }
-  const useFree = () => (store.get(ENGINE_KEY) || "free") === "free";
+  if (store.get("bernud.engineSwitch") !== "2") { store.set(ENGINE_KEY, "auto"); store.set("bernud.engineSwitch", "2"); }
+  // Credit-saving mode: in "auto", Bernard uses ElevenLabs until the server says credits are below the threshold.
+  let creditInfo = null, creditAt = 0;
+  async function refreshCredits() {
+    const pass = store.get("bernud.dashKey"); if (!pass || Date.now() - creditAt < 5 * 60_000) return creditInfo;
+    creditAt = Date.now();
+    try { creditInfo = await (await fetch(`${SERVER}/elevenlabs/credits`, { headers: { "x-dashboard-key": pass } })).json(); } catch {}
+    return creditInfo;
+  }
+  refreshCredits(); setInterval(refreshCredits, 10 * 60_000);
+  const engine = () => store.get(ENGINE_KEY) || "auto";
+  const useFree = () => engine() === "free" || (engine() === "auto" && Boolean(creditInfo && creditInfo.ok && creditInfo.saving));
   let freeActive = false, freeSession = "", freeRec = null, freeLast = "";
   const freeCb = {};
   const BYE_RE = /^(?:ok(?:ay)?[ ,]*)?(?:bye|goodbye|good night|goodnight|that'?s all|that is all|that'?s it|nothing|no(?:pe)?(?:,? thanks?| thank you)?|thanks?(?: you)?(?: bernard| bernie| bernud)?|cheers|stop|cancel|never ?mind)[.!, ]*$/i;
@@ -1998,7 +2011,7 @@
     const n = store.get(STORE.ppnName); $("ppnStatus").textContent = n ? "Saved: " + n : "";
     const s = store.get(STORE.sens) || "0.6"; $("sensInput").value = s; $("sensVal").textContent = s;
     $("settingsErr").textContent = ""; pendingPpn = null;
-    $("engineSelect").value = useFree() ? "free" : "elevenlabs";
+    $("engineSelect").value = engine();
     loadVoices();
     $("diag").textContent = `Speech recognition: ${SpeechRec ? "supported" : "not supported"} · On-device: ${useLocalSpeech ? "yes" : "no"} · Picovoice: ${hasPico() ? "set up" : "not set up"}`;
   }
@@ -2071,14 +2084,18 @@
     renderVoices();
   }
   if (window.speechSynthesis) speechSynthesis.onvoiceschanged = () => { if ($("drawer").classList.contains("open") && !APP) loadVoices(); };
-  $("engineSelect").addEventListener("change", (e) => store.set(ENGINE_KEY, e.target.value));
+  $("engineSelect").addEventListener("change", (e) => { store.set(ENGINE_KEY, e.target.value); $("saveAtRow").style.display = e.target.value === "auto" ? "" : "none"; });
+  $("saveAtBtn").addEventListener("click", async () => {
+    const pass = store.get("bernud.dashKey"); if (!pass) return;
+    try { creditInfo = await (await fetch(`${SERVER}/elevenlabs/credits`, { method: "POST", headers: { "content-type": "application/json", "x-dashboard-key": pass }, body: JSON.stringify({ threshold: Number($("saveAtInput").value) }) })).json(); creditAt = Date.now(); showCredits(); } catch {}
+  });
   // ElevenLabs credits left, shown under the voice engine choice.
   async function showCredits() {
-    const pass = store.get("bernud.dashKey"); if (!pass) return;
-    try {
-      const c = await (await fetch(`${SERVER}/elevenlabs/credits`, { headers: { "x-dashboard-key": pass } })).json();
-      $("creditsNote").textContent = c.ok ? `ElevenLabs credits left: ${c.left.toLocaleString("en-GB")} (about ${c.minutes_left} minutes of talking)${c.resets ? ", renews " + new Date(c.resets).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : ""}.` : "";
-    } catch {}
+    $("saveAtRow").style.display = engine() === "auto" ? "" : "none";
+    creditAt = 0; const c = await refreshCredits();
+    if (!c) return;
+    if (c.threshold && !$("saveAtInput").value) $("saveAtInput").value = c.threshold;
+    $("creditsNote").textContent = c.ok ? `ElevenLabs credits left: ${c.left.toLocaleString("en-GB")} (about ${c.minutes_left} minutes of talking)${c.resets ? ", renews " + new Date(c.resets).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : ""}.${engine() === "auto" ? (c.saving ? " Below your limit, so Bernard is in free mode to save them." : ` Above your limit of ${Number(c.threshold).toLocaleString("en-GB")}, so Bernard uses his real voice.`) : ""}` : "";
   }
   $("settingsBtn").addEventListener("click", showCredits);
   $("voiceSelect").addEventListener("change", saveVoice);
@@ -2123,6 +2140,12 @@
     } catch { $("tgNote").textContent = "Couldn't reach Bernard's server."; }
   }
   $("tgBtn").addEventListener("click", tgStatus);
+  $("weeklyBtn").addEventListener("click", async () => {
+    const pass = store.get("bernud.dashKey"); if (!pass) { $("tgNote").textContent = "Enter your passcode in the CCP brief first."; return; }
+    $("tgNote").textContent = "Putting the week together…";
+    try { const j = await (await fetch(`${SERVER}/weekly/run`, { method: "POST", headers: { "x-dashboard-key": pass } })).json(); $("tgNote").textContent = j.ok ? "Sent. It normally arrives every Sunday at 7pm." : "Couldn't send it: " + j.error; }
+    catch { $("tgNote").textContent = "Couldn't reach Bernard's server."; }
+  });
 
   // ---- Work laptop set-up line (behind the dashboard passcode) ----
   $("workSetupBtn").addEventListener("click", async () => {

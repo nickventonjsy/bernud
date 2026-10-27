@@ -30,4 +30,18 @@ updates.push({ update_id: 5, callback_query: { id: "q2", data: "got:milk", messa
 assert.ok(calls.some((c) => c.method === "answerCallbackQuery" && c.body.text === "Not linked."));
 assert.equal(await tg.alert("Brief ready", { title: "CCP" }), true);
 assert.equal(sent().at(-1).chat_id, 7);
+// Voice note in -> transcribed, answered, voice note back with caption.
+const fetchFiles = async (url, o) => { if (url.includes("/file/bot")) return { ok: true, arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer }; return fetchImpl(url, { body: o.body instanceof FormData ? JSON.stringify({ chat_id: o.body.get("chat_id"), caption: o.body.get("caption"), hasVoice: !!o.body.get("voice") }) : o.body }); };
+const tg2 = createTelegram({ token: "x", kv, shopping, chat: async ({ text }) => ({ reply: "Lamp on, Nicholas." }), fetchImpl: fetchFiles, log: {},
+  transcribe: async (buf, mime) => { assert.equal(buf.length, 3); assert.equal(mime, "audio/ogg"); return "turn the lamp on"; }, speak: async (t) => ({ mp3: Buffer.from("mp3") }) });
+tg.stop(); await wait(); calls.length = 0; await tg2.start();
+updates.push({ update_id: 10, message: { chat: { id: 7 }, voice: { file_id: "f1", mime_type: "audio/ogg" } } }); await wait();
+const sv = calls.find((c) => c.method === "sendVoice"); assert.ok(sv, "sendVoice called"); assert.match(sv.body.caption, /turn the lamp on[\s\S]*Lamp on, Nicholas/); assert.equal(sv.body.hasVoice, true);
+// No voice available -> text with the transcript
+const tg3 = createTelegram({ token: "x", kv, shopping, chat: async () => ({ reply: "Done." }), fetchImpl: fetchFiles, log: {}, transcribe: async () => "hello", speak: async () => null });
+tg2.stop(); await wait(); calls.length = 0; await tg3.start(); updates.push({ update_id: 11, message: { chat: { id: 7 }, voice: { file_id: "f2" } } }); await wait();
+assert.match(sent().at(-1).text, /🎙 hello/);
+// Alert with photo + link
+calls.length = 0; await tg3.alert("Someone at the door", { title: "Person: Living Room", click: "https://bernud.onrender.com/camera.html", photo: "https://x/p.jpg" });
+const ph = calls.find((c) => c.method === "sendPhoto"); assert.ok(ph); assert.match(ph.body.caption, /Person: Living Room[\s\S]*Open/);
 console.log("telegram tests passed"); process.exit(0);

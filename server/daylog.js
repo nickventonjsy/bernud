@@ -18,12 +18,35 @@ export function createDayLog({ kv, now = () => new Date(), max = 300 } = {}) {
   let cache = null, saving = Promise.resolve();
   const load = async () => { if (cache) return cache; try { cache = JSON.parse((await kv.get("daylog")) || "[]"); } catch { cache = []; } return cache; };
 
+  // Per-day counts kept for 10 days, for the weekly summary: { "2026-10-27": { asked: 12, tool: { lights: 3 }, alert: { Reminder: 2 } } }
+  let weekCache = null;
+  const loadWeek = async () => { if (weekCache) return weekCache; try { weekCache = JSON.parse((await kv.get("weeklog")) || "{}"); } catch { weekCache = {}; } return weekCache; };
+
   async function add(kind, text) {
     if (!text) return;
     const list = await load();
     const t = now(), cut = t.getTime() - 2 * 864e5;
     cache = [...list.filter((e) => e.t > cut), { t: t.getTime(), k: kind, x: String(text).replace(/\s+/g, " ").slice(0, 120) }].slice(-max);
     saving = saving.then(() => kv.set("daylog", JSON.stringify(cache))).catch(() => {});
+    const w = await loadWeek(), day = londonDay(t), d = (w[day] ||= { asked: 0, tool: {}, alert: {} });
+    if (kind === "asked") d.asked++;
+    else if (kind === "tool" || kind === "alert") { const key = String(text).slice(0, 60); d[kind][key] = (d[kind][key] || 0) + 1; }
+    for (const k of Object.keys(w)) if (Date.parse(k) < t.getTime() - 10 * 864e5) delete w[k];
+    saving = saving.then(() => kv.set("weeklog", JSON.stringify(w))).catch(() => {});
+  }
+
+  // The last seven days added up: { days: 7, asked, tools: [[label, n]…] (most used first), alerts: [[title, n]…] }
+  async function week() {
+    const w = await loadWeek(), t = now().getTime();
+    const out = { days: 0, asked: 0, tools: {}, alerts: {} };
+    for (const [day, d] of Object.entries(w)) {
+      if (Date.parse(day) < t - 7 * 864e5 || Date.parse(day) > t) continue;
+      out.days++; out.asked += d.asked || 0;
+      for (const [k, n] of Object.entries(d.tool || {})) out.tools[k] = (out.tools[k] || 0) + n;
+      for (const [k, n] of Object.entries(d.alert || {})) out.alerts[k] = (out.alerts[k] || 0) + n;
+    }
+    const sorted = (o) => Object.entries(o).sort((a, b) => b[1] - a[1]);
+    return { days: out.days, asked: out.asked, tools: sorted(out.tools), alerts: sorted(out.alerts) };
   }
 
   // Today's entries as short lines: "09:14 asked: turn the lights on", plus a count of tools used.
@@ -36,5 +59,5 @@ export function createDayLog({ kv, now = () => new Date(), max = 300 } = {}) {
     return { asked: asked.slice(-40), used };
   }
 
-  return { add, today, routeLabel };
+  return { add, today, week, routeLabel };
 }
