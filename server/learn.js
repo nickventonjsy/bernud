@@ -5,6 +5,7 @@ const SYSTEM = `You read one exchange between Nicholas and his assistant Bernard
 Keep ONLY durable facts, preferences and corrections about Nicholas, his home, his family and friends, his work or his habits. Examples worth keeping: "Nicholas doesn't eat mushrooms", "The lounge lamp is the Govee one, not the SmartThings one", "Michelle's birthday is 14 March", "Nicholas prefers the brief read in under a minute", "Nicholas's mum is called Pat".
 Never keep: one-off requests or commands ("turn the lights on"), anything about today only, questions, things Bernard said, passwords, codes, card or account numbers, addresses, health details unless he states them as a lasting preference ("I'm allergic to nuts" is fine), or anything already in the "known" list (or a trivial rewording of it).
 A correction ("no, …", "actually …", "it's … not …") is the most valuable kind: keep it as the corrected fact.
+Never turn a one-off instruction about the app, the dashboard or this conversation into a preference ("don't read the list back", "turn it down", "open it in Notes"): those are requests for the moment, not facts about Nicholas. Only keep a preference he states as lasting ("I always want…", "I never…").
 Write each item as one short plain sentence in the third person starting with the subject (Nicholas, Michelle, The lounge lamp…). At most 3 items; usually none.
 Reply with JSON only: {"learn": ["…"]} or {"learn": []}.`;
 
