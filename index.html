@@ -508,7 +508,7 @@
         <div class="voice-state"><span class="dot red" id="micDot"></span><span id="micState">Microphone ready</span></div>
         <div class="voice-row">
           <button class="sq" type="button" id="wakeBtn" title="Start listening for &quot;Hey Bernard&quot;" aria-label="Start listening for Hey Bernard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></button>
-          <span>"Hey Bernard" standby</span>
+          <span id="wakeLabel">"Hey Bernard" standby: off</span>
           <span style="flex:1"></span>
           <button class="sq" type="button" id="hangBtn" title="Hang up" aria-label="Hang up"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 10c4-3 12-3 16 0l-2 3c-1-.6-2.3-1-3.5-1.2V15H9.5v-3.2c-1.2.2-2.5.6-3.5 1.2z"/></svg></button>
           <span>Hang up</span>
@@ -698,7 +698,7 @@
 
   // ---- Version numbers (bottom of the screen) ----
   // DASH_VERSION goes up by one with every dashboard change (a git hook bumps it automatically).
-  const DASH_VERSION = 18;
+  const DASH_VERSION = 19;
   (async () => {
     const set = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
     set("dashVer", DASH_VERSION);
@@ -808,6 +808,8 @@
     $("micDot").className = "dot " + (m === "idle" ? "red" : m === "standby" ? "amber" : "");
     $("wakeBtn").style.borderColor = armed ? "var(--red)" : "";
     $("wakeBtn").style.boxShadow = armed ? "0 0 14px rgba(255,30,30,.5)" : "";
+    $("wakeLabel").textContent = `"Hey Bernard" standby: ${armed ? "on" : "off"} (tap to turn ${armed ? "off" : "on"})`;
+    $("wakeBtn").title = armed ? "Stop listening for \"Hey Bernard\"" : "Start listening for \"Hey Bernard\"";
   }
 
   // =====================================================================
