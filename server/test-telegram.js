@@ -46,7 +46,7 @@ assert.match(sent().at(-1).text, /Shopping list \(2\)/); assert.equal(sent().at(
 updates.push({ update_id: 15, callback_query: { id: "q3", data: "clear?", message: { chat: { id: 9 }, message_id: 9 } } }); await wait();
 assert.ok(calls.some((c) => c.method === "answerCallbackQuery" && /Only Nicholas/.test(c.body.text)));
 updates.push({ update_id: 16, message: { chat: { id: 9 }, voice: { file_id: "v" } } }); await wait();
-assert.match(sent().at(-1).text, /Text only/);
+assert.match(sent().at(-1).text, /Text or a receipt photo/);
 // Alerts still go to Nicholas only.
 await tg.alert("Reminder", { title: "R" }); assert.equal(sent().at(-1).chat_id, 7);
 // Voice note in -> transcribed, answered, voice note back with caption.

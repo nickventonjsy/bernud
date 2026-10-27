@@ -85,7 +85,7 @@ export function createTelegram({ token, kv, chat, shopping, transcribe = null, s
   // A shopping-only chat (Michelle): add, remove, show. Nothing else, and no way into the rest of Bernard.
   async function onGuestMessage(id, text, name) {
     const t = text.trim();
-    if (/^\/(start|help)\b/i.test(t)) return say(id, `Hello ${name}. I keep the shopping list here. Text me things to add ("milk, bread and bin bags"), "remove bread", or /list to see it with tick-off buttons.`);
+    if (/^\/(start|help)\b/i.test(t)) return say(id, `Hello ${name}. I keep the shopping list here. Text me things to add ("milk, bread and bin bags"), "remove bread", or /list to see it with tick-off buttons. Send me a photo of a shop receipt and I'll file it.`);
     if (/^\/list\b|^(?:show|send|what'?s on)(?: me)?(?: the)? (?:shopping )?list\??$|^(?:shopping )?list\??$/i.test(t)) return sendList(id);
     let m;
     if ((m = t.match(/^(?:remove|take off|delete|got|we have|cross off)\s*:?\s*(.+)$/i))) {
@@ -109,18 +109,16 @@ export function createTelegram({ token, kv, chat, shopping, transcribe = null, s
     const chats = await getChats();
     const linked = chats.find((c) => c.id === id);
     const guest = linked && roleOf(linked) === "shopping";
-    if (guest) {
-      if (voiceIn || photoIn) return say(id, "Text only in this chat, I'm afraid: items to add, \"remove …\", or /list.");
-      return onGuestMessage(id, text, linked.name.split(" ")[0]);
-    }
-    // A photo from Nicholas is a receipt to file (the caption is a note), unless the caption says otherwise.
+    if (guest && voiceIn) return say(id, "Text or a receipt photo in this chat, please: items to add, \"remove …\", /list, or a photo of a receipt.");
+    if (guest && !photoIn) return onGuestMessage(id, text, linked.name.split(" ")[0]);
+    // A photo from Nicholas or Michelle is a receipt to file (the caption is a note), unless the caption says otherwise.
     if (photoIn && linked) {
       const cap = String(m.caption || "").trim();
       if (!photo) return say(id, "I can't do anything with photos here yet.");
       if (/\b(not a receipt|ignore|just a photo)\b/i.test(cap)) return say(id, "Noted, not a receipt.");
       api("sendChatAction", { chat_id: id, action: "typing" }).catch(() => {});
       try {
-        const r = await photo({ data: await download(photoIn.file_id), mime: photoIn.mime_type || "image/jpeg", note: cap });
+        const r = await photo({ data: await download(photoIn.file_id), mime: photoIn.mime_type || "image/jpeg", note: cap, by: guest ? linked.name.split(" ")[0] : "" });
         return say(id, (r.ok ? "🧾 " : "") + (r.message || (r.ok ? "Saved." : "That didn't work.")));
       } catch (e) { log.error?.("telegram photo in", e.message); return say(id, "I couldn't read that photo: " + String(e.message).slice(0, 120)); }
     }
@@ -144,7 +142,7 @@ export function createTelegram({ token, kv, chat, shopping, transcribe = null, s
       if (digits && digits === (await guestCode())) {
         chats.push({ id, name, role: "shopping", at: new Date().toISOString() }); await setChats(chats);
         await kv.set("tg_guest_code", "");
-        return say(id, `Linked, ${m.from?.first_name || "there"}. This chat is for the shopping list: text me things to add ("milk, bread and bin bags"), "remove bread", or /list to see it with tick-off buttons.`);
+        return say(id, `Linked, ${m.from?.first_name || "there"}. This chat is for the shopping list: text me things to add ("milk, bread and bin bags"), "remove bread", or /list to see it with tick-off buttons. You can also send me a photo of a shop receipt and I'll file it.`);
       }
       return say(id, "Hello. I'm Bernard, a private assistant. This chat isn't linked: send the 6-digit code from Bernard's dashboard settings.");
     }

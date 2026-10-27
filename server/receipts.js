@@ -47,7 +47,7 @@ export function createReceipts({ kv, vision, drive = null, now = () => new Date(
   const save = (l) => kv.set("receipts", JSON.stringify(l.slice(-max)));
 
   // Read a photo, file it, keep the figures. via: "phone" | "telegram" | "dashboard".
-  async function ingest({ data, mime = "image/jpeg", note = "", via = "" }) {
+  async function ingest({ data, mime = "image/jpeg", note = "", via = "", by = "" }) {
     const buf = Buffer.isBuffer(data) ? data : Buffer.from(String(data), "base64");
     if (buf.length > 12 * 1024 * 1024) return { ok: false, message: "That photo is too big. Try a smaller one." };
     const raw = await vision({ system: SYSTEM, text: "Read this receipt." + (note ? ` Nicholas added: "${String(note).slice(0, 200)}"` : ""), image: { mime, data: buf.toString("base64") } });
@@ -55,7 +55,7 @@ export function createReceipts({ kv, vision, drive = null, now = () => new Date(
     if (!r) return { ok: false, message: "I couldn't make out a receipt in that photo. Try again with the whole receipt flat and in good light." };
     if (!r.is_receipt) return { ok: false, not_receipt: true, message: `That doesn't look like a receipt${r.notes ? ` (${r.notes})` : ""}. Nothing saved.` };
     const t = now();
-    const rec = { id: t.getTime().toString(36), created: t.toISOString(), day: r.date || londonDay(t), shop: r.shop, total: r.total, currency: r.currency, items: r.items, payment: r.payment, confidence: r.confidence, notes: r.notes, via, photo: null };
+    const rec = { id: t.getTime().toString(36), created: t.toISOString(), day: r.date || londonDay(t), shop: r.shop, total: r.total, currency: r.currency, items: r.items, payment: r.payment, confidence: r.confidence, notes: r.notes, via, by: String(by || "").slice(0, 30), photo: null };
     // The photo goes to Drive when the personal account allows it; the figures are kept regardless.
     let drive_error = null;
     if (drive) {
@@ -134,7 +134,7 @@ export function createReceipts({ kv, vision, drive = null, now = () => new Date(
   // For the dashboard panel.
   async function dash() {
     const cur = await summary(), prev = await summary({ month: monthFor("last month", now()) });
-    const recent = (await load()).slice(-8).reverse().map((r) => ({ id: r.id, day: r.day, shop: r.shop, total: r.total, items: r.items.length, photo: r.photo }));
+    const recent = (await load()).slice(-8).reverse().map((r) => ({ id: r.id, day: r.day, shop: r.shop, total: r.total, items: r.items.length, photo: r.photo, by: r.by || "" }));
     return { month: cur, previous: prev, recent };
   }
   // One receipt in full, for the dashboard's receipt window.

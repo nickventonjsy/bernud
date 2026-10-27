@@ -736,7 +736,7 @@
 
   // ---- Version numbers (bottom of the screen) ----
   // DASH_VERSION goes up by one with every dashboard change (a git hook bumps it automatically).
-  const DASH_VERSION = 26;
+  const DASH_VERSION = 27;
   (async () => {
     const set = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
     set("dashVer", DASH_VERSION);
@@ -2403,7 +2403,7 @@
     $("spendPrev").textContent = sp.previous.receipts ? gbp(sp.previous.total) : "—"; $("spendPrevLbl").textContent = sp.previous.month_name;
     $("spendTag").textContent = sp.month.receipts && sp.previous.receipts ? (sp.month.total > sp.previous.total ? "Up on last month" : "Below last month") : "";
     $("spendShops").textContent = sp.month.shops.slice(0, 4).map((b) => `${b.shop} ${gbp(b.total)}`).join(" · ");
-    $("spendList").innerHTML = sp.recent.length ? sp.recent.map((r) => `<div class="rcpt" data-rid="${esc(r.id)}" role="button" tabindex="0" title="Show the items"><div>${esc(r.shop)}<small>${esc(r.day)}${r.items ? ` · ${r.items} items` : ""}</small></div><div>${gbp(r.total)} <span class="chev">›</span></div></div>`).join("") : `<div class="empty">No receipts yet. Snap one here or send the photo to Bernard on Telegram.</div>`;
+    $("spendList").innerHTML = sp.recent.length ? sp.recent.map((r) => `<div class="rcpt" data-rid="${esc(r.id)}" role="button" tabindex="0" title="Show the items"><div>${esc(r.shop)}<small>${esc(r.day)}${r.items ? ` · ${r.items} items` : ""}${r.by ? ` · ${esc(r.by)}` : ""}</small></div><div>${gbp(r.total)} <span class="chev">›</span></div></div>`).join("") : `<div class="empty">No receipts yet. Snap one here or send the photo to Bernard on Telegram.</div>`;
     $("spendList").querySelectorAll("[data-rid]").forEach((el) => { el.addEventListener("click", () => openReceipt(el.dataset.rid)); el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openReceipt(el.dataset.rid); } }); });
   }
   // Tap a receipt: every line Bernard read from it, in a window.
@@ -2416,7 +2416,7 @@
       if (!j.ok) { $("receiptHead").textContent = "Couldn't load that receipt."; return; }
       const r = j.receipt;
       $("receiptTitle").textContent = r.shop;
-      $("receiptHead").textContent = `${new Intl.DateTimeFormat("en-GB", { timeZone: TZ, weekday: "long", day: "numeric", month: "long" }).format(new Date(r.day + "T12:00:00Z"))}${r.time ? " · " + r.time : ""}${r.payment ? " · " + r.payment : ""} · ${r.items.length} item${r.items.length === 1 ? "" : "s"} read`;
+      $("receiptHead").textContent = `${new Intl.DateTimeFormat("en-GB", { timeZone: TZ, weekday: "long", day: "numeric", month: "long" }).format(new Date(r.day + "T12:00:00Z"))}${r.time ? " · " + r.time : ""}${r.payment ? " · " + r.payment : ""}${r.by ? " · sent by " + r.by : ""} · ${r.items.length} item${r.items.length === 1 ? "" : "s"} read`;
       const sum = r.items.reduce((s, i) => s + (Number(i.price) || 0), 0);
       $("receiptItems").innerHTML = (r.items.length ? r.items.map((i) => `<div class="li"><span>${esc(i.qty > 1 ? i.qty + " × " : "")}${esc(i.name)}</span><span>${i.price != null ? gbp(i.price) : ""}</span></div>`).join("") : `<div class="empty">No item lines could be read from the photo.</div>`)
         + `<div class="li total"><span>Total paid</span><span>${gbp(r.total)}</span></div>`;
