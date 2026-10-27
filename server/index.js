@@ -773,6 +773,13 @@ export async function handle(req, res) {
     if (req.method === "POST") { const b = await readJson(req); const a = googleAccounts[b.account]; if (a && a.configured()) out.link = a.connectLink(); }
     return send(res, 200, out, req);
   }
+  // What Bernard knows, as real numbers for the dashboard's boot line (never hard-coded).
+  if (path === "/status/counts" && req.method === "GET") {
+    if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
+    const rows = await db.all().catch(() => []);
+    let docs = null; try { docs = (await ccp.store.allDocs()).length; } catch { try { const st = ccp.indexState(); if (Number.isFinite(st.files)) docs = st.files; } catch {} }
+    return send(res, 200, { memories: rows.filter((r) => r.category !== "learned").length, learned: rows.filter((r) => r.category === "learned").length, ccp_documents: docs, tools: (await brain.status()).tools ?? null }, req);
+  }
   if (path === "/memory/learned" && (req.method === "GET" || req.method === "POST")) {
     if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
     if (req.method === "POST") { const b = await readJson(req); if (b.forget) await db.remove(String(b.forget)); else if (b.add) await learner.save(b.add, { source: "dashboard" }); scheduleAgentPromptSync(); }

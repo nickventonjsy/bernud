@@ -344,7 +344,7 @@
       <span class="verb r" style="top:29%;right:1%">Adapt</span>
       <span class="verb r" style="top:39%;right:0%">Assist</span>
     </div>
-    <div class="tagline" id="tagline">At your service.</div>
+    <div class="tagline" id="tagline">Hello, sir.</div>
     <div class="subline" id="subline" aria-live="polite">Tap the core or the microphone to talk.</div>
     <button class="tlog-btn" type="button" id="tlogBtn" aria-expanded="false" title="Show the last few exchanges">transcript</button>
     <div class="tlog" id="tlog" hidden></div>
@@ -425,6 +425,7 @@
   </div>
 
   <footer>
+    <span id="knows"></span>
     <span id="versions">Dashboard v<span id="dashVer"></span><span id="appVer"></span><span id="srvVer"></span></span>
     <span>Privacy &nbsp;|&nbsp; Cloud first &nbsp;&nbsp;|&nbsp;&nbsp; A more capable tomorrow</span>
   </footer>
@@ -562,9 +563,22 @@
   const AGENT_ID = "agent_0501m5q6cc15eqcrnamk2e1w84xc";
   const SERVER = "https://bernud-server.onrender.com";
 
+  // ---- Boot line: what Bernard actually knows right now, from the server, never hard-coded ----
+  (async () => {
+    const pass = store.get("bernud.dashKey"); const el = document.getElementById("knows");
+    if (!pass || !el) return;
+    try {
+      const c = await (await fetch(`${SERVER}/status/counts`, { headers: { "x-dashboard-key": pass }, cache: "no-store" })).json();
+      const parts = [];
+      if (Number.isFinite(c.ccp_documents)) parts.push(`${c.ccp_documents} CCP documents`);
+      parts.push(`${c.memories} memories`, `${c.learned} learnt`);
+      if (Number.isFinite(c.tools)) parts.push(`${c.tools} tools`);
+      el.textContent = "Knows: " + parts.join(" · ");
+    } catch { el.textContent = ""; }
+  })();
   // ---- Version numbers (bottom of the screen) ----
   // DASH_VERSION goes up by one with every dashboard change (a git hook bumps it automatically).
-  const DASH_VERSION = 15;
+  const DASH_VERSION = 16;
   (async () => {
     const set = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
     set("dashVer", DASH_VERSION);
@@ -644,7 +658,7 @@
   function setMode(m, sub) {
     mode = m;
     const tag = {
-      idle: "At your service.",
+      idle: "Hello, sir.",
       standby: "Standing by.",
       connecting: "Connecting…",
       listening: "Listening…",
