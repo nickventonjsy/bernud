@@ -1161,7 +1161,7 @@ export async function handle(req, res) {
       if (!PHONE_TOPIC || !PHONE_SECRET) return send(res, 200, { ok: false, error: "not_connected", message: "Phone control isn't set up yet." });
       let arg = [body.target, body.value].filter((x) => x !== undefined && x !== null && String(x) !== "").join(" ");
       try {
-        if (action === "wa_message") arg = devices.waMessageArg(body.target, body.value);
+        if (action === "wa_message" || action === "wa_send") arg = devices.waMessageArg(body.target, body.value);
         if (action === "wa_call" || action === "wa_video") { arg = devices.cleanContactName(body.target); if (!arg) throw new Error("Who should I call?"); }
       } catch (e) { return send(res, 200, { ok: false, error: "bad_request", message: e.message }); }
       let cmd = action, cmdArg = arg;

@@ -62,7 +62,8 @@ class PhoneCommands(private val ctx: Context) {
                 "brightness" -> { brightness(arg.trim()); "Brightness set." }
                 "wa_call" -> waCall(arg.trim(), video = false)
                 "wa_video" -> waCall(arg.trim(), video = true)
-                "wa_message" -> waMessage(arg)
+                "wa_message" -> waMessage(arg, send = false)
+                "wa_send" -> waMessage(arg, send = true)
                 "firetv" -> FireTv.run(ctx, arg)
                 "note" -> openNote(arg)
                 "come_back" -> { start(Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)); "Bernard is back on screen." }
@@ -225,14 +226,23 @@ class PhoneCommands(private val ctx: Context) {
         return "Starting the WhatsApp ${if (video) "video" else "voice"} call to $name in two seconds. Our conversation ends now so the call gets the microphone: just say a very short goodbye like 'Calling $name now.'"
     }
 
-    private fun waMessage(arg: String): String {
+    private fun waMessage(arg: String, send: Boolean): String {
         val parts = arg.split("::", limit = 2)
         val name = parts[0].trim()
         val text = parts.getOrElse(1) { "" }   // already URL-encoded by the server
         val jid = contactRow("vnd.android.cursor.item/vnd.com.whatsapp.profile", name, ContactsContract.Data.DATA1)
             ?: throw Fail("I couldn't find $name in the phone's contacts with WhatsApp. Check how the contact is saved.")
         val number = jid.substringBefore("@").filter { it.isDigit() }
+        if (send) {
+            if (!SendHelper.enabled(ctx)) throw Fail("I can open the message but not press send yet: turn on 'Bernard: send WhatsApp messages' under Settings, Accessibility, Installed apps on the phone.")
+            SendHelper.arm()
+        }
         start(Intent(Intent.ACTION_VIEW, Uri.parse("https://wa.me/$number?text=$text")).setPackage("com.whatsapp"))
-        return "WhatsApp chat with $name opened with the message typed in. He needs to tap send."
+        if (!send) return "WhatsApp chat with $name opened with the message typed in. He needs to tap send."
+        // Give WhatsApp a moment to open and the helper to press Send, then report what actually happened.
+        val deadline = System.currentTimeMillis() + 10_000
+        while (!SendHelper.sent && System.currentTimeMillis() < deadline) Thread.sleep(200)
+        SendHelper.disarm()
+        return if (SendHelper.sent) "Sent to $name on WhatsApp." else "WhatsApp opened with the message typed, but the send button wasn't pressed in time. He can tap send himself."
     }
 }

@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="send_helper_desc">Lets Bernard press Send in WhatsApp after you have told him "yes, send it". It only watches WhatsApp, and only for a few seconds after a message you approved.</string>
+</resources>

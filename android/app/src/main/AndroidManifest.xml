@@ -60,6 +60,18 @@
 
         <receiver android:name=".ChatReceiver" android:exported="false" />
 
+        <!-- Presses Send in WhatsApp after Nicholas says "yes, send it" (you turn it on in Settings > Accessibility). -->
+        <service
+            android:name=".SendHelper"
+            android:exported="true"
+            android:label="Bernard: send WhatsApp messages"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data android:name="android.accessibilityservice" android:resource="@xml/send_helper" />
+        </service>
+
         <!-- Android Auto: Bernard's conversation shows on the car screen and is read aloud. -->
         <meta-data android:name="com.google.android.gms.car.application" android:resource="@xml/automotive_app_desc" />
 
