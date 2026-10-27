@@ -78,5 +78,7 @@ export default defineAgent({
 // Only when run directly (not when a test imports it).
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   // No warm spare job process: memory is shared with the main server on Render. A job starts on demand (~1s).
-  cli.runApp(new WorkerOptions({ agent: fileURLToPath(import.meta.url), numIdleProcesses: 0, production: true, port: Number(process.env.LIVEKIT_HEALTH_PORT || 0) || undefined }));
+  // loadThreshold Infinity: on Render's shared CPUs the machine load reads ~100% all the time, which would make the
+  // worker mark itself unavailable and never take a call. It's one person; always take the job.
+  cli.runApp(new WorkerOptions({ agent: fileURLToPath(import.meta.url), numIdleProcesses: 0, production: true, loadThreshold: Infinity, loadFunc: async () => 0, port: Number(process.env.LIVEKIT_HEALTH_PORT || 0) || undefined }));
 }
