@@ -3,7 +3,7 @@
 import { randomUUID } from "node:crypto";
 
 const TZ = "Europe/London";
-const REPEATS = ["none", "daily", "weekdays", "weekly", "monthly"];
+const REPEATS = ["none", "daily", "weekdays", "weekly", "monthly", "yearly"];
 
 function parts(d) {
   const p = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", weekday: "short", hour12: false }).formatToParts(d).map((x) => [x.type, x.value]));
@@ -36,9 +36,10 @@ export function nextRepeat(due, repeat, from = new Date()) {
   let y = p.y, mo = p.mo, d = p.d;
   for (let i = 0; i < 400; i++) {
     if (repeat === "monthly") { mo++; if (mo > 12) { mo = 1; y++; } }
+    else if (repeat === "yearly") y++;
     else { const n = new Date(Date.UTC(y, mo - 1, d + (repeat === "weekly" ? 7 : 1))); y = n.getUTCFullYear(); mo = n.getUTCMonth() + 1; d = n.getUTCDate(); }
     const lastDay = new Date(Date.UTC(y, mo, 0)).getUTCDate();
-    const cand = at(y, mo, repeat === "monthly" ? Math.min(p.d, lastDay) : d);
+    const cand = at(y, mo, repeat === "monthly" || repeat === "yearly" ? Math.min(p.d, lastDay) : d);   // 29 Feb falls back to the 28th
     const wd = parts(cand).wd;
     if (repeat === "weekdays" && (wd === 0 || wd === 6)) continue;
     if (cand > from) return cand;

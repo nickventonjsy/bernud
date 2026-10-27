@@ -10,6 +10,8 @@ assert.equal(nextRepeat(fri, "daily", fri).toISOString(), "2026-10-24T08:00:00.0
 assert.equal(nextRepeat(fri, "weekdays", fri).toISOString(), "2026-10-26T09:00:00.000Z"); // Monday 09:00 GMT
 assert.equal(nextRepeat(fri, "weekly", fri).toISOString(), "2026-10-30T09:00:00.000Z");
 assert.equal(nextRepeat(londonToDate("2026-01-31T10:00"), "monthly", londonToDate("2026-01-31T10:00")).toISOString(), "2026-02-28T10:00:00.000Z");
+assert.equal(nextRepeat(londonToDate("2026-10-27T09:00"), "yearly", londonToDate("2026-10-27T09:00")).toISOString(), "2027-10-27T08:00:00.000Z");   // same wall-clock time next year (BST in 2027, GMT in 2026)
+assert.equal(nextRepeat(londonToDate("2028-02-29T09:00"), "yearly", londonToDate("2028-02-29T09:00")).toISOString(), "2029-02-28T09:00:00.000Z");   // leap day -> 28 Feb
 // store
 const m = new Map(); const kv = { async get(k) { return m.get(k) ?? null; }, async set(k, v) { m.set(k, v); } };
 const notes = []; let clock = new Date("2026-10-24T15:00:00Z"); let price = 52000;
