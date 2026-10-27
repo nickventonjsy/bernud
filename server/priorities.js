@@ -7,6 +7,29 @@ const DAY = 864e5;
 const norm = (s) => String(s).toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
 const same = (a, b) => { const x = norm(a), y = norm(b); return x === y || (x.length > 12 && y.includes(x)) || (y.length > 12 && x.includes(y)); };
 
+// The "Top three priorities" from a written brief, as three short titles. Sub-lines (why it matters, next action,
+// source, owner, deadline) are dropped; bold or the first clause of each bullet is the title.
+const SKIP = /^(why( it matters)?|next( concrete)? action|action|source|sources|owner|deadline|due|recommended|note|context)\b/i;
+const plain = (t) => String(t).replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").replace(/[*_`]/g, "").replace(/\s+/g, " ").trim();
+export function briefPriorities(md) {
+  const m = String(md || "").match(/^#{1,4}\s*(?:\d+\.\s*)?top three priorities[^\n]*\n([\s\S]*?)(?=^#{1,4}\s|(?![\s\S]))/mi);
+  if (!m) return [];
+  const out = [];
+  for (const raw of m[1].split("\n")) {
+    if (!raw.trim()) continue;
+    if (/^\s{2,}|^\t/.test(raw) && !/^\s*\d+[.)]/.test(raw)) continue;              // indented sub-bullet
+    let t = raw.replace(/^\s*(?:[-•]|\*(?!\*))?\s*/, "").replace(/^\d+[.)]\s*/, "").trim();   // bullet marker, but not a ** bold ** opener
+    if (!t) continue;
+    const bold = t.match(/^\*\*([^*]+)\*\*/);
+    t = bold ? bold[1] : plain(t).split(/(?<=[.:;])\s|\s[-–—]\s/)[0];
+    t = plain(t).replace(/[.:;,]+$/, "").trim();
+    if (!t || t.length < 4 || SKIP.test(t) || /^(the sources|these are|based on)/i.test(t)) continue;
+    out.push(t.slice(0, 90));
+    if (out.length === 3) break;
+  }
+  return out;
+}
+
 export function createPriorities({ kv, now = () => new Date() }) {
   const load = async () => { try { return JSON.parse((await kv.get("priorities")) || "{}"); } catch { return {}; } };
   const save = (s) => kv.set("priorities", JSON.stringify(s));
@@ -15,9 +38,12 @@ export function createPriorities({ kv, now = () => new Date() }) {
   function merge(state, brief) {
     const t = now().getTime();
     let items = (state.items || []).filter((i) => i.src !== "voice" || t - Date.parse(i.added) < 3 * DAY);
-    if (brief && brief.from && brief.from !== state.brief_from) {
+    // A newer brief, or the same brief read differently (a better parser), replaces the brief items; ticks carry over by text.
+    const have = items.filter((i) => i.src === "brief").map((i) => i.text).sort().join("|"), want = [...(brief?.items || [])].sort().join("|");
+    if (brief && brief.from && (brief.from !== state.brief_from || have !== want)) {
+      const old = items.filter((i) => i.src === "brief");
       items = items.filter((i) => i.src !== "brief");
-      for (const text of brief.items || []) if (!items.some((i) => same(i.text, text))) items.push({ text, src: "brief", done: false, added: new Date(t).toISOString() });
+      for (const text of brief.items || []) if (!items.some((i) => same(i.text, text))) items.push({ text, src: "brief", done: Boolean(old.find((o) => same(o.text, text))?.done), added: new Date(t).toISOString() });
       state.brief_from = brief.from;
     }
     state.items = items;

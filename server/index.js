@@ -248,7 +248,7 @@ async function dayVerdict({ done = [] } = {}) {
   return String(out).replace(/^["'“]+|["'”]+$/g, "").replace(/\s+/g, " ").trim().slice(0, 280) || null;
 }
 // ---------------- Shopping list, wake-up, Fire TV, watchdog ----------------
-const { createPriorities } = await import("./priorities.js");
+const { createPriorities, briefPriorities: briefTop3 } = await import("./priorities.js");
 export const priorities = createPriorities({ kv: db.kv });
 const { createRequests } = await import("./requests.js");
 export const claudeRequests = createRequests({ kv: db.kv });
@@ -667,7 +667,7 @@ export async function handle(req, res) {
   if (req.method === "OPTIONS") {
     const origin = req.headers.origin;
     const ok = origin && (PUBLIC_ORIGINS.has(origin) || /^http:\/\/localhost(:\d+)?$/.test(origin));
-    res.writeHead(204, ok ? { "access-control-allow-origin": origin, "access-control-allow-headers": "x-dashboard-key, content-type", "access-control-allow-methods": "GET, POST", "access-control-max-age": "600", vary: "origin" } : {});
+    res.writeHead(204, ok ? { "access-control-allow-origin": origin, "access-control-allow-headers": "x-dashboard-key, x-bernud-via, content-type", "access-control-allow-methods": "GET, POST", "access-control-max-age": "600", vary: "origin" } : {});
     return res.end();
   }
 
@@ -782,12 +782,8 @@ export async function handle(req, res) {
   }
   // The top three from the latest CCP brief, for the priorities list.
   async function briefPriorities() {
-    try {
-      const b = await ccp.latestBrief();
-      const sec = b?.text ? (b.text.match(/top three priorities[\s\S]*?(?=\n#{1,3}\s|\n\s*\*\*?\s*3\.|\n3\. )/i) || [])[0] || "" : "";
-      const lines = sec.split("\n").map((l) => l.replace(/^[\s\-*•\d.)]+/, "").replace(/\*\*/g, "").trim()).filter((l) => l && !/^top three priorities/i.test(l));
-      return { from: b?.created_at || null, items: lines.slice(0, 3).map((l) => l.split(/(?<=[.:])\s/)[0].slice(0, 90)) };
-    } catch { return { from: null, items: [] }; }
+    try { const b = await ccp.latestBrief(); return { from: b?.created_at || null, items: b?.text ? briefTop3(b.text) : [] }; }
+    catch { return { from: null, items: [] }; }
   }
   // Tick, untick, add or remove a priority from the dashboard.
   if (path === "/dash/priorities" && req.method === "POST") {

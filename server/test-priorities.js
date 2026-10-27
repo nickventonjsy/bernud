@@ -32,3 +32,12 @@ r = await p.handle({ action: "list", brief: brief2 }); assert.equal(r.items.some
 r = await p.handle({ action: "clear" }); assert.equal(r.count, 0);
 r = await p.handle({ action: "list" }); assert.match(r.message, /No priorities/);
 console.log("priorities ok");
+
+// Pulling the top three out of a written brief, including the awkward multi-line style.
+const { briefPriorities } = await import("./priorities.js");
+const md1 = `## 1. Today at a glance\n- x\n\n## 2. Top three priorities\n- **Process Falles Remittance:** *Why it matters:* money.\n  *Next concrete action:* Open and review the email from Falles Accident Repair Ctr.\n  *Source:* [cdk-print@falles.je: Remittance](https://x)\n- **Chase the K8 quotation.** It was modified.\n- **Reply to Sherwin** about the order ([Sherwin: Order](https://y)).\n\n## 3. What changed\n- stuff`;
+assert.deepEqual(briefPriorities(md1), ["Process Falles Remittance", "Chase the K8 quotation", "Reply to Sherwin"]);
+const md2 = `## 2. Top three priorities\nThe sources don't establish priorities, so these are **Recommended**:\n1. Process Falles Remittance:\n*Next concrete action:* Open the email.\n*Source:* [cdk-print@falles.je: x](https://x)\n2. Check the K8 quotation. Modified yesterday.\n3. Classify the inbox folder\n## 3. What changed`;
+assert.deepEqual(briefPriorities(md2), ["Process Falles Remittance", "Check the K8 quotation", "Classify the inbox folder"]);
+assert.deepEqual(briefPriorities("no section"), []);
+console.log("brief priorities ok");

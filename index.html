@@ -153,7 +153,8 @@
   .rcpt { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 6px 0; border-bottom: 1px solid rgba(255, 45, 45, 0.10); font-size: 13.5px; } .rcpt small { color: var(--muted); margin-left: 6px; font-size: 12px; } .rcpt a { color: var(--muted); text-decoration: none; }
   .pri.sel { background: rgba(255, 45, 45, 0.08); margin: 0 -8px; padding-left: 8px; padding-right: 8px; border-radius: 8px; }
   .pri.selmode { cursor: pointer; } .pri.selmode .box { border-radius: 50%; }
-  .pri-add { display: flex; gap: 8px; margin-top: 10px; }
+  .pri-add { display: flex; gap: 8px; margin-top: 10px; } .pri-add[hidden] { display: none; }
+  .pri-note { font-size: 12px; color: var(--muted); margin-top: 6px; } .pri-note.bad { color: var(--red); }
   .pri-add input { flex: 1; min-width: 0; background: rgba(255,255,255,0.03); border: 1px solid var(--line); border-radius: 10px; color: var(--text); font: inherit; font-size: 13.5px; padding: 8px 10px; }
   .pri-add input:focus { outline: none; border-color: var(--line-strong); }
   .pri-add button { background: none; border: 1px solid var(--line-strong); color: var(--text); border-radius: 10px; width: 36px; cursor: pointer; font-size: 18px; line-height: 1; }
@@ -407,6 +408,7 @@
     <div class="panel" id="priPanel" aria-label="Priorities">
       <div class="p-head"><div class="p-title">Priorities</div><div class="p-tag"><span id="priTag"></span> <button type="button" id="priSelect" title="Select priorities to delete">Select</button></div></div>
       <div id="priList"><div class="empty">From this morning's CCP brief.</div></div>
+      <div class="pri-note" id="priNote" hidden></div>
       <div class="pri-add" id="priSelBar" hidden><button type="button" id="priDelSel" style="width:auto;padding:0 14px;font-size:13.5px;color:var(--red);border-color:var(--red)">Delete selected</button><button type="button" id="priSelAll" style="width:auto;padding:0 14px;font-size:13.5px">All</button><button type="button" id="priSelDone" style="width:auto;padding:0 14px;font-size:13.5px" title="Remove everything already ticked">Clear done</button></div>
       <form class="pri-add" id="priAdd"><input id="priInput" type="text" placeholder="Add a priority…" autocomplete="off" maxlength="90"><button type="submit" title="Add" aria-label="Add priority">+</button></form>
     </div>
@@ -722,7 +724,7 @@
 
   // ---- Version numbers (bottom of the screen) ----
   // DASH_VERSION goes up by one with every dashboard change (a git hook bumps it automatically).
-  const DASH_VERSION = 23;
+  const DASH_VERSION = 24;
   (async () => {
     const set = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
     set("dashVer", DASH_VERSION);
@@ -2445,9 +2447,20 @@
   $("priSelAll").addEventListener("click", () => { if (priSel.size === priItems.length) priSel.clear(); else priItems.forEach((i) => priSel.add(i.text)); renderPriorities(); });
   $("priDelSel").addEventListener("click", async () => { const picked = [...priSel]; if (!picked.length) return; priSelMode = false; priSel.clear(); await priAction("remove", picked); });
   $("priSelDone").addEventListener("click", async () => { const done = priItems.filter((i) => i.done).map((i) => i.text); if (!done.length) return; priSelMode = false; priSel.clear(); await priAction("remove", done); });
+  // Every tap says what happened, so a failure is visible rather than silent.
+  function priNote(msg, bad = false) { const n = $("priNote"); n.hidden = !msg; n.textContent = msg || ""; n.classList.toggle("bad", bad); if (msg && !bad) setTimeout(() => { if (n.textContent === msg) n.hidden = true; }, 2500); }
   async function priAction(action, text) {
-    const pass = store.get("bernud.dashKey"); if (!pass || !text) return;
-    try { const j = await (await fetch(`${SERVER}/dash/priorities`, { method: "POST", headers: { "content-type": "application/json", "x-dashboard-key": pass }, body: JSON.stringify({ action, items: Array.isArray(text) ? text : [text] }) })).json(); if (j.ok) await loadDash(); } catch {}
+    const pass = store.get("bernud.dashKey");
+    if (!pass) return priNote("Enter your passcode first (CCP brief button).", true);
+    if (!text || (Array.isArray(text) && !text.length)) return;
+    priNote({ done: "Ticking…", undone: "Unticking…", remove: "Removing…", add: "Adding…" }[action] || "Saving…");
+    try {
+      const r = await fetch(`${SERVER}/dash/priorities`, { method: "POST", headers: { "content-type": "application/json", "x-dashboard-key": pass }, body: JSON.stringify({ action, items: Array.isArray(text) ? text : [text] }), signal: AbortSignal.timeout(12000) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.ok) return priNote(`Didn't save (${r.status}${j.error ? ": " + j.error : j.message ? ": " + j.message : ""}).`, true);
+      if (j.not_found?.length) priNote("Couldn't find: " + j.not_found.join(", "), true); else priNote("Saved.");
+      await loadDash();
+    } catch (e) { priNote("Didn't reach the server: " + String(e.name === "TimeoutError" ? "timed out" : e.message || e).slice(0, 80), true); }
   }
   $("priAdd").addEventListener("submit", (e) => { e.preventDefault(); const t = $("priInput").value.trim(); if (t) { priAction("add", t); $("priInput").value = ""; } });
   async function loadDash() {
