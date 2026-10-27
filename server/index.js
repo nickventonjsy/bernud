@@ -390,6 +390,12 @@ export const watchdog = createWatchdog({ kv: db.kv, notify, checks: [
     if (!c.ok) return { ok: true };   // can't check (e.g. key without account access): don't nag
     return c.left >= CREDIT_WARN ? { ok: true } : { ok: false, detail: `only ${c.left.toLocaleString("en-GB")} left (about ${c.minutes_left} minutes of talking)${c.resets ? ", renews " + new Date(c.resets).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : ""}. Free mode still works.` };
   } },
+  // LiveKit mode's worker on its own service (bernud-voice): its health page says whether it's registered with LiveKit.
+  ...(livekit.configured && !livekit.status().inline ? [{ name: "LiveKit voice worker", run: async () => {
+    const u = process.env.LIVEKIT_WORKER_URL || "https://bernud-voice.onrender.com/";
+    try { const r = await fetch(u, { signal: AbortSignal.timeout(8000) }); return r.ok ? { ok: true } : { ok: false, detail: `bernud-voice says ${r.status}: ${(await r.text()).slice(0, 80)}` }; }
+    catch (e) { return { ok: false, detail: "bernud-voice isn't answering (" + String(e.message).slice(0, 60) + ")" }; }
+  } }] : []),
   ...(livekit.configured && livekit.status().inline ? [{ name: "LiveKit voice worker", run: async () => { const s = livekit.status(); return s.running ? { ok: true } : { ok: false, detail: s.last_exit ? `stopped (exit ${s.last_exit.code ?? s.last_exit.signal}); restarting` : "not running" }; } }] : []),
   ...(telegram.configured ? [{ name: "Telegram", run: async () => { const s = await telegram.status(); return s.running && !s.error ? { ok: true } : { ok: false, detail: s.error || "not running" }; } }] : []),
   { name: "Home PC", alert: false, run: async () => ({ ok: pc.online(), detail: pc.online() ? "" : "off or asleep" }) },
