@@ -147,6 +147,11 @@
   .pri .box svg { width: 14px; height: 14px; display: none; } .pri .box.on svg { display: block; }
   .pri .t { font-size: 15px; } .pri.done .t { color: var(--muted); text-decoration: line-through; }
   .pri .when { font-size: 12px; color: var(--muted); }
+  .pri-add { display: flex; gap: 8px; margin-top: 10px; }
+  .pri-add input { flex: 1; min-width: 0; background: rgba(255,255,255,0.03); border: 1px solid var(--line); border-radius: 10px; color: var(--text); font: inherit; font-size: 13.5px; padding: 8px 10px; }
+  .pri-add input:focus { outline: none; border-color: var(--line-strong); }
+  .pri-add button { background: none; border: 1px solid var(--line-strong); color: var(--text); border-radius: 10px; width: 36px; cursor: pointer; font-size: 18px; line-height: 1; }
+  .act .src { font-family: var(--mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 6px; margin-left: 6px; vertical-align: 1px; }
 
   /* Connected apps + system status rows */
   .row { display: grid; grid-template-columns: 40px 1fr auto 16px; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px solid rgba(255, 45, 45, 0.10); }
@@ -396,6 +401,7 @@
     <div class="panel" id="priPanel" aria-label="Priorities">
       <div class="p-head"><div class="p-title">Priorities</div><div class="p-tag" id="priTag"></div></div>
       <div id="priList"><div class="empty">From this morning's CCP brief.</div></div>
+      <form class="pri-add" id="priAdd"><input id="priInput" type="text" placeholder="Add a priority…" autocomplete="off" maxlength="90"><button type="submit" title="Add" aria-label="Add priority">+</button></form>
     </div>
 
     <div class="panel" id="appsPanel" aria-label="Connected apps">
@@ -692,7 +698,7 @@
 
   // ---- Version numbers (bottom of the screen) ----
   // DASH_VERSION goes up by one with every dashboard change (a git hook bumps it automatically).
-  const DASH_VERSION = 17;
+  const DASH_VERSION = 18;
   (async () => {
     const set = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
     set("dashVer", DASH_VERSION);
@@ -2057,7 +2063,7 @@
 
   async function freeStart(firstText) {
     if (freeActive) { if (firstText) freeTurn(firstText); return; }
-    freeActive = true; busy = true; freeLast = ""; freeSession = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    freeActive = true; busy = true; freeLast = ""; freeSession = (window.BernudApp ? "app-" : "dash-") + Math.random().toString(36).slice(2) + Date.now().toString(36);
     appCall("freeStarted");
     await stopWakeWord();
     try {
@@ -2278,14 +2284,14 @@
       $("todayList").innerHTML = ev.length ? ev.map((e) => `<div class="ev"><span class="dot red"></span><time>${e.all_day ? "All day" : fmtTime(e.start)}</time><div><div class="t">${esc(e.title)}</div><div class="s">${esc([e.account === "personal" ? "Personal" : "Cory Car Paints", e.location, !e.all_day && e.end ? Math.round((new Date(e.end) - new Date(e.start)) / 60000) + " min" : ""].filter(Boolean).join(" • "))}</div></div><span class="chev">›</span></div>`).join("")
         : `<div class="empty">${d.today.error ? "Calendar unavailable: " + esc(d.today.error) : "Nothing in the diary."}</div>`;
     }
-    // Priorities (tick state kept on this device, per brief)
+    // Priorities: the brief's top three plus anything added by voice or here; ticks are saved on the server.
     if (d.priorities) {
-      const key = "bernud.pridone." + (d.priorities.from || "none"); let done = []; try { done = JSON.parse(store.get(key) || "[]"); } catch {}
-      const items = d.priorities.items || [];
-      $("priTag").textContent = items.length ? `${done.filter((i) => i < items.length).length} of ${items.length}` : "";
-      $("priList").innerHTML = items.length ? items.map((t, i) => `<div class="pri ${done.includes(i) ? "done" : ""}"><button class="box ${done.includes(i) ? "on" : ""}" type="button" data-i="${i}" aria-label="Done"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5 9-10"/></svg></button><div class="t">${esc(t)}</div><span class="when">Today</span><span class="chev">›</span></div>`).join("")
-        : `<div class="empty">No brief yet today. Ask for "my CCP brief" and the top three land here.</div>`;
-      $("priList").querySelectorAll(".box").forEach((b) => b.addEventListener("click", () => { const i = Number(b.dataset.i); const idx = done.indexOf(i); if (idx >= 0) done.splice(idx, 1); else done.push(i); store.set(key, JSON.stringify(done)); renderDash(d); }));
+      const items = d.priorities.items || [], open = items.filter((i) => !i.done).length;
+      $("priTag").textContent = items.length ? `${items.length - open} of ${items.length}` : "";
+      $("priList").innerHTML = items.length ? items.map((i) => `<div class="pri ${i.done ? "done" : ""}"><button class="box ${i.done ? "on" : ""}" type="button" data-t="${esc(i.text)}" data-d="${i.done ? 1 : 0}" aria-label="Done"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5 9-10"/></svg></button><div class="t">${esc(i.text)}</div><span class="when">${i.src === "brief" ? "Brief" : "Added"}</span><button class="chev" type="button" data-rm="${esc(i.text)}" title="Remove" aria-label="Remove" style="background:none;border:0;color:var(--muted);cursor:pointer;font-size:16px;padding:0">×</button></div>`).join("")
+        : `<div class="empty">Nothing yet. Add one below, or tell Bernard: "add ring the accountant to my priorities".</div>`;
+      $("priList").querySelectorAll(".box").forEach((b) => b.addEventListener("click", () => priAction(b.dataset.d === "1" ? "undone" : "done", b.dataset.t)));
+      $("priList").querySelectorAll("[data-rm]").forEach((b) => b.addEventListener("click", () => priAction("remove", b.dataset.rm)));
     }
     // Connected apps
     const apps = [];
@@ -2313,8 +2319,9 @@
     // Recent activity
     if (d.activity) {
       const ic = { asked: icon('<path d="M4 5h16v11H8l-4 4z"/>'), tool: icon('<path d="M14 4l6 6-9 9H5v-6z"/>'), alert: icon('<path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 21h4"/>') };
-      const lab = { asked: "You asked", tool: "Bernard used", alert: "Alert" };
-      $("actList").innerHTML = d.activity.length ? d.activity.map((a) => `<div class="act">${ic[a.kind] || ic.tool}<div class="t"><b>${lab[a.kind] || a.kind}</b> &nbsp;${esc(a.text)}</div><time>${a.time}</time></div>`).join("") : `<div class="empty">Nothing yet today.</div>`;
+      const lab = { asked: "You asked", tool: "Bernard used", alert: "Alert", event: "Phone" };
+      const srcName = { voice: "voice", dashboard: "here", phone: "phone", telegram: "telegram" };
+      $("actList").innerHTML = d.activity.length ? d.activity.map((a) => `<div class="act">${ic[a.kind] || ic.tool}<div class="t"><b>${lab[a.kind] || a.kind}</b> &nbsp;${esc(a.text)}${a.via && srcName[a.via] ? `<span class="src">${srcName[a.via]}</span>` : ""}</div><time>${a.time}</time></div>`).join("") : `<div class="empty">Nothing yet today.</div>`;
       const recentAlert = d.activity.find((a) => a.kind === "alert" && Date.now() - a.t < 2 * 3600e3);
       $("bellBadge").classList.toggle("on", Boolean(recentAlert));
     }
@@ -2333,6 +2340,11 @@
       $("voicePillText").textContent = eng === "free" || (eng === "auto" && d.credits.saving) ? "Free mode" : "Voice ready";
     }
   }
+  async function priAction(action, text) {
+    const pass = store.get("bernud.dashKey"); if (!pass || !text) return;
+    try { const j = await (await fetch(`${SERVER}/dash/priorities`, { method: "POST", headers: { "content-type": "application/json", "x-dashboard-key": pass }, body: JSON.stringify({ action, items: [text] }) })).json(); if (j.ok) loadDash(); } catch {}
+  }
+  $("priAdd").addEventListener("submit", (e) => { e.preventDefault(); const t = $("priInput").value.trim(); if (t) { priAction("add", t); $("priInput").value = ""; } });
   async function loadDash() {
     const pass = store.get("bernud.dashKey"); if (!pass) return;
     try { const j = await (await fetch(`${SERVER}/dash${dashDay ? "?day=" + dashDay : ""}`, { headers: { "x-dashboard-key": pass }, cache: "no-store" })).json(); if (!j.error) renderDash(j); } catch {}

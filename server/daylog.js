@@ -10,7 +10,7 @@ const ROUTES = [
   [/^\/calendar/, "calendar"], [/^\/gmail/, "email"], [/^\/ccp\/document/, "printing"], [/^\/ccp\/brief/, "morning brief"],
   [/^\/ccp/, "CCP documents"], [/^\/web/, "web search"], [/^\/device\/pc|^\/pc/, "PC"], [/^\/device\/phone|^\/phone/, "phone"],
   [/^\/camera/, "cameras"], [/^\/memory/, "memory"], [/^\/notify/, "sent to phone"], [/^\/routine\/goodnight/, null],
-  [/^\/youtube/, "YouTube"], [/^\/orders|^\/reorder/, "order list"], [/^\/home/, "home"], [/^\/shopping/, "shopping list"], [/^\/wakeup/, "wake-up"], [/^\/firetv/, "Fire TV"], [/^\/system/, null],
+  [/^\/priorities/, "priorities"], [/^\/youtube/, "YouTube"], [/^\/orders|^\/reorder/, "order list"], [/^\/home/, "home"], [/^\/shopping/, "shopping list"], [/^\/wakeup/, "wake-up"], [/^\/firetv/, "Fire TV"], [/^\/system/, null],
 ];
 export const routeLabel = (path) => { const r = ROUTES.find(([re]) => re.test(path)); return r ? r[1] : undefined; };
 
@@ -22,11 +22,12 @@ export function createDayLog({ kv, now = () => new Date(), max = 300 } = {}) {
   let weekCache = null;
   const loadWeek = async () => { if (weekCache) return weekCache; try { weekCache = JSON.parse((await kv.get("weeklog")) || "{}"); } catch { weekCache = {}; } return weekCache; };
 
-  async function add(kind, text) {
+  // via: where it came from (voice, dashboard, phone, telegram) for the activity feed.
+  async function add(kind, text, via = "") {
     if (!text) return;
     const list = await load();
     const t = now(), cut = t.getTime() - 2 * 864e5;
-    cache = [...list.filter((e) => e.t > cut), { t: t.getTime(), k: kind, x: String(text).replace(/\s+/g, " ").slice(0, 120) }].slice(-max);
+    cache = [...list.filter((e) => e.t > cut), { t: t.getTime(), k: kind, x: String(text).replace(/\s+/g, " ").slice(0, 120), ...(via ? { v: via } : {}) }].slice(-max);
     saving = saving.then(() => kv.set("daylog", JSON.stringify(cache))).catch(() => {});
     const w = await loadWeek(), day = londonDay(t), d = (w[day] ||= { asked: 0, tool: {}, alert: {} });
     if (kind === "asked") d.asked++;
@@ -62,7 +63,7 @@ export function createDayLog({ kv, now = () => new Date(), max = 300 } = {}) {
   // The last few things that happened, newest first, for the dashboard's activity feed.
   async function recent(n = 10) {
     const list = await load();
-    return list.slice(-n).reverse().map((e) => ({ t: e.t, time: londonTime(new Date(e.t)), kind: e.k, text: e.x }));
+    return list.slice(-n).reverse().map((e) => ({ t: e.t, time: londonTime(new Date(e.t)), kind: e.k, text: e.x, via: e.v || "" }));
   }
   return { add, today, week, recent, routeLabel };
 }

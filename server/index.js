@@ -248,6 +248,8 @@ async function dayVerdict({ done = [] } = {}) {
   return String(out).replace(/^["'“]+|["'”]+$/g, "").replace(/\s+/g, " ").trim().slice(0, 280) || null;
 }
 // ---------------- Shopping list, wake-up, Fire TV, watchdog ----------------
+const { createPriorities } = await import("./priorities.js");
+export const priorities = createPriorities({ kv: db.kv });
 const { createShopping } = await import("./shopping.js");
 export const shopping = createShopping({ kv: db.kv, notify, telegram: () => telegram,
   openNote: async (text) => {
@@ -773,6 +775,23 @@ export async function handle(req, res) {
     if (req.method === "POST") { const b = await readJson(req); const a = googleAccounts[b.account]; if (a && a.configured()) out.link = a.connectLink(); }
     return send(res, 200, out, req);
   }
+  // The top three from the latest CCP brief, for the priorities list.
+  async function briefPriorities() {
+    try {
+      const b = await ccp.latestBrief();
+      const sec = b?.text ? (b.text.match(/top three priorities[\s\S]*?(?=\n#{1,3}\s|\n\s*\*\*?\s*3\.|\n3\. )/i) || [])[0] || "" : "";
+      const lines = sec.split("\n").map((l) => l.replace(/^[\s\-*•\d.)]+/, "").replace(/\*\*/g, "").trim()).filter((l) => l && !/^top three priorities/i.test(l));
+      return { from: b?.created_at || null, items: lines.slice(0, 3).map((l) => l.split(/(?<=[.:])\s/)[0].slice(0, 90)) };
+    } catch { return { from: null, items: [] }; }
+  }
+  // Tick, untick, add or remove a priority from the dashboard.
+  if (path === "/dash/priorities" && req.method === "POST") {
+    if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
+    const b = await readJson(req);
+    const out = await priorities.handle({ action: b.action, items: b.items, brief: await briefPriorities() });
+    if (b.action === "add" && out.added?.length) dayLog.add("asked", "add priority: " + out.added.join(", "), "dashboard");
+    return send(res, 200, out, req);
+  }
   // Everything the dashboard panels show, in one call (dashboard passcode). Nothing here is made up:
   // calendar from Google, priorities from the latest brief, activity from the day log, status from the watchdog.
   if (path === "/dash" && req.method === "GET") {
@@ -789,13 +808,8 @@ export async function handle(req, res) {
       events.sort((x, y) => String(x.start).localeCompare(String(y.start)));
       out.today = { day, events: events.slice(0, 12), not_checked };
     } catch (e) { out.today = { day, events: [], error: e.message }; }
-    try {
-      const b = await ccp.latestBrief();
-      const sec = b?.text ? (b.text.match(/top three priorities[\s\S]*?(?=\n#{1,3}\s|\n\s*\*\*?\s*3\.|\n3\. )/i) || [])[0] || "" : "";
-      const lines = sec.split("\n").map((l) => l.replace(/^[\s\-*•\d.)]+/, "").replace(/\*\*/g, "").trim()).filter((l) => l && !/^top three priorities/i.test(l));
-      out.priorities = { from: b?.created_at || null, items: lines.slice(0, 3).map((l) => l.split(/(?<=[.:])\s/)[0].slice(0, 90)) };
-    } catch { out.priorities = { from: null, items: [] }; }
-    try { out.activity = await dayLog.recent(10); } catch { out.activity = []; }
+    try { const bp = await briefPriorities(); out.priorities = { from: bp.from, items: await priorities.list(bp) }; } catch { out.priorities = { from: null, items: [] }; }
+    try { out.activity = await dayLog.recent(12); } catch { out.activity = []; }
     try {
       const rem = await reminders.reminder({ action: "list" });
       const wk = await wakeup.handle({ action: "settings" });
@@ -952,13 +966,13 @@ export async function handle(req, res) {
   if (req.method === "POST" && path === "/home/event") {
     if (!PHONE_SECRET || req.headers["x-phone-key"] !== PHONE_SECRET) return send(res, 401, { error: "unauthorised" });
     const ev = String(url.searchParams.get("e") || "");
-    if (ev === "arrive") return send(res, 200, await home.arrive());
-    if (ev === "leave") return send(res, 200, await home.leave());
+    if (ev === "arrive") { dayLog.add("event", "Arrived home", "phone"); return send(res, 200, await home.arrive()); }
+    if (ev === "leave") { dayLog.add("event", "Left home", "phone"); return send(res, 200, await home.leave()); }
     return send(res, 400, { error: "e must be arrive or leave" });
   }
 
   if (!API_KEY || req.headers["x-bernud-key"] !== API_KEY) return send(res, 401, { error: "unauthorised" });
-  { const label = dayLog.routeLabel(path); if (label && req.method !== "OPTIONS") dayLog.add("tool", label); }
+  { const label = dayLog.routeLabel(path); if (label && req.method !== "OPTIONS") dayLog.add("tool", label, String(req.headers["x-bernud-via"] || "voice").slice(0, 12)); }
 
   try {
     if (req.method === "POST" && path === "/memory/save") {
@@ -1027,6 +1041,7 @@ export async function handle(req, res) {
       catch (e) { return send(res, 200, { ok: false, error: e.code || "error", message: String(e.message).slice(0, 300), connect_link: e.link }); }
     }
     if (path === "/shopping" && req.method === "POST") return send(res, 200, await shopping.handle(await readJson(req)));
+    if (path === "/priorities" && req.method === "POST") { const b = await readJson(req); return send(res, 200, await priorities.handle({ ...b, brief: await briefPriorities() })); }
     if (path === "/wakeup" && req.method === "POST") return send(res, 200, await wakeup.handle(await readJson(req)));
     if (path === "/firetv" && req.method === "POST") {
       try { return send(res, 200, await fireTv(await readJson(req))); }

@@ -56,6 +56,7 @@ export const GROUPS = {
   cameras: { tools: ["camera"], re: /\b(cameras?|cctv|doorbell|front door|driveway|garden|garage|imou|shop|car ?park|living room|bedroom|anyone|anybody|someone|motion|movement|alerts?|intruder|security|overnight|last night|snapshot|footage)\b/ },
   home: { tools: ["lights", "tv_control", "goodnight", "home_arrival", "youtube"], re: /\b(lights?|lamps?|bulbs?|bright|dim|colou?r|ceiling|govee|hue|tv|telly|television|netflix|youtube|video|watch|good ?night|bed|arriv|home|leave|leaving)\b/ },
   music: { tools: ["spotify_info", "spotify_control", "spotify_dj", "spotify_play_on"], re: /\b(echo|alexa|spotify|music|songs?|play|playing|playlist|tracks?|album|artist|pause|resume|skip|next|previous|shuffle|repeat|louder|quieter|volume|speaker|dj|mix|tunes|vibe|mood)\b/ },
+  priorities: { tools: ["priorities"], re: /\b(priorit(y|ies)|to-?do|todo|must do|top three|done with|tick off|ticked|finished)\b/ },
   shopping: { tools: ["shopping_list"], re: /\b(shopping|groceries|grocery|we need|run out|ran out|buy)\b/ },
   firetv: { tools: ["firetv"], re: /\b(fire ?(tv|stick)|firestick|netflix|iplayer|prime video|disney|plex|itvx)\b/ },
   wakeup: { tools: ["wakeup"], re: /\b(wake|wake-?up|alarm|morning routine)\b/ },
@@ -163,11 +164,11 @@ export function createBrain({ briefHandler = null, dayLog = null, learner = null
     return cfg;
   }
 
-  async function runTool(t, args = {}) {
+  async function runTool(t, args = {}, via = "") {
     const a = t.api_schema || {};
     let url = new URL(a.url);
     const headers = { "content-type": "application/json" };
-    if (url.hostname === "bernud-server.onrender.com") { headers["x-bernud-key"] = bernudKey; url = new URL(url.pathname + url.search, `http://127.0.0.1:${port}`); }
+    if (url.hostname === "bernud-server.onrender.com") { headers["x-bernud-key"] = bernudKey; if (via) headers["x-bernud-via"] = via; url = new URL(url.pathname + url.search, `http://127.0.0.1:${port}`); }
     else if (url.hostname.startsWith("zentrawire")) headers["x-zw-assistant"] = zwKey;
     const qProps = a.query_params_schema?.properties || {}, bProps = a.request_body_schema?.properties || {};
     const query = { ...constants(qProps) }, body = { ...constants(bProps) };
@@ -185,7 +186,7 @@ export function createBrain({ briefHandler = null, dayLog = null, learner = null
     used.push(name);
     const t = byName.get(name);
     try {
-      const out = t ? await runTool(t, args || {}) : { error: "unknown tool" };
+      const out = t ? await runTool(t, args || {}, used.via || "") : { error: "unknown tool" };
       if (out && out.show_camera) used.ui = { camera: out.show_camera }; // tells the screen to open the camera
       return out;
     } catch (e) { return { error: String(e.message || e).slice(0, 300) }; }
@@ -355,7 +356,9 @@ export function createBrain({ briefHandler = null, dayLog = null, learner = null
     if (!geminiKey && !groqKey) return { ok: false, code: "not_set_up", reply: "Free mode isn't set up yet: the Gemini API key needs adding on the server." };
     text = String(text || "").trim().slice(0, 4000);
     if (!text) return { ok: false, reply: "I didn't catch anything." };
-    if (session !== "selftest") dayLog?.add("asked", text);
+    // Where the question came from, for the activity feed: Telegram chats are tg-…, the phone app app-…, the dashboard anything else.
+    const via = session.startsWith("tg-") ? "telegram" : session.startsWith("app-") ? "phone" : "dashboard";
+    if (session !== "selftest") dayLog?.add("asked", text, via);
     // A Jersey titbit on request: from the checked list, never made up.
     if (/\b(?:jersey|the island)\b.*\b(?:fact|titbit|trivia|history)\b|\b(?:fact|titbit|trivia)\b.*\bjersey\b/i.test(text) && text.length < 90) {
       const reply = `Here's one: ${randomFact()}`;
@@ -366,7 +369,7 @@ export function createBrain({ briefHandler = null, dayLog = null, learner = null
     for (const [k, s] of sessions) if (Date.now() - s.at > SESSION_MS) sessions.delete(k);
     const s = sessions.get(session) || { turns: [], groups: [], at: 0 };
     s.at = Date.now(); sessions.set(session, s);
-    const used = [];
+    const used = []; Object.defineProperty(used, "via", { value: via });  // hidden: not part of the returned tool list
     const t0 = Date.now();
     const remember = (reply, model, groups = s.groups) => {
       s.turns = [...s.turns, { user: text, reply }].slice(-6); s.groups = groups;
