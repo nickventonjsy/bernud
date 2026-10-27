@@ -666,7 +666,9 @@
       <option value="auto">Auto: Bernard's real voice, switching to free mode when credits run low</option>
       <option value="elevenlabs">ElevenLabs: Bernard's real voice (uses credits)</option>
       <option value="free">Free (£0): device voice + Gemini</option>
+      <option value="livekit">LiveKit: Bernard's real voice through LiveKit (about half the credits; needs LiveKit set up on the server)</option>
     </select>
+    <div class="note" id="lkNote" hidden></div>
     <div id="saveAtRow" style="margin-top:8px"><label for="saveAtInput">Switch to free mode below this many credits</label>
       <div style="display:flex;gap:10px"><input id="saveAtInput" type="number" min="0" step="1000" style="flex:1" placeholder="15000"><button class="btn" type="button" id="saveAtBtn">Save</button></div></div>
     <div id="voiceRow">
@@ -737,7 +739,7 @@
 
   // ---- Version numbers (bottom of the screen) ----
   // DASH_VERSION goes up by one with every dashboard change (a git hook bumps it automatically).
-  const DASH_VERSION = 28;
+  const DASH_VERSION = 29;
   (async () => {
     const set = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
     set("dashVer", DASH_VERSION);
@@ -773,6 +775,7 @@
     const v = volume();
     try { if (conversation) conversation.setVolume({ volume: v }); } catch {}   // only ever called after these are declared
     try { if (gAudio) gAudio.volume = v; } catch {}
+    try { if (typeof lkAudio !== "undefined" && lkAudio) lkAudio.volume = v; } catch {}
     if (window.BernudApp?.setTtsVolume) try { window.BernudApp.setTtsVolume(v); } catch {}
     document.getElementById("volVal").textContent = Math.round(v * 100) + "%";
   }
@@ -1820,6 +1823,7 @@
   }
 
   async function startConversation(firstText) {
+    if (lkActive || (!busy && engine() === "livekit" && !pendingPhoto)) return lkStart(firstText);
     if (freeActive || (!busy && useFree() && !pendingPhoto)) return freeStart(firstText);
     if (busy) { if (firstText && conversation) sendText(firstText); return; }
     busy = true;
@@ -1892,6 +1896,7 @@
   }
 
   async function endConversation() {
+    if (lkActive) return lkEnd();
     if (freeActive) return freeEnd();
     if (conversation) { try { await conversation.endSession(); } catch {} }
     else onConversationEnded();
@@ -1920,6 +1925,66 @@
     if (armed) { setMode("standby", "Say \"Hey Bernard\" when you need me."); setTimeout(startWakeWord, 800); }
     else setMode("idle", "Tap the core or the microphone to talk.");
   }
+
+  // ---- LiveKit mode: Bernard's own voice through LiveKit (worker on the server), about half the ElevenLabs credits ----
+  let lkRoom = null, lkActive = false, lkAudio = null, lkSpeaking = false, lkTimer = null;
+  async function lkStart(firstText) {
+    if (lkActive) { if (firstText) lkSend(firstText); return; }
+    const pass = store.get("bernud.dashKey");
+    if (!pass) return setMode("idle", "LiveKit mode needs your passcode: enter it in the CCP brief first.");
+    lkActive = true; busy = true;
+    appCall("conversationStarted");
+    await stopWakeWord();
+    setMode("connecting", "One moment.");
+    try {
+      const j = await (await fetch(`${SERVER}/livekit/session?who=${window.BernudApp ? "phone" : "dash"}`, { headers: { "x-dashboard-key": pass }, signal: AbortSignal.timeout(10000) })).json();
+      if (!j.ok) throw Object.assign(new Error(j.message || "LiveKit isn't set up."), { code: j.code });
+      if (j.worker && !j.worker.running) $("subline").textContent = "Bernard's LiveKit worker isn't running on the server; trying anyway…";
+      const { Room, RoomEvent, Track } = await import("https://esm.sh/livekit-client@2.23.0");
+      const room = new Room({ adaptiveStream: false, dynacast: false });
+      lkRoom = room;
+      room.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
+        if (track.kind !== Track.Kind.Audio) return;
+        lkAudio = track.attach(); lkAudio.volume = volume(); lkAudio.setAttribute("playsinline", ""); document.body.appendChild(lkAudio);
+        lkAudio.play().catch(() => {});
+      });
+      room.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
+        const agentTalking = speakers.some((p) => p.identity !== room.localParticipant.identity);
+        if (agentTalking !== lkSpeaking) { lkSpeaking = agentTalking; if (busy && lkActive) setMode(agentTalking ? "speaking" : "listening"); }
+      });
+      room.on(RoomEvent.Disconnected, () => { if (lkActive) lkCleanup("Bernard hung up."); });
+      // Live captions: Bernard's words and yours arrive as text streams on the transcription topic.
+      room.registerTextStreamHandler("lk.transcription", async (reader, info) => {
+        const mine = info.identity === room.localParticipant.identity;
+        let text = ""; for await (const chunk of reader) { text += chunk; if (!mine) caption(text); }
+        text = text.trim(); if (!text) return;
+        if (mine) { captionDone(); $("subline").textContent = "You: " + (text.length > 140 ? text.slice(0, 137) + "…" : text); logLine("You", text); setEmotion("curious", 2); }
+        else { lastAgentLine = text; caption(text); captionDone(); reactTo(text); logLine("Bernard", text); }
+      });
+      await room.connect(j.url, j.token);
+      await room.localParticipant.setMicrophoneEnabled(true, store.get(STORE.mic) ? { deviceId: store.get(STORE.mic) } : undefined);
+      setMode("listening", "Go ahead. Say \"goodbye\" when you're done.");
+      if (firstText) setTimeout(() => lkSend(firstText), 600);
+    } catch (err) {
+      console.error(err);
+      const msg = String(err && (err.message || err)).slice(0, 140);
+      lkCleanup(err.code === "not_set_up" ? "LiveKit isn't set up on the server yet: add LIVEKIT_URL, LIVEKIT_API_KEY and LIVEKIT_API_SECRET in Render." : /permission|notallowed/i.test(msg) ? "Microphone blocked. Allow it for this site, then try again." : "Couldn't reach LiveKit: " + msg);
+    }
+  }
+  async function lkSend(text) {
+    if (!lkRoom) return;
+    try { await lkRoom.localParticipant.sendText(text, { topic: "lk.chat" }); $("subline").textContent = "You: " + text; logLine("You", text); } catch (e) { $("subline").textContent = "Couldn't send that: " + String(e.message || e).slice(0, 80); }
+  }
+  function lkCleanup(sub) {
+    clearTimeout(lkTimer);
+    try { lkAudio?.remove(); } catch {} lkAudio = null; lkSpeaking = false;
+    const r = lkRoom; lkRoom = null; lkActive = false;
+    try { r?.disconnect(); } catch {}
+    busy = false; appCall("conversationEnded");
+    if (armed) { setMode("standby", sub || "Say \"Hey Bernard\" when you need me."); setTimeout(startWakeWord, 800); }
+    else setMode("idle", sub || "Tap the core or the microphone to talk.");
+  }
+  async function lkEnd() { lkCleanup(); }
 
   function ask(text) { startConversation(text); }
 
@@ -2392,7 +2457,7 @@
     if (d.claude) renderClaude(d.claude);
     if (d.credits) {
       const eng = (store.get("bernud.engine") || "auto");
-      $("engineTag").textContent = eng === "free" ? "Free mode" : d.credits.ok ? `${d.credits.left.toLocaleString("en-GB")} credits` : "ElevenLabs";
+      $("engineTag").textContent = eng === "free" ? "Free mode" : eng === "livekit" ? "LiveKit" + (d.credits.ok ? ` · ${d.credits.left.toLocaleString("en-GB")} credits` : "") : d.credits.ok ? `${d.credits.left.toLocaleString("en-GB")} credits` : "ElevenLabs";
       $("voicePillText").textContent = eng === "free" || (eng === "auto" && d.credits.saving) ? "Free mode" : "Voice ready";
     }
   }
@@ -2545,7 +2610,7 @@
     const n = store.get(STORE.ppnName); $("ppnStatus").textContent = n ? "Saved: " + n : "";
     const s = store.get(STORE.sens) || "0.6"; $("sensInput").value = s; $("sensVal").textContent = s;
     $("settingsErr").textContent = ""; pendingPpn = null;
-    $("engineSelect").value = engine();
+    $("engineSelect").value = engine(); lkNote();
     loadVoices();
     $("diag").textContent = `Speech recognition: ${SpeechRec ? "supported" : "not supported"} · On-device: ${useLocalSpeech ? "yes" : "no"} · Picovoice: ${hasPico() ? "set up" : "not set up"}`;
   }
@@ -2620,7 +2685,18 @@
   if (window.speechSynthesis) speechSynthesis.onvoiceschanged = () => { if ($("drawer").classList.contains("open") && !APP) loadVoices(); };
   $("exprChk").checked = expressionsOn();
   $("exprChk").addEventListener("change", (e) => { store.set("bernud.expressions", e.target.checked ? "1" : "0"); if (!e.target.checked) { face.emo = "neutral"; } });
-  $("engineSelect").addEventListener("change", (e) => { store.set(ENGINE_KEY, e.target.value); $("saveAtRow").style.display = e.target.value === "auto" ? "" : "none"; });
+  async function lkNote() {
+    const n = $("lkNote"); n.hidden = engine() !== "livekit"; if (n.hidden) return;
+    const pass = store.get("bernud.dashKey"); if (!pass) { n.textContent = "Enter your passcode in the CCP brief first."; return; }
+    n.textContent = "Checking the LiveKit worker…";
+    try {
+      const j = await (await fetch(`${SERVER}/livekit/status`, { headers: { "x-dashboard-key": pass } })).json();
+      n.textContent = !j.configured ? "LiveKit isn't set up on the server yet. In Render, add LIVEKIT_URL, LIVEKIT_API_KEY and LIVEKIT_API_SECRET from your LiveKit Cloud project, then redeploy."
+        : j.running ? `LiveKit worker running on the server (since ${new Date(j.started_at).toLocaleTimeString("en-GB")}). Bernard speaks with his own voice; hearing is Groq Whisper; the brain is his free brain with all his tools.`
+        : `LiveKit worker isn't running${j.last_exit ? ` (last stopped ${new Date(j.last_exit.at).toLocaleTimeString("en-GB")}, exit ${j.last_exit.code ?? j.last_exit.signal})` : ""}; the server restarts it automatically.`;
+    } catch { n.textContent = "Couldn't reach Bernard's server."; }
+  }
+  $("engineSelect").addEventListener("change", (e) => { store.set(ENGINE_KEY, e.target.value); $("saveAtRow").style.display = e.target.value === "auto" ? "" : "none"; lkNote(); });
   $("saveAtBtn").addEventListener("click", async () => {
     const pass = store.get("bernud.dashKey"); if (!pass) return;
     try { creditInfo = await (await fetch(`${SERVER}/elevenlabs/credits`, { method: "POST", headers: { "content-type": "application/json", "x-dashboard-key": pass }, body: JSON.stringify({ threshold: Number($("saveAtInput").value) }) })).json(); creditAt = Date.now(); showCredits(); } catch {}

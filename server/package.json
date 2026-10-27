@@ -10,13 +10,18 @@
   },
   "scripts": {
     "start": "node index.js",
-    "test": "node test.js && node test-ccp.js && node test-devices.js && node test-http-devices.js && node test-gmail.js && node test-web.js && node test-reminders.js && node test-google.js && node test-smartthings.js && node test-youtube.js && node test-speech.js && node test-orders.js && node test-home.js && node test-govee.js && node test-ccpdelete.js && node test-routines.js && node test-brain.js && node test-geminivoice.js && node test-imou.js && node test-briefsummary.js && node test-camalerts.js && node test-extras.js && node test-home2.js && node test-telegram.js && node test-weekly.js && node test-learn.js && node test-priorities.js && node test-receipts.js && node test-requests.js"
+    "test": "node test.js && node test-ccp.js && node test-devices.js && node test-http-devices.js && node test-gmail.js && node test-web.js && node test-reminders.js && node test-google.js && node test-smartthings.js && node test-youtube.js && node test-speech.js && node test-orders.js && node test-home.js && node test-govee.js && node test-ccpdelete.js && node test-routines.js && node test-brain.js && node test-geminivoice.js && node test-imou.js && node test-briefsummary.js && node test-camalerts.js && node test-extras.js && node test-home2.js && node test-telegram.js && node test-weekly.js && node test-learn.js && node test-priorities.js && node test-receipts.js && node test-requests.js && node test-livekit.js"
   },
   "dependencies": {
     "pg": "^8.13.0",
     "pdf-parse": "^1.1.1",
     "xlsx": "^0.18.5",
     "mammoth": "^1.8.0",
-    "lamejs": "^1.2.1"
+    "lamejs": "^1.2.1",
+    "@livekit/agents": "1.9.4",
+    "@livekit/agents-plugin-elevenlabs": "1.9.4",
+    "@livekit/agents-plugin-silero": "1.9.4",
+    "@livekit/agents-plugin-openai": "1.9.4",
+    "livekit-server-sdk": "2.19.2"
   }
 }

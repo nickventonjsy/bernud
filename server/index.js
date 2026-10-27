@@ -250,6 +250,8 @@ async function dayVerdict({ done = [] } = {}) {
 // ---------------- Shopping list, wake-up, Fire TV, watchdog ----------------
 const { createPriorities, briefPriorities: briefTop3 } = await import("./priorities.js");
 export const priorities = createPriorities({ kv: db.kv });
+const { createLiveKit } = await import("./livekit.js");
+export const livekit = createLiveKit({ port: PORT, dashKey: DASHBOARD_KEY });
 const { createRequests } = await import("./requests.js");
 export const claudeRequests = createRequests({ kv: db.kv });
 const { createReceipts } = await import("./receipts.js");
@@ -388,6 +390,7 @@ export const watchdog = createWatchdog({ kv: db.kv, notify, checks: [
     if (!c.ok) return { ok: true };   // can't check (e.g. key without account access): don't nag
     return c.left >= CREDIT_WARN ? { ok: true } : { ok: false, detail: `only ${c.left.toLocaleString("en-GB")} left (about ${c.minutes_left} minutes of talking)${c.resets ? ", renews " + new Date(c.resets).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : ""}. Free mode still works.` };
   } },
+  ...(livekit.configured ? [{ name: "LiveKit voice worker", run: async () => { const s = livekit.status(); return s.running ? { ok: true } : { ok: false, detail: s.last_exit ? `stopped (exit ${s.last_exit.code ?? s.last_exit.signal}); restarting` : "not running" }; } }] : []),
   ...(telegram.configured ? [{ name: "Telegram", run: async () => { const s = await telegram.status(); return s.running && !s.error ? { ok: true } : { ok: false, detail: s.error || "not running" }; } }] : []),
   { name: "Home PC", alert: false, run: async () => ({ ok: pc.online(), detail: pc.online() ? "" : "off or asleep" }) },
   { name: "Work laptop", alert: false, run: async () => ({ ok: workPc.online(), detail: workPc.online() ? "" : "off or not signed in" }) },
@@ -760,6 +763,16 @@ export async function handle(req, res) {
     catch (e) { console.error("brain", e.message); return send(res, 200, { ok: false, code: e.code || "error", reply: ["quota", "busy", "no_config"].includes(e.code) ? e.message : "Sorry, my free brain hit a problem: " + String(e.message).slice(0, 160) }, req); }
   }
   // Gemini's natural voices for free mode: the list, and a reply turned into a WAV.
+  // LiveKit mode: a room token for this browser; Bernard's worker joins the room and talks.
+  if (path === "/livekit/session" && req.method === "GET") {
+    if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
+    try { return send(res, 200, { ...(await livekit.token({ identity: url.searchParams.get("who") === "phone" ? "nicholas-phone" : "nicholas" })), worker: livekit.status() }, req); }
+    catch (e) { return send(res, 200, { ok: false, code: e.code || "error", message: e.message }, req); }
+  }
+  if (path === "/livekit/status" && req.method === "GET") {
+    if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
+    return send(res, 200, livekit.status(), req);
+  }
   if (path === "/elevenlabs/session" && req.method === "GET") {
     if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
     try { return send(res, 200, { ok: true, ...(await elevenSession(url.searchParams.get("kind") || "both")) }, req); }
@@ -1346,7 +1359,7 @@ export async function handle(req, res) {
 
 await db.init();
 if (ccp.configured() && process.env.NODE_ENV !== "test") ccp.startBackgroundIndex();
-if (process.env.NODE_ENV !== "test") { telegram.start(); weekly.start(); }
+if (process.env.NODE_ENV !== "test") { telegram.start(); weekly.start(); if (livekit.configured) livekit.start(); else console.log("livekit: not configured (LIVEKIT_URL/API_KEY/API_SECRET), LiveKit mode off"); }
 if (process.env.NODE_ENV !== "test" && NTFY_TOPIC) { scheduler.start(); reminders.start(); orders.start(); watchdog.start(); wakeup.start(); }
 if (process.env.NODE_ENV !== "test") setTimeout(async () => { const s = await brain.status(); console.log("brain status", JSON.stringify(s)); if (s.ok && s.configured) console.log("brain selftest", JSON.stringify(await brain.selfTest()));
   if (imou.configured() && DASHBOARD_KEY) camAlerts.start();
