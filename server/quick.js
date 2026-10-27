@@ -156,6 +156,7 @@ export function matchQuick(text, lastDevice = "") {
   if (/^(?:next|skip)(?: (?:this|the))?(?: (?:song|track|one))?$|^next (?:song|track)$/.test(t)) return { tool: "spotify_control", args: { action: "next", device_id: "", uri: "", value: "" }, reply: (r) => (r.ok === false || r.error ? null : "Skipped.") };
   if (/^(?:previous|go back|last)(?: (?:song|track|one))?$|^play (?:the )?(?:previous|last) (?:song|track|one)$/.test(t)) return { tool: "spotify_control", args: { action: "previous", device_id: "", uri: "", value: "" }, reply: (r) => (r.ok === false || r.error ? null : "Going back.") };
 
+  if (/^(?:(?:ok |okay |right )?(?:go|come|get) back(?: to (?:your|the|bernard'?s?) app| to bernard| here)?|(?:bring|take me) back(?: to (?:your|the) app)?|back to (?:you|your app|bernard)|(?:open|show) (?:your|the bernard) app)[.!]*$/.test(t)) return { tool: "phone_control", args: { action: "come_back", target: "", value: "" }, reply: (r) => (r.ok === false ? null : "Back with you.") };
   if (/^(?:find|ring|where'?s|where is) my phone$/.test(t)) return { tool: "phone_control", args: { action: "ring", target: "", value: "" }, reply: (r) => (r.ok === false ? null : "Ringing your phone now.") };
   return null;
 }
