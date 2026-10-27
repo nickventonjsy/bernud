@@ -806,6 +806,13 @@ export async function handle(req, res) {
     const r = await receipts.get(String(url.searchParams.get("id") || ""));
     return send(res, r ? 200 : 404, r ? { ok: true, receipt: r } : { ok: false, error: "not found" }, req);
   }
+  if (path === "/dash/receipt" && req.method === "POST") {
+    if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
+    const b = await readJson(req);
+    if (b.action !== "delete") return send(res, 400, { ok: false, error: "unknown action" }, req);
+    const r = await receipts.remove(String(b.id || ""));
+    return send(res, 200, r ? { ok: true, removed: { shop: r.shop, total: r.total, day: r.day } } : { ok: false, error: "not found" }, req);
+  }
   // A receipt photo from the dashboard / phone app: { image: base64, mime, note }.
   if (path === "/receipts/photo" && req.method === "POST") {
     if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);

@@ -139,6 +139,7 @@ export function createReceipts({ kv, vision, drive = null, now = () => new Date(
   }
   // One receipt in full, for the dashboard's receipt window.
   async function get(id) { return (await load()).find((r) => r.id === id) || null; }
+  async function remove(id) { const list = await load(); const i = list.findIndex((r) => r.id === id); if (i < 0) return null; const [r] = list.splice(i, 1); await save(list); return r; }
 
-  return { ingest, handle, summary, usual, dash, get };
+  return { ingest, handle, summary, usual, dash, get, remove };
 }
