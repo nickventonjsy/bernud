@@ -30,6 +30,25 @@ updates.push({ update_id: 5, callback_query: { id: "q2", data: "got:milk", messa
 assert.ok(calls.some((c) => c.method === "answerCallbackQuery" && c.body.text === "Not linked."));
 assert.equal(await tg.alert("Brief ready", { title: "CCP" }), true);
 assert.equal(sent().at(-1).chat_id, 7);
+// Michelle links with the guest code: shopping list only.
+const guest = (await tg.status()).guest_code; assert.notEqual(guest, code);
+updates.push({ update_id: 10, message: { chat: { id: 9 }, from: { first_name: "Michelle" }, text: guest } }); await wait();
+assert.match(sent().at(-1).text, /Linked, Michelle.*shopping list/);
+assert.equal((await tg.status()).linked.find((c) => c.id === 9).role, "shopping");
+updates.push({ update_id: 11, message: { chat: { id: 9 }, text: "we need milk and bread please" } }); await wait();
+assert.match(sent().at(-1).text, /Added milk, bread/); assert.deepEqual((await shopping.handle({ action: "list" })).items.sort(), ["bin bags", "bread", "milk"]);
+updates.push({ update_id: 12, message: { chat: { id: 9 }, text: "remove bread" } }); await wait();
+assert.match(sent().at(-1).text, /Taken off: bread/);
+updates.push({ update_id: 13, message: { chat: { id: 9 }, text: "turn the lights off" } }); await wait();
+assert.match(sent().at(-1).text, /only do the shopping list/);
+updates.push({ update_id: 14, message: { chat: { id: 9 }, text: "/list" } }); await wait();
+assert.match(sent().at(-1).text, /Shopping list \(2\)/); assert.equal(sent().at(-1).chat_id, 9);
+updates.push({ update_id: 15, callback_query: { id: "q3", data: "clear?", message: { chat: { id: 9 }, message_id: 9 } } }); await wait();
+assert.ok(calls.some((c) => c.method === "answerCallbackQuery" && /Only Nicholas/.test(c.body.text)));
+updates.push({ update_id: 16, message: { chat: { id: 9 }, voice: { file_id: "v" } } }); await wait();
+assert.match(sent().at(-1).text, /Text only/);
+// Alerts still go to Nicholas only.
+await tg.alert("Reminder", { title: "R" }); assert.equal(sent().at(-1).chat_id, 7);
 // Voice note in -> transcribed, answered, voice note back with caption.
 const fetchFiles = async (url, o) => { if (url.includes("/file/bot")) return { ok: true, arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer }; return fetchImpl(url, { body: o.body instanceof FormData ? JSON.stringify({ chat_id: o.body.get("chat_id"), caption: o.body.get("caption"), hasVoice: !!o.body.get("voice") }) : o.body }); };
 const tg2 = createTelegram({ token: "x", kv, shopping, chat: async ({ text }) => ({ reply: "Lamp on, Nicholas." }), fetchImpl: fetchFiles, log: {},

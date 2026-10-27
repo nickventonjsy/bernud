@@ -21,11 +21,14 @@ export function createTelegram({ token, kv, chat, shopping, transcribe = null, s
   // ---- who may use him ----
   const getChats = async () => { try { return JSON.parse((await kv.get("tg_chats")) || "[]"); } catch { return []; } };
   const setChats = (c) => kv.set("tg_chats", JSON.stringify(c));
-  async function linkCode() {
-    let c = await kv.get("tg_link_code");
-    if (!c) { c = String(randomInt(100000, 1000000)); await kv.set("tg_link_code", c); }
+  async function linkCode(key = "tg_link_code") {
+    let c = await kv.get(key);
+    if (!c) { c = String(randomInt(100000, 1000000)); await kv.set(key, c); }
     return c;
   }
+  // Two codes: Nicholas's (full Bernard) and a guest code that links a chat for the shopping list only.
+  const guestCode = () => linkCode("tg_guest_code");
+  const roleOf = (c) => c.role || "owner";   // chats linked before roles existed are Nicholas's
 
   // Multipart call (files): fields are strings, files are { name, data: Buffer, type }.
   async function apiForm(method, fields, files, timeoutMs = 30_000) {
@@ -70,13 +73,30 @@ export function createTelegram({ token, kv, chat, shopping, transcribe = null, s
   // Alerts (morning brief, watchdog, reminders, camera…) go to the first linked chat: Nicholas.
   // A camera picture is sent as a photo with the text as its caption; a link goes on the end.
   async function alert(text, { title = "", click = "", photo = "" } = {}) {
-    const owner = (await getChats())[0];
+    const owner = (await getChats()).find((c) => roleOf(c) === "owner");
     if (!owner || !token) return false;
     const body = (title ? `<b>${esc(title)}</b>\n` : "") + esc(text) + (click ? `\n<a href="${esc(click)}">Open</a>` : "");
     try {
       if (photo && body.length <= 1000) { try { await api("sendPhoto", { chat_id: owner.id, photo, caption: body, parse_mode: "HTML" }); return true; } catch (e) { log.error?.("telegram photo", e.message); } }
       await say(owner.id, body, { parse_mode: "HTML" }); return true;
     } catch (e) { log.error?.("telegram alert", e.message); return false; }
+  }
+
+  // A shopping-only chat (Michelle): add, remove, show. Nothing else, and no way into the rest of Bernard.
+  async function onGuestMessage(id, text, name) {
+    const t = text.trim();
+    if (/^\/(start|help)\b/i.test(t)) return say(id, `Hello ${name}. I keep the shopping list here. Text me things to add ("milk, bread and bin bags"), "remove bread", or /list to see it with tick-off buttons.`);
+    if (/^\/list\b|^(?:show|send|what'?s on)(?: me)?(?: the)? (?:shopping )?list\??$|^(?:shopping )?list\??$/i.test(t)) return sendList(id);
+    let m;
+    if ((m = t.match(/^(?:remove|take off|delete|got|we have|cross off)\s*:?\s*(.+)$/i))) {
+      const r = await shopping.handle({ action: "remove", items: m[1] });
+      return say(id, r.removed?.length ? `Taken off: ${r.removed.join(", ")}.${r.not_found?.length ? ` Not on the list: ${r.not_found.join(", ")}.` : ""}` : `That isn't on the list.`);
+    }
+    if (/^\/|\?$/.test(t) || /\b(turn|lights?|tv|play|remind|email|camera|weather|news|price|call|open)\b/i.test(t)) return say(id, "I only do the shopping list in this chat. Text me items to add, \"remove …\", or /list.");
+    const items = t.replace(/^(?:add|please add|can you add|we need|need|put)\s*:?\s*/i, "").replace(/\s+(?:to the list|on the list|please)\.?$/i, "");
+    const r = await shopping.handle({ action: "add", items });
+    if (!r.added?.length && !r.already?.length) return say(id, "Nothing I could add there. Try \"milk, bread and eggs\".");
+    return say(id, `${r.added?.length ? `Added ${r.added.join(", ")}. ` : ""}${r.already?.length ? `Already on it: ${r.already.join(", ")}. ` : ""}${r.count} on the list.`);
   }
 
   // ---- receiving ----
@@ -88,6 +108,11 @@ export function createTelegram({ token, kv, chat, shopping, transcribe = null, s
     if (!id || (!text && !voiceIn && !photoIn)) return;
     const chats = await getChats();
     const linked = chats.find((c) => c.id === id);
+    const guest = linked && roleOf(linked) === "shopping";
+    if (guest) {
+      if (voiceIn || photoIn) return say(id, "Text only in this chat, I'm afraid: items to add, \"remove …\", or /list.");
+      return onGuestMessage(id, text, linked.name.split(" ")[0]);
+    }
     // A photo from Nicholas is a receipt to file (the caption is a note), unless the caption says otherwise.
     if (photoIn && linked) {
       const cap = String(m.caption || "").trim();
@@ -109,13 +134,19 @@ export function createTelegram({ token, kv, chat, shopping, transcribe = null, s
     }
     if (!text) return;
     if (!linked) {
-      if (text.replace(/\D/g, "") === (await linkCode())) {
-        const name = [m.from?.first_name, m.from?.last_name].filter(Boolean).join(" ") || m.chat.username || "someone";
-        chats.push({ id, name, at: new Date().toISOString() }); await setChats(chats);
+      const digits = text.replace(/\D/g, "");
+      const name = [m.from?.first_name, m.from?.last_name].filter(Boolean).join(" ") || m.chat.username || "someone";
+      if (digits && digits === (await linkCode())) {
+        chats.push({ id, name, role: "owner", at: new Date().toISOString() }); await setChats(chats);
         await kv.set("tg_link_code", "");   // a fresh code next time
-        return say(id, `Linked. Good to meet you here, ${chats.length === 1 ? "Nicholas" : m.from?.first_name || "there"}. Text me anything you'd ask me out loud, or send /list for the shopping list.`);
+        return say(id, `Linked. Good to meet you here, ${chats.filter((c) => roleOf(c) === "owner").length === 1 ? "Nicholas" : m.from?.first_name || "there"}. Text me anything you'd ask me out loud, or send /list for the shopping list.`);
       }
-      return say(id, "Hello. I'm Bernard, a private assistant. This chat isn't linked: send the 6-digit code shown in Bernard's dashboard settings.");
+      if (digits && digits === (await guestCode())) {
+        chats.push({ id, name, role: "shopping", at: new Date().toISOString() }); await setChats(chats);
+        await kv.set("tg_guest_code", "");
+        return say(id, `Linked, ${m.from?.first_name || "there"}. This chat is for the shopping list: text me things to add ("milk, bread and bin bags"), "remove bread", or /list to see it with tick-off buttons.`);
+      }
+      return say(id, "Hello. I'm Bernard, a private assistant. This chat isn't linked: send the 6-digit code from Bernard's dashboard settings.");
     }
     if (/^\/(start|help)\b/i.test(text)) return say(id, "Text me as you'd talk to me: \"we need milk\", \"lights off\", \"what's the weather\".\n/list shows the shopping list with tick-off buttons.");
     if (/^\/claude\b/i.test(text) && requests) { const r = await requests.handle({ action: "list" }); return say(id, r.message); }
@@ -137,7 +168,9 @@ export function createTelegram({ token, kv, chat, shopping, transcribe = null, s
 
   async function onButton(q) {
     const id = q.message?.chat?.id, data = String(q.data || "");
-    if (!(await getChats()).some((c) => c.id === id)) return api("answerCallbackQuery", { callback_query_id: q.id, text: "Not linked." });
+    const who = (await getChats()).find((c) => c.id === id);
+    if (!who) return api("answerCallbackQuery", { callback_query_id: q.id, text: "Not linked." });
+    if (roleOf(who) === "shopping" && /^clear/.test(data)) return api("answerCallbackQuery", { callback_query_id: q.id, text: "Only Nicholas can clear the whole list." });
     let note = "";
     if (data.startsWith("got:")) { const r = await shopping.handle({ action: "remove", items: [data.slice(4)] }); note = r.removed?.length ? `Got ${r.removed[0]}` : "Already gone"; }
     else if (data === "clear?") {
@@ -183,7 +216,7 @@ export function createTelegram({ token, kv, chat, shopping, transcribe = null, s
     },
     async status() {
       const chats = await getChats();
-      return { configured: Boolean(token), running, bot: me ? "@" + me.username : null, link: me ? `https://t.me/${me.username}` : null, linked: chats.map((c) => ({ id: c.id, name: c.name })), link_code: token ? await linkCode() : null, error: lastError };
+      return { configured: Boolean(token), running, bot: me ? "@" + me.username : null, link: me ? `https://t.me/${me.username}` : null, linked: chats.map((c) => ({ id: c.id, name: c.name, role: roleOf(c) })), link_code: token ? await linkCode() : null, guest_code: token ? await guestCode() : null, error: lastError };
     },
     async unlink(chatId) { const c = (await getChats()).filter((x) => String(x.id) !== String(chatId)); await setChats(c); return { ok: true, linked: c.length }; },
   };
