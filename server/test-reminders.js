@@ -13,7 +13,7 @@ assert.equal(nextRepeat(londonToDate("2026-01-31T10:00"), "monthly", londonToDat
 // store
 const m = new Map(); const kv = { async get(k) { return m.get(k) ?? null; }, async set(k, v) { m.set(k, v); } };
 const notes = []; let clock = new Date("2026-10-24T15:00:00Z"); let price = 52000;
-const fetchImpl = async () => ({ json: async () => ({ bitcoin: { gbp: price } }) });
+const fetchImpl = async () => ({ json: async () => ({ bitcoin: { usd: price, gbp: Math.round(price * 0.78) } }) });
 const R = createReminders({ kv, notify: async (t, o) => notes.push({ t, ...o }), fetchImpl, now: () => clock, log: () => {} });
 assert.equal((await R.reminder({ action: "add", text: "Ring Kerr", when: "2026-10-24T15:00" })).ok, false, "past time rejected");
 let r = await R.reminder({ action: "add", text: "Ring Kerr", when: "2026-10-24T17:30" });
@@ -31,9 +31,9 @@ assert.equal((await R.reminder({ action: "cancel", text: "bins" })).ok, true);
 assert.equal((await R.reminder({ action: "list" })).count, 0);
 // price alerts
 assert.equal((await R.alert({ action: "add", coin: "BTC", direction: "above", price: "50,000" })).ok, false, "already above");
-const a = await R.alert({ action: "add", coin: "BTC", direction: "drops below", price: "£50,000" });
-assert.equal(a.ok, true); assert.equal(a.alert.condition, "below £50,000");
+const a = await R.alert({ action: "add", coin: "BTC", direction: "drops below", price: "$50,000" });
+assert.equal(a.ok, true); assert.equal(a.alert.condition, "below $50,000");
 assert.equal(await R.tickAlerts(), 0);
-price = 49800; assert.equal(await R.tickAlerts(), 1); assert.match(notes.at(-1).t, /bitcoin is now £49,800/);
+price = 49800; assert.equal(await R.tickAlerts(), 1); assert.match(notes.at(-1).t, /bitcoin is now \$49,800/);
 assert.equal((await R.alert({ action: "list" })).count, 0, "one-shot");
 console.log("reminder tests passed"); process.exit(0);

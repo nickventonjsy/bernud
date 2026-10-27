@@ -54,7 +54,10 @@ export function createReminders({ kv, notify, fetchImpl = fetch, now = () => new
   let lastPrices = {};
 
   const view = (r) => ({ id: r.id.slice(0, 8), text: r.text, when: londonLabel(new Date(r.due)), repeat: r.repeat });
-  const aview = (a) => ({ id: a.id.slice(0, 8), coin: a.coin, condition: `${a.direction} £${a.price.toLocaleString("en-GB")}`, last_price_gbp: lastPrices[a.coin] ?? null });
+  // Alerts are in US dollars (Nicholas wants crypto in dollars); alerts saved before that stay in pounds until they fire.
+  const curOf = (a) => (a.currency === "gbp" ? "gbp" : "usd");
+  const money = (n, cur) => (cur === "gbp" ? "£" + n.toLocaleString("en-GB") : "$" + n.toLocaleString("en-US"));
+  const aview = (a) => ({ id: a.id.slice(0, 8), coin: a.coin, condition: `${a.direction} ${money(a.price, curOf(a))}`, currency: curOf(a) === "gbp" ? "GBP" : "USD", last_price: lastPrices[a.coin]?.[curOf(a)] ?? null });
   const pick = (list, idOrText) => {
     const q = String(idOrText || "").toLowerCase().trim();
     if (!q) return null;
@@ -79,20 +82,20 @@ export function createReminders({ kv, notify, fetchImpl = fetch, now = () => new
 
   async function addAlert({ coin, direction, price }) {
     const id = COIN_IDS[String(coin || "").toLowerCase().trim()] || String(coin || "").toLowerCase().trim();
-    const p = Number(String(price).replace(/[£,\s]/g, ""));
+    const p = Number(String(price).replace(/[£$,\s]/g, ""));
     if (!id) return { ok: false, error: "Which coin?" };
-    if (!(p > 0)) return { ok: false, error: "Give the price in pounds." };
+    if (!(p > 0)) return { ok: false, error: "Give the price in US dollars." };
     const dir = /below|under|drop|fall|less/i.test(direction) ? "below" : "above";
-    const r = await fetchImpl(`https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(id)}&vs_currencies=gbp`, { signal: AbortSignal.timeout(10000) }).then((x) => x.json()).catch(() => ({}));
-    const cur = r[id]?.gbp;
+    const r = await fetchImpl(`https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(id)}&vs_currencies=usd,gbp`, { signal: AbortSignal.timeout(10000) }).then((x) => x.json()).catch(() => ({}));
+    const cur = r[id]?.usd;
     if (cur === undefined) return { ok: false, error: `I couldn't find a live price for '${coin}'.` };
-    lastPrices[id] = cur;
-    if ((dir === "above" && cur >= p) || (dir === "below" && cur <= p)) return { ok: false, error: `It's already ${dir} that: currently £${cur.toLocaleString("en-GB")}.` };
+    lastPrices[id] = r[id];
+    if ((dir === "above" && cur >= p) || (dir === "below" && cur <= p)) return { ok: false, error: `It's already ${dir} that: currently $${cur.toLocaleString("en-US")}.` };
     const list = await load("price_alerts");
     if (list.length >= 50) return { ok: false, error: "Too many alerts; cancel some first." };
-    const a = { id: randomUUID(), coin: id, direction: dir, price: p, created: now().toISOString() };
+    const a = { id: randomUUID(), coin: id, direction: dir, price: p, currency: "usd", created: now().toISOString() };
     list.push(a); await save("price_alerts", list);
-    return { ok: true, alert: aview(a), current_price_gbp: cur };
+    return { ok: true, alert: aview(a), current_price_usd: cur };
   }
 
   async function tickReminders() {
@@ -112,14 +115,14 @@ export function createReminders({ kv, notify, fetchImpl = fetch, now = () => new
     const list = await load("price_alerts");
     if (!list.length) return 0;
     const ids = [...new Set(list.map((a) => a.coin))].join(",");
-    const r = await fetchImpl(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=gbp`, { signal: AbortSignal.timeout(10000) }).then((x) => x.json()).catch(() => null);
+    const r = await fetchImpl(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd,gbp`, { signal: AbortSignal.timeout(10000) }).then((x) => x.json()).catch(() => null);
     if (!r) return 0;
     let fired = 0; const keep = [];
     for (const a of list) {
-      const p = r[a.coin]?.gbp;
-      if (p !== undefined) lastPrices[a.coin] = p;
+      const cur = curOf(a), p = r[a.coin]?.[cur];
+      if (r[a.coin]) lastPrices[a.coin] = r[a.coin];
       if (p !== undefined && ((a.direction === "above" && p >= a.price) || (a.direction === "below" && p <= a.price))) {
-        try { await notify(`${a.coin} is now £${p.toLocaleString("en-GB")} (${a.direction} your £${a.price.toLocaleString("en-GB")} alert).`, { title: "Price alert", tags: a.direction === "above" ? "chart_with_upwards_trend" : "chart_with_downwards_trend", priority: 4 }); fired++; continue; }
+        try { await notify(`${a.coin} is now ${money(p, cur)} (${a.direction} your ${money(a.price, cur)} alert).`, { title: "Price alert", tags: a.direction === "above" ? "chart_with_upwards_trend" : "chart_with_downwards_trend", priority: 4 }); fired++; continue; }
         catch (e) { log("alert notify failed: " + e.message); }
       }
       keep.push(a);

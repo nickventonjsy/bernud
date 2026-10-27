@@ -152,6 +152,12 @@ async function elevenCredits() {
   } catch (e) { return { ok: false, error: String(e.message).slice(0, 120) }; }
 }
 const CREDIT_WARN = Number(process.env.CREDIT_WARN || 5000);
+// "ElevenLabs credits: 48,000 (about 98 minutes of talking), renews 12 Nov." for the brief; "" if unknown.
+async function creditsLine() {
+  const c = await elevenCredits();
+  if (!c.ok) return "";
+  return `ElevenLabs credits: ${c.left.toLocaleString("en-GB")} (about ${c.minutes_left} minutes of talking)${c.resets ? ", renews " + new Date(c.resets).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : ""}.`;
+}
 
 export const speech = createSpeech({ apiKey: process.env.ELEVENLABS_API_KEY || "", publicUrl: PUBLIC_URL });
 // Speak on the phone in Bernard's own voice (falls back to the phone's voice).
@@ -313,7 +319,7 @@ async function briefByFreeBrain() {
 }
 
 export const scheduler = createScheduler({
-  kv: db.kv, ccp, notify, fallback: briefByFreeBrain,
+  kv: db.kv, ccp, notify, fallback: briefByFreeBrain, extraLine: creditsLine,
   agentId: process.env.AGENT_ID || "agent_0501m5q6cc15eqcrnamk2e1w84xc",
   config: { time: process.env.BRIEF_TIME, days: process.env.BRIEF_DAYS },
 });
@@ -326,7 +332,8 @@ async function briefForBrain(text) {
   const day = b && new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(new Date(b.created_at));
   const fresh = /\b(new|fresh|again|update|redo|latest)\b/i.test(String(text));
   const coins = spokenCrypto(await coinPrices.usd().catch(() => null));
-  if (b && day === today && !fresh) return { reply: `Here's today's brief. ${briefSummary(b.text)} ${coins} And today's Jersey titbit: ${factFor()} The full version is open on your screen.`, ui: { brief: true } };
+  const credits = await creditsLine().catch(() => "");
+  if (b && day === today && !fresh) return { reply: `Here's today's brief. ${briefSummary(b.text)} ${coins} And today's Jersey titbit: ${factFor()}${credits ? " " + credits : ""} The full version is open on your screen.`, ui: { brief: true } };
   // Preparing takes a minute or two: start it and reply now; it arrives as a phone notification and in "CCP brief".
   const running = (await scheduler.status()).running;
   if (!running) scheduler.runBrief("asked").catch(() => {});

@@ -78,7 +78,7 @@ export function converse(agentId, text, { until, timeoutMs = 240_000, WS = globa
 
 export const SCHEDULED_MESSAGE = "This is your scheduled 9am run. Give me my CCP morning brief. I'm not listening live, so save the full written brief as usual and keep the spoken part to one sentence.";
 
-export function createScheduler({ kv, ccp, notify, agentId, config = {}, log = console.log, converseImpl = converse, fallback = null }) {
+export function createScheduler({ kv, ccp, notify, agentId, config = {}, log = console.log, converseImpl = converse, fallback = null, extraLine = null }) {
   const cfg = { time: config.time || "09:00", days: config.days || "1-5" };
   let running = false, last = null;
 
@@ -98,7 +98,8 @@ export function createScheduler({ kv, ccp, notify, agentId, config = {}, log = c
       catch (e) { log("brief fallback failed: " + e.message); error = new Error(`${error ? error.message : "voice agent failed"}; the free brain couldn't do it either (${e.message})`); }
     }
     try {
-      if (brief) await notify(notificationText(brief.text) + "\n\nJersey titbit: " + factFor(), { title: "CCP morning brief ready", tags: "briefcase", click: "https://bernud.onrender.com/?open=brief" });
+      const extra = extraLine ? await Promise.resolve(extraLine()).catch(() => "") : "";
+      if (brief) await notify(notificationText(brief.text) + "\n\nJersey titbit: " + factFor() + (extra ? "\n\n" + extra : ""), { title: "CCP morning brief ready", tags: "briefcase", click: "https://bernud.onrender.com/?open=brief" });
       else await notify(`Bernard couldn't prepare this morning's CCP brief (${error ? error.message : "unknown reason"}). Ask him for it directly or check the dashboard.`, { title: "CCP brief failed", tags: "warning", priority: 4, click: "https://bernud.onrender.com/" });
     } catch (e) { log("notify failed: " + e.message); }
     last = { reason, at: new Date(started).toISOString(), ok: Boolean(brief), via: brief ? via : null, error: error && !brief ? error.message : null, voice_error: error && brief ? error.message : null };
