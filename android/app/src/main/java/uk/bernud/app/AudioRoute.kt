@@ -54,10 +54,7 @@ object AudioRoute {
                 am.availableCommunicationDevices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
                     ?.let { am.setCommunicationDevice(it) }
             } else legacySpeaker(am, true)
-            val max = am.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL)
-            if (am.getStreamVolume(AudioManager.STREAM_VOICE_CALL) < max * 0.6) {
-                am.setStreamVolume(AudioManager.STREAM_VOICE_CALL, (max * 0.8).toInt(), 0)
-            }
+            // The volume is Nicholas's to set (phone buttons and the dashboard slider); never pushed up here.
         } catch (_: Exception) {}
     }
 }
