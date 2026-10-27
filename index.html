@@ -511,6 +511,11 @@
     <textarea id="workSetup" readonly rows="4" style="display:none;width:100%;margin-top:8px;padding:10px;background:transparent;color:var(--text);border:1px solid var(--line, #5a1a1f);border-radius:8px;font:12px ui-monospace,monospace"></textarea>
     <div class="note" id="workNote"></div>
     <hr style="border:0;border-top:1px solid var(--line, #5a1a1f);margin:16px 0">
+    <p><b style="color:var(--text)">Google accounts.</b> The Cory Car Paints account gives Bernard the CCP inbox, drafts, calendar and Drive. Your personal account lets him read your own email (read-only, never drafts) and calendar, so he can find booking references, orders, tickets and the like when you ask.</p>
+    <div class="btnrow"><button class="btn" type="button" id="gBtn">Show accounts</button></div>
+    <div id="gList"></div>
+    <div class="note" id="gNote"></div>
+    <hr style="border:0;border-top:1px solid var(--line, #5a1a1f);margin:16px 0">
     <p><b style="color:var(--text)">What Bernard has learnt.</b> He picks up lasting facts, preferences and corrections from what you say (never codes or passwords) and uses them in every conversation. Ask him "what have you learnt about me?" or say "forget that".</p>
     <div class="btnrow"><button class="btn" type="button" id="learnBtn">Show what he's learnt</button></div>
     <div style="display:flex;gap:10px;margin-top:8px"><input id="learnAdd" type="text" placeholder="Teach him something: Nicholas takes his tea with one sugar" style="flex:1"><button class="btn" type="button" id="learnAddBtn">Add</button></div>
@@ -547,7 +552,7 @@
 
   // ---- Version numbers (bottom of the screen) ----
   // DASH_VERSION goes up by one with every dashboard change (a git hook bumps it automatically).
-  const DASH_VERSION = 12;
+  const DASH_VERSION = 13;
   (async () => {
     const set = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
     set("dashVer", DASH_VERSION);
@@ -2162,6 +2167,25 @@
     } catch { $("learnNote").textContent = "Couldn't reach Bernard's server."; }
   }
   $("learnBtn").addEventListener("click", () => learnShow());
+  // ---- Google accounts: status and connect links (behind the dashboard passcode) ----
+  async function gShow(post) {
+    const pass = store.get("bernud.dashKey"); if (!pass) { $("gNote").textContent = "Enter your passcode in the CCP brief first."; return; }
+    try {
+      const j = await (await fetch(`${SERVER}/google/accounts`, post ? { method: "POST", headers: { "content-type": "application/json", "x-dashboard-key": pass }, body: JSON.stringify(post) } : { headers: { "x-dashboard-key": pass } })).json();
+      const box = $("gList"); box.innerHTML = "";
+      for (const k of ["ccp", "personal"]) {
+        const a = j[k]; if (!a) continue;
+        const row = document.createElement("div"); row.className = "btnrow"; row.style.alignItems = "center";
+        const label = document.createElement("span"); label.style.flex = "1"; label.style.fontSize = "13px";
+        label.textContent = `${a.account}: ${a.connected ? ["email: " + (a.mail ? "yes" : "no"), "calendar: " + (a.calendar ? "yes" : "no"), k === "ccp" ? "drafts: " + (a.drafts ? "yes" : "no") : ""].filter(Boolean).join(", ") : "not connected"}`;
+        const b = document.createElement("button"); b.className = "btn"; b.type = "button"; b.textContent = a.connected ? "Reconnect" : "Connect"; b.onclick = () => gShow({ account: k });
+        row.append(label, b); box.appendChild(row);
+      }
+      if (j.link) { window.open(j.link, "_blank", "noopener"); $("gNote").textContent = "A Google sign-in page has opened. Sign in as the account shown, tick everything it asks for, and come back here."; }
+      else $("gNote").textContent = "Press Connect to sign in with Google. Reconnect if a permission says no.";
+    } catch { $("gNote").textContent = "Couldn't reach Bernard's server."; }
+  }
+  $("gBtn").addEventListener("click", () => gShow());
   $("learnAddBtn").addEventListener("click", () => { const t = $("learnAdd").value.trim(); if (t) { learnShow({ add: t }); $("learnAdd").value = ""; } });
   $("weeklyBtn").addEventListener("click", async () => {
     const pass = store.get("bernud.dashKey"); if (!pass) { $("tgNote").textContent = "Enter your passcode in the CCP brief first."; return; }
