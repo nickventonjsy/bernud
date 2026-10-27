@@ -800,6 +800,12 @@ export async function handle(req, res) {
     const b = await readJson(req);
     return send(res, 200, await claudeRequests.handle({ ...b, via: b.action === "add" ? "dashboard" : "" }), req);
   }
+  // One receipt in full (items and photo link) for the dashboard.
+  if (path === "/dash/receipt" && req.method === "GET") {
+    if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
+    const r = await receipts.get(String(url.searchParams.get("id") || ""));
+    return send(res, r ? 200 : 404, r ? { ok: true, receipt: r } : { ok: false, error: "not found" }, req);
+  }
   // A receipt photo from the dashboard / phone app: { image: base64, mime, note }.
   if (path === "/receipts/photo" && req.method === "POST") {
     if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);

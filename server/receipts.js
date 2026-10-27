@@ -134,9 +134,11 @@ export function createReceipts({ kv, vision, drive = null, now = () => new Date(
   // For the dashboard panel.
   async function dash() {
     const cur = await summary(), prev = await summary({ month: monthFor("last month", now()) });
-    const recent = (await load()).slice(-5).reverse().map((r) => ({ day: r.day, shop: r.shop, total: r.total, photo: r.photo }));
+    const recent = (await load()).slice(-8).reverse().map((r) => ({ id: r.id, day: r.day, shop: r.shop, total: r.total, items: r.items.length, photo: r.photo }));
     return { month: cur, previous: prev, recent };
   }
+  // One receipt in full, for the dashboard's receipt window.
+  async function get(id) { return (await load()).find((r) => r.id === id) || null; }
 
-  return { ingest, handle, summary, usual, dash };
+  return { ingest, handle, summary, usual, dash, get };
 }

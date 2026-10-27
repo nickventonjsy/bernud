@@ -150,6 +150,10 @@
   .vol-row { display: flex; align-items: center; gap: 10px; margin: 6px 0 2px; font-size: 12px; color: var(--muted); } .vol-row svg { width: 16px; height: 16px; flex: none; }
   .vol-row input { flex: 1; accent-color: var(--red); height: 22px; } .vol-row span { font-family: var(--mono); min-width: 38px; text-align: right; }
   .spend-top { display: flex; gap: 22px; margin-bottom: 8px; } .spend-top .big { font-size: 26px; font-weight: 500; letter-spacing: -.02em; } .spend-top .big.dim { color: var(--muted); } .spend-top .s, #spendShops, #receiptMsg { font-size: 12px; color: var(--muted); }
+  .rcpt-items { max-height: 60vh; overflow: auto; font-family: var(--mono); font-size: 13px; line-height: 1.5; }
+  .rcpt-items .li { display: grid; grid-template-columns: 1fr auto; gap: 12px; padding: 3px 0; border-bottom: 1px dashed rgba(255, 45, 45, 0.12); }
+  .rcpt-items .li.total { border-top: 1px solid var(--line-strong); border-bottom: 0; margin-top: 6px; padding-top: 8px; font-weight: 600; font-size: 14px; }
+  .rcpt { cursor: pointer; } .rcpt:hover { background: rgba(255, 45, 45, 0.05); }
   .rcpt { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 6px 0; border-bottom: 1px solid rgba(255, 45, 45, 0.10); font-size: 13.5px; } .rcpt small { color: var(--muted); margin-left: 6px; font-size: 12px; } .rcpt a { color: var(--muted); text-decoration: none; }
   .pri.sel { background: rgba(255, 45, 45, 0.08); margin: 0 -8px; padding-left: 8px; padding-right: 8px; border-radius: 8px; }
   .pri.selmode { cursor: pointer; } .pri.selmode .box { border-radius: 50%; }
@@ -591,6 +595,14 @@
 </div>
 
 <!-- CCP BRIEF -->
+<div class="drawer" id="receiptDrawer" role="dialog" aria-modal="true" aria-labelledby="receiptTitle">
+  <div class="panel brief-panel" style="max-width:520px">
+    <div class="p-head"><div class="p-title" id="receiptTitle">Receipt</div><button class="btn" type="button" id="closeReceipt">Close</button></div>
+    <div id="receiptHead" class="s" style="font-size:13px;color:var(--muted);margin-bottom:8px"></div>
+    <div id="receiptItems" class="rcpt-items"></div>
+    <div id="receiptFoot" class="s" style="font-size:12px;color:var(--muted);margin-top:10px"></div>
+  </div>
+</div>
 <div class="drawer" id="briefDrawer" role="dialog" aria-modal="true" aria-labelledby="briefTitle">
   <div class="panel brief-panel">
     <div class="p-head"><div class="p-title" id="briefTitle">CCP brief</div><button class="btn" type="button" id="closeBrief">Close</button></div>
@@ -724,7 +736,7 @@
 
   // ---- Version numbers (bottom of the screen) ----
   // DASH_VERSION goes up by one with every dashboard change (a git hook bumps it automatically).
-  const DASH_VERSION = 24;
+  const DASH_VERSION = 25;
   (async () => {
     const set = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
     set("dashVer", DASH_VERSION);
@@ -2391,8 +2403,29 @@
     $("spendPrev").textContent = sp.previous.receipts ? gbp(sp.previous.total) : "—"; $("spendPrevLbl").textContent = sp.previous.month_name;
     $("spendTag").textContent = sp.month.receipts && sp.previous.receipts ? (sp.month.total > sp.previous.total ? "Up on last month" : "Below last month") : "";
     $("spendShops").textContent = sp.month.shops.slice(0, 4).map((b) => `${b.shop} ${gbp(b.total)}`).join(" · ");
-    $("spendList").innerHTML = sp.recent.length ? sp.recent.map((r) => `<div class="rcpt"><div>${esc(r.shop)}<small>${esc(r.day)}</small></div><div>${gbp(r.total)}${r.photo ? ` <a href="${esc(r.photo)}" target="_blank" rel="noopener" title="Open the photo in Drive">↗</a>` : ""}</div></div>`).join("") : `<div class="empty">No receipts yet. Snap one here or send the photo to Bernard on Telegram.</div>`;
+    $("spendList").innerHTML = sp.recent.length ? sp.recent.map((r) => `<div class="rcpt" data-rid="${esc(r.id)}" role="button" tabindex="0" title="Show the items"><div>${esc(r.shop)}<small>${esc(r.day)}${r.items ? ` · ${r.items} items` : ""}</small></div><div>${gbp(r.total)} <span class="chev">›</span></div></div>`).join("") : `<div class="empty">No receipts yet. Snap one here or send the photo to Bernard on Telegram.</div>`;
+    $("spendList").querySelectorAll("[data-rid]").forEach((el) => { el.addEventListener("click", () => openReceipt(el.dataset.rid)); el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openReceipt(el.dataset.rid); } }); });
   }
+  // Tap a receipt: every line Bernard read from it, in a window.
+  async function openReceipt(id) {
+    const pass = store.get("bernud.dashKey"); if (!pass || !id) return;
+    const gbp = (n) => "£" + Number(n || 0).toFixed(2);
+    $("receiptDrawer").classList.add("open"); $("receiptTitle").textContent = "Receipt"; $("receiptHead").textContent = "Loading…"; $("receiptItems").innerHTML = ""; $("receiptFoot").textContent = "";
+    try {
+      const j = await (await fetch(`${SERVER}/dash/receipt?id=${encodeURIComponent(id)}`, { headers: { "x-dashboard-key": pass }, cache: "no-store" })).json();
+      if (!j.ok) { $("receiptHead").textContent = "Couldn't load that receipt."; return; }
+      const r = j.receipt;
+      $("receiptTitle").textContent = r.shop;
+      $("receiptHead").textContent = `${new Intl.DateTimeFormat("en-GB", { timeZone: TZ, weekday: "long", day: "numeric", month: "long" }).format(new Date(r.day + "T12:00:00Z"))}${r.time ? " · " + r.time : ""}${r.payment ? " · " + r.payment : ""} · ${r.items.length} item${r.items.length === 1 ? "" : "s"} read`;
+      const sum = r.items.reduce((s, i) => s + (Number(i.price) || 0), 0);
+      $("receiptItems").innerHTML = (r.items.length ? r.items.map((i) => `<div class="li"><span>${esc(i.qty > 1 ? i.qty + " × " : "")}${esc(i.name)}</span><span>${i.price != null ? gbp(i.price) : ""}</span></div>`).join("") : `<div class="empty">No item lines could be read from the photo.</div>`)
+        + `<div class="li total"><span>Total paid</span><span>${gbp(r.total)}</span></div>`;
+      const gap = Math.abs(sum - r.total);
+      $("receiptFoot").innerHTML = [r.items.length && gap > 0.05 ? `Item lines add up to ${gbp(sum)}; the printed total is what counts (the difference is usually discounts, or a line the photo didn't catch).` : "", r.confidence !== "high" ? `Read with ${esc(r.confidence)} confidence${r.notes ? ": " + esc(r.notes) : ""}.` : "", r.photo ? `<a href="${esc(r.photo)}" target="_blank" rel="noopener" style="color:var(--text)">Open the photo in Drive ↗</a>` : "The photo wasn't filed in Drive."].filter(Boolean).join(" ");
+    } catch (e) { $("receiptHead").textContent = "Couldn't reach the server: " + String(e.message || e).slice(0, 80); }
+  }
+  $("closeReceipt").addEventListener("click", () => $("receiptDrawer").classList.remove("open"));
+  $("receiptDrawer").addEventListener("click", (e) => { if (e.target === $("receiptDrawer")) $("receiptDrawer").classList.remove("open"); });
   $("receiptBtn").addEventListener("click", () => $("receiptInput").click());
   $("receiptInput").addEventListener("change", async () => {
     const f = $("receiptInput").files && $("receiptInput").files[0]; $("receiptInput").value = "";
