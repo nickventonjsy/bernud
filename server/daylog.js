@@ -59,5 +59,10 @@ export function createDayLog({ kv, now = () => new Date(), max = 300 } = {}) {
     return { asked: asked.slice(-40), used };
   }
 
-  return { add, today, week, routeLabel };
+  // The last few things that happened, newest first, for the dashboard's activity feed.
+  async function recent(n = 10) {
+    const list = await load();
+    return list.slice(-n).reverse().map((e) => ({ t: e.t, time: londonTime(new Date(e.t)), kind: e.k, text: e.x }));
+  }
+  return { add, today, week, recent, routeLabel };
 }

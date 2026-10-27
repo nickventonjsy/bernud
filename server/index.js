@@ -773,6 +773,44 @@ export async function handle(req, res) {
     if (req.method === "POST") { const b = await readJson(req); const a = googleAccounts[b.account]; if (a && a.configured()) out.link = a.connectLink(); }
     return send(res, 200, out, req);
   }
+  // Everything the dashboard panels show, in one call (dashboard passcode). Nothing here is made up:
+  // calendar from Google, priorities from the latest brief, activity from the day log, status from the watchdog.
+  if (path === "/dash" && req.method === "GET") {
+    if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
+    const out = { at: new Date().toISOString() };
+    const day = String(url.searchParams.get("day") || new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(new Date()));
+    try {
+      const from = londonToDate(day + "T00:00"), to = new Date(from.getTime() + 864e5);
+      const events = [], not_checked = [];
+      for (const a of [gmail, personalGoogle]) {
+        try { if ((await a.connected()) && (await a.hasScope(SCOPES.calendar))) events.push(...(await a.events({ from, to })).map((e) => ({ ...e, account: a.name }))); else not_checked.push(a.name); }
+        catch { not_checked.push(a.name); }
+      }
+      events.sort((x, y) => String(x.start).localeCompare(String(y.start)));
+      out.today = { day, events: events.slice(0, 12), not_checked };
+    } catch (e) { out.today = { day, events: [], error: e.message }; }
+    try {
+      const b = await ccp.latestBrief();
+      const sec = b?.text ? (b.text.match(/top three priorities[\s\S]*?(?=\n#{1,3}\s|\n\s*\*\*?\s*3\.|\n3\. )/i) || [])[0] || "" : "";
+      const lines = sec.split("\n").map((l) => l.replace(/^[\s\-*•\d.)]+/, "").replace(/\*\*/g, "").trim()).filter((l) => l && !/^top three priorities/i.test(l));
+      out.priorities = { from: b?.created_at || null, items: lines.slice(0, 3).map((l) => l.split(/(?<=[.:])\s/)[0].slice(0, 90)) };
+    } catch { out.priorities = { from: null, items: [] }; }
+    try { out.activity = await dayLog.recent(10); } catch { out.activity = []; }
+    try {
+      const rem = await reminders.reminder({ action: "list" });
+      const wk = await wakeup.handle({ action: "settings" });
+      const sch = await scheduler.status();
+      out.tasks = { brief_running: sch.running, brief_last: sch.last_result, reminders: rem.count || 0, next_reminder: rem.reminders?.[0] || null, wakeup: wk.summary || null, wakeup_enabled: Boolean(wk.settings?.enabled) };
+    } catch (e) { out.tasks = { error: e.message }; }
+    out.status = { watchdog: watchdog.last(), phone: phone.online(), pc: pc.online(), work_laptop: workPc.online(), storage: db.kind, telegram: await telegram.status().catch(() => null) };
+    try { out.credits = await creditsStatus(); } catch {}
+    try {
+      const g = {};
+      for (const [k, a] of Object.entries(googleAccounts)) { const c = a.configured() && (await a.connected()); g[k] = { account: a.account, connected: c, mail: c && (await a.hasScope(SCOPES.gmailRead)), calendar: c && (await a.hasScope(SCOPES.calendar)) }; }
+      out.google = g;
+    } catch {}
+    return send(res, 200, out, req);
+  }
   // What Bernard knows, as real numbers for the dashboard's boot line (never hard-coded).
   if (path === "/status/counts" && req.method === "GET") {
     if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);

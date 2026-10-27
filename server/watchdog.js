@@ -15,8 +15,10 @@ export function createWatchdog({ kv, notify, checks, now = () => new Date(), log
     return out;
   }
 
+  let lastSweep = null;
   async function sweep() {
     const results = await runChecks();
+    lastSweep = { at: now().toISOString(), results: results.map((r) => ({ name: r.name, ok: r.ok, detail: r.detail || "" })) };
     let prev = {}; try { prev = JSON.parse((await kv.get("watchdog_state")) || "{}"); } catch {}
     const next = {}, broke = [], fixed = [];
     for (const r of results) {
@@ -43,5 +45,5 @@ export function createWatchdog({ kv, notify, checks, now = () => new Date(), log
 
   let timer = null;
   function start() { if (timer) return; setTimeout(() => sweep().catch((e) => log("watchdog: " + e.message)), 5 * 60_000); timer = setInterval(() => sweep().catch((e) => log("watchdog: " + e.message)), everyMs); }
-  return { start, sweep, status };
+  return { start, sweep, status, last: () => lastSweep };
 }
