@@ -368,7 +368,7 @@ export function createBrain({ briefHandler = null, dayLog = null, learner = null
     text = String(text || "").trim().slice(0, 4000);
     if (!text) return { ok: false, reply: "I didn't catch anything." };
     // Where the question came from, for the activity feed: Telegram chats are tg-…, the phone app app-…, the dashboard anything else.
-    const via = session.startsWith("tg-") ? "telegram" : session.startsWith("app-") ? "phone" : "dashboard";
+    const via = session.startsWith("tg-") ? "telegram" : session.startsWith("app-") ? "phone" : session.startsWith("lk-") ? "voice" : "dashboard";
     if (session !== "selftest") dayLog?.add("asked", text, via);
     // A Jersey titbit on request: from the checked list, never made up.
     if (/\b(?:jersey|the island)\b.*\b(?:fact|titbit|trivia|history)\b|\b(?:fact|titbit|trivia)\b.*\bjersey\b/i.test(text) && text.length < 90) {

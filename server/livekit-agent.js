@@ -10,7 +10,9 @@ import { cli, WorkerOptions, defineAgent, voice } from "@livekit/agents";
 // The speech plugins (and onnxruntime behind the VAD) are loaded only inside the job process that needs them,
 // so the supervising worker process stays small: memory on Render is shared with the main server.
 
-const SERVER = process.env.BERNUD_LOCAL || `http://127.0.0.1:${process.env.PORT || 10000}`;
+// Where Bernard's brain is: the main server. As its own Render service (bernud-voice) that's the public URL;
+// run inline beside the main server it's localhost.
+const SERVER = process.env.BERNUD_SERVER_URL || process.env.BERNUD_LOCAL || `http://127.0.0.1:${process.env.PORT || 10000}`;
 const DASH_KEY = process.env.DASHBOARD_KEY || "";
 const VOICE_ID = process.env.BERNARD_VOICE_ID || "FSPps0MvpXbfUL4sNQRC";   // Bernard's voice, the same one his ElevenLabs agent uses
 const TTS_MODEL = process.env.LIVEKIT_TTS_MODEL || "eleven_turbo_v2_5";

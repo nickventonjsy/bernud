@@ -24,5 +24,8 @@
 - Do not claim Bernard has been updated unless the change is saved and deployed.
 - Deploys are manual: trigger both the server (srv-dbedbmm7bikc73832b10) and the dashboard static site
   (srv-dbecndo473hc73csre60) on Render after pushing. Android builds publish android-vN releases.
+- LiveKit mode's voice worker is a third Render service, bernud-voice (start: node server/livekit-agent.js start).
+  It is NOT run inside bernud-server: the 512MB Starter instance can't hold both (it got OOM-killed on 27 Oct).
+  Redeploy it too when server/livekit-agent.js or brain behaviour it depends on changes.
 - The dashboard version (`DASH_VERSION` in index.html) is bumped by a pre-commit hook; keep the
   version line at the bottom of the dashboard accurate.

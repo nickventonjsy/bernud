@@ -1,5 +1,5 @@
-// LiveKit mode plumbing on the main server: a short-lived room token for the dashboard, and keeping the
-// agent worker (livekit-agent.js) running as a child process while the LiveKit settings are present.
+// LiveKit mode plumbing on the main server: a short-lived room token for the dashboard. The agent worker
+// (livekit-agent.js) normally runs as its own Render service, bernud-voice; LIVEKIT_WORKER=inline runs it here instead.
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
