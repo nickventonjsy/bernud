@@ -390,7 +390,7 @@ export const watchdog = createWatchdog({ kv: db.kv, notify, checks: [
     if (!c.ok) return { ok: true };   // can't check (e.g. key without account access): don't nag
     return c.left >= CREDIT_WARN ? { ok: true } : { ok: false, detail: `only ${c.left.toLocaleString("en-GB")} left (about ${c.minutes_left} minutes of talking)${c.resets ? ", renews " + new Date(c.resets).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : ""}. Free mode still works.` };
   } },
-  ...(livekit.configured ? [{ name: "LiveKit voice worker", run: async () => { const s = livekit.status(); return s.running ? { ok: true } : { ok: false, detail: s.last_exit ? `stopped (exit ${s.last_exit.code ?? s.last_exit.signal}); restarting` : "not running" }; } }] : []),
+  ...(livekit.configured && livekit.status().inline ? [{ name: "LiveKit voice worker", run: async () => { const s = livekit.status(); return s.running ? { ok: true } : { ok: false, detail: s.last_exit ? `stopped (exit ${s.last_exit.code ?? s.last_exit.signal}); restarting` : "not running" }; } }] : []),
   ...(telegram.configured ? [{ name: "Telegram", run: async () => { const s = await telegram.status(); return s.running && !s.error ? { ok: true } : { ok: false, detail: s.error || "not running" }; } }] : []),
   { name: "Home PC", alert: false, run: async () => ({ ok: pc.online(), detail: pc.online() ? "" : "off or asleep" }) },
   { name: "Work laptop", alert: false, run: async () => ({ ok: workPc.online(), detail: workPc.online() ? "" : "off or not signed in" }) },
@@ -1359,7 +1359,7 @@ export async function handle(req, res) {
 
 await db.init();
 if (ccp.configured() && process.env.NODE_ENV !== "test") ccp.startBackgroundIndex();
-if (process.env.NODE_ENV !== "test") { telegram.start(); weekly.start(); if (livekit.configured) livekit.start(); else console.log("livekit: not configured (LIVEKIT_URL/API_KEY/API_SECRET), LiveKit mode off"); }
+if (process.env.NODE_ENV !== "test") { telegram.start(); weekly.start(); if (livekit.configured) { if (!livekit.start()) console.log("livekit: configured; the voice worker runs as its own service (LIVEKIT_WORKER=inline to run it here)"); } else console.log("livekit: not configured (LIVEKIT_URL/API_KEY/API_SECRET), LiveKit mode off"); }
 if (process.env.NODE_ENV !== "test" && NTFY_TOPIC) { scheduler.start(); reminders.start(); orders.start(); watchdog.start(); wakeup.start(); }
 if (process.env.NODE_ENV !== "test") setTimeout(async () => { const s = await brain.status(); console.log("brain status", JSON.stringify(s)); if (s.ok && s.configured) console.log("brain selftest", JSON.stringify(await brain.selfTest()));
   if (imou.configured() && DASHBOARD_KEY) camAlerts.start();

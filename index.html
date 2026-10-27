@@ -739,7 +739,7 @@
 
   // ---- Version numbers (bottom of the screen) ----
   // DASH_VERSION goes up by one with every dashboard change (a git hook bumps it automatically).
-  const DASH_VERSION = 29;
+  const DASH_VERSION = 30;
   (async () => {
     const set = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
     set("dashVer", DASH_VERSION);
@@ -1939,7 +1939,7 @@
     try {
       const j = await (await fetch(`${SERVER}/livekit/session?who=${window.BernudApp ? "phone" : "dash"}`, { headers: { "x-dashboard-key": pass }, signal: AbortSignal.timeout(10000) })).json();
       if (!j.ok) throw Object.assign(new Error(j.message || "LiveKit isn't set up."), { code: j.code });
-      if (j.worker && !j.worker.running) $("subline").textContent = "Bernard's LiveKit worker isn't running on the server; trying anyway…";
+      if (j.worker && j.worker.running === false) $("subline").textContent = "Bernard's LiveKit worker isn't running on the server; trying anyway…";
       const { Room, RoomEvent, Track } = await import("https://esm.sh/livekit-client@2.23.0");
       const room = new Room({ adaptiveStream: false, dynacast: false });
       lkRoom = room;
@@ -2692,6 +2692,7 @@
     try {
       const j = await (await fetch(`${SERVER}/livekit/status`, { headers: { "x-dashboard-key": pass } })).json();
       n.textContent = !j.configured ? "LiveKit isn't set up on the server yet. In Render, add LIVEKIT_URL, LIVEKIT_API_KEY and LIVEKIT_API_SECRET from your LiveKit Cloud project, then redeploy."
+        : j.running === null ? "LiveKit is set up. Bernard's voice worker runs as its own Render service (bernud-voice); if he doesn't answer in LiveKit mode, check that service is live. He speaks with his own voice; hearing is Groq Whisper; the brain is his free brain with all his tools."
         : j.running ? `LiveKit worker running on the server (since ${new Date(j.started_at).toLocaleTimeString("en-GB")}). Bernard speaks with his own voice; hearing is Groq Whisper; the brain is his free brain with all his tools.`
         : `LiveKit worker isn't running${j.last_exit ? ` (last stopped ${new Date(j.last_exit.at).toLocaleTimeString("en-GB")}, exit ${j.last_exit.code ?? j.last_exit.signal})` : ""}; the server restarts it automatically.`;
     } catch { n.textContent = "Couldn't reach Bernard's server."; }

@@ -6,6 +6,9 @@ import path from "node:path";
 
 export function createLiveKit({ url = process.env.LIVEKIT_URL || "", apiKey = process.env.LIVEKIT_API_KEY || "", apiSecret = process.env.LIVEKIT_API_SECRET || "", port = process.env.PORT || "10000", dashKey = process.env.DASHBOARD_KEY || "", log = console, spawnImpl = spawn, tokenImpl = null } = {}) {
   const configured = Boolean(url && apiKey && apiSecret);
+  // The worker (agent + VAD + speech plugins) needs ~400MB on top of the main server, more than Render's 512MB
+  // starter instance can hold alongside it, so by default it runs as its own service. LIVEKIT_WORKER=inline runs it here.
+  const inline = (process.env.LIVEKIT_WORKER || "separate") === "inline";
   let child = null, restarts = 0, lastExit = null, startedAt = null, stopping = false;
 
   // A token that lets one browser (or the phone app) into a fresh room; the worker joins the room as Bernard.
@@ -22,7 +25,7 @@ export function createLiveKit({ url = process.env.LIVEKIT_URL || "", apiKey = pr
   }
 
   function start() {
-    if (!configured || child || stopping) return false;
+    if (!configured || !inline || child || stopping) return false;
     const file = path.join(path.dirname(fileURLToPath(import.meta.url)), "livekit-agent.js");
     startedAt = Date.now();
     child = spawnImpl(process.execPath, [file, "start"], {
@@ -50,6 +53,6 @@ export function createLiveKit({ url = process.env.LIVEKIT_URL || "", apiKey = pr
 
   return {
     configured, token, start, stop,
-    status() { return { configured, running: Boolean(child), pid: child?.pid || null, started_at: startedAt ? new Date(startedAt).toISOString() : null, last_exit: lastExit, restarts }; },
+    status() { return { configured, inline, running: inline ? Boolean(child) : null, pid: child?.pid || null, started_at: startedAt ? new Date(startedAt).toISOString() : null, last_exit: lastExit, restarts }; },
   };
 }

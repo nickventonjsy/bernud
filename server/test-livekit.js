@@ -10,6 +10,7 @@ await assert.rejects(off.token(), /isn't set up/);
 // Configured: tokens carry the room and identity; the worker is spawned with what it needs and restarted if it dies.
 const spawned = []; const logs = [];
 const spawnImpl = (cmd, args, opts) => { const c = new EventEmitter(); c.pid = 42 + spawned.length; c.kill = () => c.emit("exit", null, "SIGTERM"); spawned.push({ cmd, args, env: opts.env }); return c; };
+process.env.LIVEKIT_WORKER = "inline";
 const lk = createLiveKit({ url: "wss://x.livekit.cloud", apiKey: "k", apiSecret: "s", port: "8787", dashKey: "d", spawnImpl, log: { log: (m) => logs.push(m), error: (m) => logs.push(m) }, tokenImpl: async ({ identity, room }) => `jwt:${identity}:${room}` });
 const t = await lk.token(); assert.match(t.room, /^bernud-/); assert.equal(t.token, `jwt:nicholas:${t.room}`); assert.equal(t.url, "wss://x.livekit.cloud");
 assert.equal(lk.start(), true); assert.equal(lk.start(), false, "only one worker");

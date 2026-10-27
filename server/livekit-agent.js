@@ -7,9 +7,8 @@
 // It talks to the main server over localhost for the brain, so it needs DASHBOARD_KEY and PORT in its env.
 import { fileURLToPath } from "node:url";
 import { cli, WorkerOptions, defineAgent, voice } from "@livekit/agents";
-import * as elevenlabs from "@livekit/agents-plugin-elevenlabs";
-import * as silero from "@livekit/agents-plugin-silero";
-import * as openai from "@livekit/agents-plugin-openai";
+// The speech plugins (and onnxruntime behind the VAD) are loaded only inside the job process that needs them,
+// so the supervising worker process stays small: memory on Render is shared with the main server.
 
 const SERVER = process.env.BERNUD_LOCAL || `http://127.0.0.1:${process.env.PORT || 10000}`;
 const DASH_KEY = process.env.DASHBOARD_KEY || "";
@@ -57,8 +56,9 @@ export class BernardAgent extends voice.Agent {
 }
 
 export default defineAgent({
-  prewarm: async (proc) => { proc.userData.vad = await silero.VAD.load(); },
+  prewarm: async (proc) => { const silero = await import("@livekit/agents-plugin-silero"); proc.userData.vad = await silero.VAD.load(); },
   entry: async (ctx) => {
+    const [elevenlabs, openai] = await Promise.all([import("@livekit/agents-plugin-elevenlabs"), import("@livekit/agents-plugin-openai")]);
     await ctx.connect();
     const session = new voice.AgentSession({
       vad: ctx.proc.userData.vad,
@@ -80,5 +80,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   // No warm spare job process: memory is shared with the main server on Render. A job starts on demand (~1s).
   // loadThreshold Infinity: on Render's shared CPUs the machine load reads ~100% all the time, which would make the
   // worker mark itself unavailable and never take a call. It's one person; always take the job.
-  cli.runApp(new WorkerOptions({ agent: fileURLToPath(import.meta.url), numIdleProcesses: 0, production: true, loadThreshold: Infinity, loadFunc: async () => 0, host: "127.0.0.1", port: Number(process.env.LIVEKIT_HEALTH_PORT || 8081) }));   // health port on localhost only, so Render keeps routing to the main server
+  cli.runApp(new WorkerOptions({ agent: fileURLToPath(import.meta.url), numIdleProcesses: 0, production: true, loadThreshold: Infinity, loadFunc: async () => 0,
+    // Health port: localhost only when running beside the main server; 0.0.0.0:$PORT when this is its own Render service.
+    host: process.env.LIVEKIT_HEALTH_HOST || "127.0.0.1", port: Number(process.env.LIVEKIT_HEALTH_PORT || 8081) }));
 }
