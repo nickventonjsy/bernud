@@ -135,6 +135,24 @@ export const ccpDelete = createCcpDelete({ owner: gmail, rootId: process.env.CCP
 const { createOrders } = await import("./orders.js");
 export const orders = createOrders({ kv: db.kv, gmail, notify });
 const { createSpeech } = await import("./speech.js");
+// ElevenLabs credits left (cached 10 minutes), for the dashboard and the low-credit warning.
+let creditsCache = null;
+async function elevenCredits() {
+  if (creditsCache && Date.now() - creditsCache.at < 10 * 60_000) return creditsCache.v;
+  const key = process.env.ELEVENLABS_API_KEY || "";
+  if (!key) return { ok: false, error: "no ElevenLabs key" };
+  try {
+    const r = await fetch("https://api.elevenlabs.io/v1/user/subscription", { headers: { "xi-api-key": key }, signal: AbortSignal.timeout(10_000) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) return { ok: false, error: j.detail?.message || j.detail?.status || `ElevenLabs said ${r.status}` };
+    const left = Math.max(0, (j.character_limit || 0) - (j.character_count || 0));
+    const v = { ok: true, left, used: j.character_count || 0, limit: j.character_limit || 0, tier: j.tier || "", resets: j.next_character_count_reset_unix ? new Date(j.next_character_count_reset_unix * 1000).toISOString() : null, minutes_left: Math.floor(left / 490) };
+    creditsCache = { at: Date.now(), v };
+    return v;
+  } catch (e) { return { ok: false, error: String(e.message).slice(0, 120) }; }
+}
+const CREDIT_WARN = Number(process.env.CREDIT_WARN || 5000);
+
 export const speech = createSpeech({ apiKey: process.env.ELEVENLABS_API_KEY || "", publicUrl: PUBLIC_URL });
 // Speak on the phone in Bernard's own voice (falls back to the phone's voice).
 async function sayOnPhone(text) {
@@ -256,6 +274,11 @@ export const watchdog = createWatchdog({ kv: db.kv, notify, checks: [
   { name: "Bernard app on the phone", run: async () => (PHONE_TOPIC && PHONE_SECRET) ? (phone.online() ? { ok: true } : { ok: false, detail: "not connected; open the Bernard app on the phone" }) : { skip: true } },
   { name: "Free mode brain", run: async () => { const s = await brain.status(); return s.ok && s.configured ? { ok: true } : { ok: false, detail: s.error || "no AI keys" }; } },
   { name: "Morning brief", run: async () => { const last = JSON.parse((await db.kv.get("brief_last_result")) || "null"); return !last || last.ok ? { ok: true } : { ok: false, detail: "the last brief failed: " + (last.error || "unknown reason") }; } },
+  { name: "ElevenLabs credits", run: async () => {
+    const c = await elevenCredits();
+    if (!c.ok) return { ok: true };   // can't check (e.g. key without account access): don't nag
+    return c.left >= CREDIT_WARN ? { ok: true } : { ok: false, detail: `only ${c.left.toLocaleString("en-GB")} left (about ${c.minutes_left} minutes of talking)${c.resets ? ", renews " + new Date(c.resets).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : ""}. Free mode still works.` };
+  } },
   ...(telegram.configured ? [{ name: "Telegram", run: async () => { const s = await telegram.status(); return s.running && !s.error ? { ok: true } : { ok: false, detail: s.error || "not running" }; } }] : []),
   { name: "Home PC", alert: false, run: async () => ({ ok: pc.online(), detail: pc.online() ? "" : "off or asleep" }) },
   { name: "Work laptop", alert: false, run: async () => ({ ok: workPc.online(), detail: workPc.online() ? "" : "off or not signed in" }) },
@@ -592,6 +615,10 @@ export async function handle(req, res) {
     catch (e) { console.error("brain", e.message); return send(res, 200, { ok: false, code: e.code || "error", reply: ["quota", "busy", "no_config"].includes(e.code) ? e.message : "Sorry, my free brain hit a problem: " + String(e.message).slice(0, 160) }, req); }
   }
   // Gemini's natural voices for free mode: the list, and a reply turned into a WAV.
+  if (path === "/elevenlabs/credits" && req.method === "GET") {
+    if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
+    return send(res, 200, await elevenCredits(), req);
+  }
   if (path === "/brain/voices" && req.method === "GET") {
     if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
     return send(res, 200, { ok: geminiVoice.configured(), voices: await geminiVoice.voices() }, req);

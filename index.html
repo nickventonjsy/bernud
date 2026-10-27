@@ -501,6 +501,7 @@
       </div>
     </div>
     <div class="note" id="engineNote"></div>
+    <div class="note" id="creditsNote"></div>
     <hr style="border:0;border-top:1px solid var(--line, #5a1a1f);margin:16px 0">
     <p><b style="color:var(--text)">Work laptop (printing).</b> Lets Bernard print and open CCP documents on your work laptop, and nothing else. On the work laptop: open this page, enter your passcode, press the button, copy the line, then paste it into <b>Windows PowerShell</b> and press Enter.</p>
     <div class="btnrow"><button class="btn" type="button" id="workSetupBtn">Show set-up line</button><button class="btn" type="button" id="workCopyBtn" style="display:none">Copy</button></div>
@@ -537,7 +538,7 @@
 
   // ---- Version numbers (bottom of the screen) ----
   // DASH_VERSION goes up by one with every dashboard change (a git hook bumps it automatically).
-  const DASH_VERSION = 9;
+  const DASH_VERSION = 10;
   (async () => {
     const set = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
     set("dashVer", DASH_VERSION);
@@ -1550,9 +1551,9 @@
       const msg = String(err && (err.message || err.name || err)).toLowerCase();
       if (msg.includes("quota") || msg.includes("credits")) {
         // Out of ElevenLabs credits: say so once and stop the wake word retrying in a loop.
-        armed = false; await stopWakeWord();
-        setMode("idle", "Bernard is out of ElevenLabs credits, so he can't talk until they're topped up or renew.");
-        return;
+        // Carry on in free mode instead, so Bernard still answers.
+        $("subline").textContent = "ElevenLabs is out of credits, so I'm using free mode.";
+        return freeStart(firstText);
       }
       setMode("idle", msg.includes("permission") || msg.includes("notallowed") ? "Microphone blocked. Allow it for this site, then try again." : "Couldn't reach Bernard. Check your connection and try again.");
       if (armed) setTimeout(startWakeWord, 2500);
@@ -1614,6 +1615,8 @@
   //  FREE MODE (£0): the device listens and speaks, Bernard's Gemini brain on the server thinks.
   // =====================================================================
   const ENGINE_KEY = "bernud.engine", VOICE_KEY = "bernud.voice";
+  // One-off switch to ElevenLabs (Nicholas's choice, 27 Oct); he can still change it in Settings.
+  if (store.get("bernud.engineSwitch") !== "1") { store.set(ENGINE_KEY, "elevenlabs"); store.set("bernud.engineSwitch", "1"); }
   const useFree = () => (store.get(ENGINE_KEY) || "free") === "free";
   let freeActive = false, freeSession = "", freeRec = null, freeLast = "";
   const freeCb = {};
@@ -2069,6 +2072,15 @@
   }
   if (window.speechSynthesis) speechSynthesis.onvoiceschanged = () => { if ($("drawer").classList.contains("open") && !APP) loadVoices(); };
   $("engineSelect").addEventListener("change", (e) => store.set(ENGINE_KEY, e.target.value));
+  // ElevenLabs credits left, shown under the voice engine choice.
+  async function showCredits() {
+    const pass = store.get("bernud.dashKey"); if (!pass) return;
+    try {
+      const c = await (await fetch(`${SERVER}/elevenlabs/credits`, { headers: { "x-dashboard-key": pass } })).json();
+      $("creditsNote").textContent = c.ok ? `ElevenLabs credits left: ${c.left.toLocaleString("en-GB")} (about ${c.minutes_left} minutes of talking)${c.resets ? ", renews " + new Date(c.resets).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : ""}.` : "";
+    } catch {}
+  }
+  $("settingsBtn").addEventListener("click", showCredits);
   $("voiceSelect").addEventListener("change", saveVoice);
   $("gStyle").addEventListener("change", saveVoice);
   $("gName").addEventListener("change", saveVoice);
