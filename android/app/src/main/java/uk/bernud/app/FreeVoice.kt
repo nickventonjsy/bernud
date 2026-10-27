@@ -132,8 +132,12 @@ class FreeVoice(private val activity: MainActivity, private val js: (String) -> 
         withTts { applyVoice() }
     }
 
+    // Bernard's speaking volume (0..1), set from the dashboard slider and kept between runs.
+    fun setVolume(v: Float) { prefs.edit().putFloat("ttsVolume", v.coerceIn(0f, 1f)).apply() }
+
     private fun say(text: String) {
-        val r = tts?.speak(text, TextToSpeech.QUEUE_FLUSH, Bundle(), "bernud-" + System.currentTimeMillis())
+        val params = Bundle().apply { putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, prefs.getFloat("ttsVolume", 1f)) }
+        val r = tts?.speak(text, TextToSpeech.QUEUE_FLUSH, params, "bernud-" + System.currentTimeMillis())
         if (r != TextToSpeech.SUCCESS) call("bernudSpoke", "")
     }
 

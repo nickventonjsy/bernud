@@ -147,8 +147,12 @@
   .pri .box svg { width: 14px; height: 14px; display: none; } .pri .box.on svg { display: block; }
   .pri .t { font-size: 15px; } .pri.done .t { color: var(--muted); text-decoration: line-through; }
   .pri .when { font-size: 12px; color: var(--muted); }
+  .vol-row { display: flex; align-items: center; gap: 10px; margin: 6px 0 2px; font-size: 12px; color: var(--muted); } .vol-row svg { width: 16px; height: 16px; flex: none; }
+  .vol-row input { flex: 1; accent-color: var(--red); height: 22px; } .vol-row span { font-family: var(--mono); min-width: 38px; text-align: right; }
   .spend-top { display: flex; gap: 22px; margin-bottom: 8px; } .spend-top .big { font-size: 26px; font-weight: 500; letter-spacing: -.02em; } .spend-top .big.dim { color: var(--muted); } .spend-top .s, #spendShops, #receiptMsg { font-size: 12px; color: var(--muted); }
   .rcpt { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 6px 0; border-bottom: 1px solid rgba(255, 45, 45, 0.10); font-size: 13.5px; } .rcpt small { color: var(--muted); margin-left: 6px; font-size: 12px; } .rcpt a { color: var(--muted); text-decoration: none; }
+  .pri.sel { background: rgba(255, 45, 45, 0.08); margin: 0 -8px; padding-left: 8px; padding-right: 8px; border-radius: 8px; }
+  .pri.selmode { cursor: pointer; } .pri.selmode .box { border-radius: 50%; }
   .pri-add { display: flex; gap: 8px; margin-top: 10px; }
   .pri-add input { flex: 1; min-width: 0; background: rgba(255,255,255,0.03); border: 1px solid var(--line); border-radius: 10px; color: var(--text); font: inherit; font-size: 13.5px; padding: 8px 10px; }
   .pri-add input:focus { outline: none; border-color: var(--line-strong); }
@@ -401,8 +405,9 @@
     </div>
 
     <div class="panel" id="priPanel" aria-label="Priorities">
-      <div class="p-head"><div class="p-title">Priorities</div><div class="p-tag" id="priTag"></div></div>
+      <div class="p-head"><div class="p-title">Priorities</div><div class="p-tag"><span id="priTag"></span> <button type="button" id="priSelect" title="Select priorities to delete">Select</button></div></div>
       <div id="priList"><div class="empty">From this morning's CCP brief.</div></div>
+      <div class="pri-add" id="priSelBar" hidden><button type="button" id="priDelSel" style="width:auto;padding:0 14px;font-size:13.5px;color:var(--red);border-color:var(--red)">Delete selected</button><button type="button" id="priSelAll" style="width:auto;padding:0 14px;font-size:13.5px">All</button><button type="button" id="priSelDone" style="width:auto;padding:0 14px;font-size:13.5px" title="Remove everything already ticked">Clear done</button></div>
       <form class="pri-add" id="priAdd"><input id="priInput" type="text" placeholder="Add a priority…" autocomplete="off" maxlength="90"><button type="submit" title="Add" aria-label="Add priority">+</button></form>
     </div>
 
@@ -524,6 +529,7 @@
       <div class="voice-box">
         <canvas id="wave" aria-hidden="true"></canvas>
         <div class="voice-state"><span class="dot red" id="micDot"></span><span id="micState">Microphone ready</span></div>
+        <label class="vol-row" for="volRange"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 10v4h4l5 4V6L8 10z"/><path d="M16 9a4 4 0 0 1 0 6"/></svg><input type="range" id="volRange" min="0" max="100" step="5" value="100" aria-label="Bernard's speaking volume"><span id="volVal">100%</span></label>
         <div class="voice-row">
           <button class="sq" type="button" id="wakeBtn" title="Start listening for &quot;Hey Bernard&quot;" aria-label="Start listening for Hey Bernard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></button>
           <span id="wakeLabel">"Hey Bernard" standby: off</span>
@@ -716,7 +722,7 @@
 
   // ---- Version numbers (bottom of the screen) ----
   // DASH_VERSION goes up by one with every dashboard change (a git hook bumps it automatically).
-  const DASH_VERSION = 22;
+  const DASH_VERSION = 23;
   (async () => {
     const set = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
     set("dashVer", DASH_VERSION);
@@ -746,6 +752,15 @@
     set(k, v) { try { localStorage.setItem(k, v); return true; } catch { return false; } },
     del(k) { try { localStorage.removeItem(k); } catch {} },
   };
+  // ---- Speaking volume: one setting for every voice (ElevenLabs, Gemini audio, device speech), kept between visits ----
+  const volume = () => { const v = Number(store.get("bernud.volume")); return Number.isFinite(v) && store.get("bernud.volume") !== null ? Math.min(1, Math.max(0, v / 100)) : 1; };
+  function applyVolume() {
+    const v = volume();
+    try { if (conversation) conversation.setVolume({ volume: v }); } catch {}   // only ever called after these are declared
+    try { if (gAudio) gAudio.volume = v; } catch {}
+    if (window.BernudApp?.setTtsVolume) try { window.BernudApp.setTtsVolume(v); } catch {}
+    document.getElementById("volVal").textContent = Math.round(v * 100) + "%";
+  }
   // ---- Boot line: what Bernard actually knows right now, from the server, never hard-coded ----
   (async () => {
     const pass = store.get("bernud.dashKey"); const el = document.getElementById("knows");
@@ -1818,6 +1833,7 @@
         connectionType: store.get(STORE.conn) === "websocket" ? "websocket" : "webrtc",
         ...(store.get(STORE.mic) ? { inputDeviceId: store.get(STORE.mic) } : {}),
         onConnect: () => {
+          try { conversation?.setVolume({ volume: volume() }); } catch {}
           setMode("listening", "Go ahead. Say \"goodbye\" when you're done.");
           startMicWatch();
           if (pendingPhoto) { const p = pendingPhoto; pendingPhoto = null; setTimeout(() => sendPhoto(p.blob, p.text), 400); }
@@ -1988,7 +2004,7 @@
       voices.find((v) => /en[-_]GB/i.test(v.lang)) || null;
   }
   const vPitch = () => Number(store.get("bernud.pitch") || "1"), vRate = () => Number(store.get("bernud.rate") || "1");
-  function pcUtterance(text) { const u = new SpeechSynthesisUtterance(text); u.voice = pcVoice(); u.lang = "en-GB"; u.pitch = vPitch(); u.rate = vRate(); return u; }
+  function pcUtterance(text) { const u = new SpeechSynthesisUtterance(text); u.voice = pcVoice(); u.lang = "en-GB"; u.pitch = vPitch(); u.rate = vRate(); u.volume = volume(); return u; }
   // Gemini's natural voice (made on the server, played here), sentence by sentence: the first sentence starts
   // playing while the rest is still being made. If Google fails, the device voice says whatever is left.
   let gAudio = null, gTesting = false;
@@ -2004,7 +2020,7 @@
   }
   function playUrl(url) {
     return new Promise((res) => {
-      const a = new Audio(url); gAudio = a;
+      const a = new Audio(url); a.volume = volume(); gAudio = a;
       const end = () => { if (gAudio === a) gAudio = null; URL.revokeObjectURL(url); res(); };
       a.onended = a.onerror = end;
       a.play().catch(end);
@@ -2269,6 +2285,9 @@
   window.bernudStart = () => startConversation();
   // Ends the conversation after Bernard has had ~1.5s to say a short line (used before a WhatsApp call starts).
   window.bernudEnd = () => setTimeout(() => { if (busy) endConversation(); }, 1500); // used by the Android app's notification button and quick-settings tile
+  $("volRange").value = Math.round(volume() * 100);
+  $("volRange").addEventListener("input", () => { store.set("bernud.volume", $("volRange").value); applyVolume(); });
+  applyVolume();
   $("core").addEventListener("click", talkToggle);
   $("core").addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); talkToggle(); } });
   $("micBtn").addEventListener("click", talkToggle);
@@ -2308,13 +2327,10 @@
         : `<div class="empty">${d.today.error ? "Calendar unavailable: " + esc(d.today.error) : "Nothing in the diary."}</div>`;
     }
     // Priorities: the brief's top three plus anything added by voice or here; ticks are saved on the server.
+    // "Select" switches the list into pick-and-delete mode.
     if (d.priorities) {
-      const items = d.priorities.items || [], open = items.filter((i) => !i.done).length;
-      $("priTag").textContent = items.length ? `${items.length - open} of ${items.length}` : "";
-      $("priList").innerHTML = items.length ? items.map((i) => `<div class="pri ${i.done ? "done" : ""}"><button class="box ${i.done ? "on" : ""}" type="button" data-t="${esc(i.text)}" data-d="${i.done ? 1 : 0}" aria-label="Done"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5 9-10"/></svg></button><div class="t">${esc(i.text)}</div><span class="when">${i.src === "brief" ? "Brief" : "Added"}</span><button class="chev" type="button" data-rm="${esc(i.text)}" title="Remove" aria-label="Remove" style="background:none;border:0;color:var(--muted);cursor:pointer;font-size:16px;padding:0">×</button></div>`).join("")
-        : `<div class="empty">Nothing yet. Add one below, or tell Bernard: "add ring the accountant to my priorities".</div>`;
-      $("priList").querySelectorAll(".box").forEach((b) => b.addEventListener("click", () => priAction(b.dataset.d === "1" ? "undone" : "done", b.dataset.t)));
-      $("priList").querySelectorAll("[data-rm]").forEach((b) => b.addEventListener("click", () => priAction("remove", b.dataset.rm)));
+      priItems = d.priorities.items || [];
+      renderPriorities();
     }
     // Connected apps
     const apps = [];
@@ -2411,9 +2427,27 @@
     try { await navigator.clipboard.writeText(claudeText); b.textContent = "Copied"; } catch { b.textContent = "Copy failed"; }
     setTimeout(() => (b.textContent = "Copy list"), 1500);
   });
+  let priItems = [], priSelMode = false, priSel = new Set();
+  function renderPriorities() {
+    const items = priItems, open = items.filter((i) => !i.done).length;
+    $("priTag").textContent = items.length ? `${items.length - open} of ${items.length}` : "";
+    $("priSelect").textContent = priSelMode ? "Cancel" : "Select"; $("priSelect").hidden = !items.length && !priSelMode;
+    $("priSelBar").hidden = !priSelMode; $("priDelSel").textContent = `Delete selected${priSel.size ? ` (${priSel.size})` : ""}`; $("priDelSel").disabled = !priSel.size; $("priSelDone").hidden = !items.some((i) => i.done);
+    $("priList").innerHTML = items.length ? items.map((i) => priSelMode
+        ? `<div class="pri selmode ${priSel.has(i.text) ? "sel" : ""}" data-pick="${esc(i.text)}"><span class="box ${priSel.has(i.text) ? "on" : ""}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5 9-10"/></svg></span><div class="t" style="${i.done ? "text-decoration:line-through;color:var(--muted)" : ""}">${esc(i.text)}</div><span class="when">${i.src === "brief" ? "Brief" : "Added"}</span><span></span></div>`
+        : `<div class="pri ${i.done ? "done" : ""}"><button class="box ${i.done ? "on" : ""}" type="button" data-t="${esc(i.text)}" data-d="${i.done ? 1 : 0}" aria-label="Done"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5 9-10"/></svg></button><div class="t">${esc(i.text)}</div><span class="when">${i.src === "brief" ? "Brief" : "Added"}</span><button class="chev" type="button" data-rm="${esc(i.text)}" title="Remove" aria-label="Remove" style="background:none;border:0;color:var(--muted);cursor:pointer;font-size:18px;padding:0 4px">×</button></div>`).join("")
+      : `<div class="empty">Nothing yet. Add one below, or tell Bernard: "add ring the accountant to my priorities".</div>`;
+    $("priList").querySelectorAll(".box[data-t]").forEach((b) => b.addEventListener("click", () => priAction(b.dataset.d === "1" ? "undone" : "done", b.dataset.t)));
+    $("priList").querySelectorAll("[data-rm]").forEach((b) => b.addEventListener("click", () => priAction("remove", b.dataset.rm)));
+    $("priList").querySelectorAll("[data-pick]").forEach((r) => r.addEventListener("click", () => { const t = r.dataset.pick; priSel.has(t) ? priSel.delete(t) : priSel.add(t); renderPriorities(); }));
+  }
+  $("priSelect").addEventListener("click", () => { priSelMode = !priSelMode; priSel.clear(); renderPriorities(); });
+  $("priSelAll").addEventListener("click", () => { if (priSel.size === priItems.length) priSel.clear(); else priItems.forEach((i) => priSel.add(i.text)); renderPriorities(); });
+  $("priDelSel").addEventListener("click", async () => { const picked = [...priSel]; if (!picked.length) return; priSelMode = false; priSel.clear(); await priAction("remove", picked); });
+  $("priSelDone").addEventListener("click", async () => { const done = priItems.filter((i) => i.done).map((i) => i.text); if (!done.length) return; priSelMode = false; priSel.clear(); await priAction("remove", done); });
   async function priAction(action, text) {
     const pass = store.get("bernud.dashKey"); if (!pass || !text) return;
-    try { const j = await (await fetch(`${SERVER}/dash/priorities`, { method: "POST", headers: { "content-type": "application/json", "x-dashboard-key": pass }, body: JSON.stringify({ action, items: [text] }) })).json(); if (j.ok) loadDash(); } catch {}
+    try { const j = await (await fetch(`${SERVER}/dash/priorities`, { method: "POST", headers: { "content-type": "application/json", "x-dashboard-key": pass }, body: JSON.stringify({ action, items: Array.isArray(text) ? text : [text] }) })).json(); if (j.ok) await loadDash(); } catch {}
   }
   $("priAdd").addEventListener("submit", (e) => { e.preventDefault(); const t = $("priInput").value.trim(); if (t) { priAction("add", t); $("priInput").value = ""; } });
   async function loadDash() {
