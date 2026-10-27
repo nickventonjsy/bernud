@@ -698,7 +698,7 @@
 
   // ---- Version numbers (bottom of the screen) ----
   // DASH_VERSION goes up by one with every dashboard change (a git hook bumps it automatically).
-  const DASH_VERSION = 19;
+  const DASH_VERSION = 20;
   (async () => {
     const set = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
     set("dashVer", DASH_VERSION);
@@ -2220,8 +2220,11 @@
 
   async function toggleStandby() {
     if (APP) {
-      armed = !armed; appCall("setWakeWord", armed);
-      if (!busy) armed ? setMode("standby", "Say \"Hey Bernard\" when you need me.") : setMode("idle", "Wake word off. Tap the core to talk.");
+      // Go by what the app says, not what this page last thought: the app remembers the setting between runs.
+      const on = String(appCall("wakeWordStatus") || "") !== "off";
+      armed = !on; appCall("setWakeWord", armed);
+      if (!busy) armed ? setMode("standby", "Turning the wake word on…") : setMode("idle", "Wake word off. Tap the core to talk.");
+      if (armed) setTimeout(() => { const st = String(appCall("wakeWordStatus") || ""); if (st === "off" || st.startsWith("error") || st === "mic busy") $("subline").textContent = st === "off" ? "The app couldn't start the wake word. Close Bernard fully (swipe it away) and open it again." : "Wake word: " + st; }, 2500);
       return;
     }
     if (armed) { armed = false; try { localStorage.setItem("bernud.standby", "0"); } catch {} await stopWakeWord(); if (!busy) setMode("idle", "Standby off. Tap the core to talk."); return; }
@@ -2748,7 +2751,9 @@
   // On a PC/browser, switch the wake word back on automatically if it was on last time.
   if (!APP) { let on = false; try { on = localStorage.getItem("bernud.standby") === "1"; } catch {} if (on) setTimeout(() => { if (!armed && !busy) toggleStandby(); }, 1200); }
   if (APP) {
-    armed = true; setMode("standby", "Say \"Hey Bernard\" when you need me.");
+    // The app keeps the wake-word setting itself; start from its real state.
+    armed = String(appCall("wakeWordStatus") || "") !== "off";
+    armed ? setMode("standby", "Say \"Hey Bernard\" when you need me.") : setMode("idle", "Wake word off. Tap the grid button under Voice controls to turn it on, or tap the core to talk.");
     // Show the app's wake-word state while idle, so problems are visible.
     setInterval(() => {
       if (busy || !armed) return;
