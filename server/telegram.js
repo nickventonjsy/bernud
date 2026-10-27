@@ -6,7 +6,8 @@ const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").
 const chunks = (t, n = 3900) => { const out = []; t = String(t || ""); while (t.length > n) { let i = t.lastIndexOf("\n", n); if (i < n / 2) i = n; out.push(t.slice(0, i)); t = t.slice(i); } if (t.trim()) out.push(t); return out; };
 
 // transcribe(buffer, mime) -> text; speak(text) -> { mp3: Buffer } or null. Both optional.
-export function createTelegram({ token, kv, chat, shopping, transcribe = null, speak = null, log = console, fetchImpl = fetch }) {
+// photo({ data: Buffer, mime, note }) -> { ok, message } handles a photo (a receipt). Optional.
+export function createTelegram({ token, kv, chat, shopping, transcribe = null, speak = null, photo = null, log = console, fetchImpl = fetch }) {
   const base = `https://api.telegram.org/bot${token}`;
   let me = null, running = false, lastError = null;
 
@@ -83,9 +84,21 @@ export function createTelegram({ token, kv, chat, shopping, transcribe = null, s
     const id = m.chat?.id;
     let text = String(m.text || "").trim();
     const voiceIn = m.voice || m.audio || null;
-    if (!id || (!text && !voiceIn)) return;
+    const photoIn = m.photo?.length ? m.photo[m.photo.length - 1] : (m.document && /^image\//.test(m.document.mime_type || "") ? m.document : null);
+    if (!id || (!text && !voiceIn && !photoIn)) return;
     const chats = await getChats();
     const linked = chats.find((c) => c.id === id);
+    // A photo from Nicholas is a receipt to file (the caption is a note), unless the caption says otherwise.
+    if (photoIn && linked) {
+      const cap = String(m.caption || "").trim();
+      if (!photo) return say(id, "I can't do anything with photos here yet.");
+      if (/\b(not a receipt|ignore|just a photo)\b/i.test(cap)) return say(id, "Noted, not a receipt.");
+      api("sendChatAction", { chat_id: id, action: "typing" }).catch(() => {});
+      try {
+        const r = await photo({ data: await download(photoIn.file_id), mime: photoIn.mime_type || "image/jpeg", note: cap });
+        return say(id, (r.ok ? "🧾 " : "") + (r.message || (r.ok ? "Saved." : "That didn't work.")));
+      } catch (e) { log.error?.("telegram photo in", e.message); return say(id, "I couldn't read that photo: " + String(e.message).slice(0, 120)); }
+    }
     if (voiceIn && linked) {
       if (!transcribe) return say(id, "I can't listen to voice notes yet; type it for me.");
       try {

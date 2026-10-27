@@ -9,6 +9,7 @@ export const SCOPES = {
   gmailCompose: "https://www.googleapis.com/auth/gmail.compose",
   calendar: "https://www.googleapis.com/auth/calendar.events",
   drive: "https://www.googleapis.com/auth/drive",   // only used to move CCP files to the Bin when Nicholas asks
+  driveFile: "https://www.googleapis.com/auth/drive.file",   // personal account: only files Bernard himself creates (receipt photos)
 };
 const GMAIL = "https://gmail.googleapis.com/gmail/v1/users/me";
 const CAL = "https://www.googleapis.com/calendar/v3";
@@ -260,6 +261,29 @@ export function createGmail({ kv, clientId, clientSecret, redirectUri, account, 
       const cur = await request(`${GMAIL}/drafts/${encodeURIComponent(draftId)}?format=metadata`);
       await request(`${GMAIL}/drafts/${encodeURIComponent(draftId)}`, { method: "DELETE" });
       return { deleted: true, subject: header(cur.message || {}, "Subject"), to: header(cur.message || {}, "To") };
+    },
+
+    // ---------- Drive (files Bernard creates, e.g. receipt photos) ----------
+    // Uploads into a folder of the given name at the top of My Drive (made once), and returns its link.
+    async uploadFile({ name, mime, data, folder = "Bernard" }) {
+      if (!(await hasScope(SCOPES.driveFile)) && !(await hasScope(SCOPES.drive))) throw Object.assign(new Error(`${account} hasn't granted Drive access for Bernard's files yet.`), { code: "needs_permission" });
+      const folderKey = `${kvKey}_folder_${folder.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`;
+      let folderId = await kv.get(folderKey);
+      if (folderId) { try { await request(`https://www.googleapis.com/drive/v3/files/${folderId}?fields=id,trashed`); } catch { folderId = ""; } }
+      if (!folderId) {
+        const f = await request("https://www.googleapis.com/drive/v3/files?fields=id", { method: "POST", body: { name: folder, mimeType: "application/vnd.google-apps.folder" } });
+        folderId = f.id; await kv.set(folderKey, folderId);
+      }
+      const boundary = "bernud" + randomBytes(8).toString("hex");
+      const meta = Buffer.from(JSON.stringify({ name, parents: [folderId] }));
+      const body = Buffer.concat([
+        Buffer.from(`--${boundary}\r\ncontent-type: application/json; charset=UTF-8\r\n\r\n`), meta,
+        Buffer.from(`\r\n--${boundary}\r\ncontent-type: ${mime}\r\n\r\n`), data, Buffer.from(`\r\n--${boundary}--`),
+      ]);
+      const r = await fetchImpl("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink", { method: "POST", headers: { authorization: `Bearer ${await accessToken()}`, "content-type": `multipart/related; boundary=${boundary}` }, body, signal: AbortSignal.timeout(30000) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error?.message || `Drive upload ${r.status}`);
+      return { id: j.id, link: j.webViewLink || `https://drive.google.com/file/d/${j.id}/view`, folder_link: `https://drive.google.com/drive/folders/${folderId}` };
     },
 
     // ---------- calendar ----------

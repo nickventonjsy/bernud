@@ -56,6 +56,7 @@ export const GROUPS = {
   cameras: { tools: ["camera"], re: /\b(cameras?|cctv|doorbell|front door|driveway|garden|garage|imou|shop|car ?park|living room|bedroom|anyone|anybody|someone|motion|movement|alerts?|intruder|security|overnight|last night|snapshot|footage)\b/ },
   home: { tools: ["lights", "tv_control", "goodnight", "home_arrival", "youtube"], re: /\b(lights?|lamps?|bulbs?|bright|dim|colou?r|ceiling|govee|hue|tv|telly|television|netflix|youtube|video|watch|good ?night|bed|arriv|home|leave|leaving)\b/ },
   music: { tools: ["spotify_info", "spotify_control", "spotify_dj", "spotify_play_on"], re: /\b(echo|alexa|spotify|music|songs?|play|playing|playlist|tracks?|album|artist|pause|resume|skip|next|previous|shuffle|repeat|louder|quieter|volume|speaker|dj|mix|tunes|vibe|mood)\b/ },
+  receipts: { tools: ["receipts", "shopping_list"], re: /\b(receipts?|spent|spend|spending|bill|cost me|running low|usual shop|how much (did|have) i)\b/ },
   priorities: { tools: ["priorities"], re: /\b(priorit(y|ies)|to-?do|todo|must do|top three|done with|tick off|ticked|finished)\b/ },
   shopping: { tools: ["shopping_list"], re: /\b(shopping|groceries|grocery|we need|run out|ran out|buy)\b/ },
   firetv: { tools: ["firetv"], re: /\b(fire ?(tv|stick)|firestick|netflix|iplayer|prime video|disney|plex|itvx)\b/ },
@@ -190,6 +191,15 @@ export function createBrain({ briefHandler = null, dayLog = null, learner = null
       if (out && out.show_camera) used.ui = { camera: out.show_camera }; // tells the screen to open the camera
       return out;
     } catch (e) { return { error: String(e.message || e).slice(0, 300) }; }
+  }
+
+  // Look at a picture (a receipt, say) and answer as JSON or text. Gemini only: Groq's free models don't take images.
+  async function vision({ system, text, image, maxTokens = 1500, json = true }) {
+    if (!geminiKey) throw Object.assign(new Error("Reading photos needs the Gemini key on the server."), { code: "not_set_up" });
+    const { res } = await generate({ systemInstruction: { parts: [{ text: system }] },
+      contents: [{ role: "user", parts: [{ inline_data: { mime_type: image.mime || "image/jpeg", data: image.data } }, { text }] }],
+      generationConfig: { maxOutputTokens: maxTokens + 2000, temperature: 0, thinkingConfig: { thinkingLevel: "low" }, ...(json ? { responseMimeType: "application/json" } : {}) } }, 10_000);
+    return (res.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("").trim();
   }
 
   // ---------------- Gemini (hedged across models) ----------------
@@ -455,6 +465,7 @@ export function createBrain({ briefHandler = null, dayLog = null, learner = null
   return {
     chat,
     complete,
+    vision,
     async prompt() { return (await config()).prompt; },
     selfTest,
     async status() { try { const c = await config(); return { ok: true, configured: !!(geminiKey || groqKey), gemini: !!geminiKey, groq: !!groqKey, tools: c.tools.length, source: c.source }; } catch (e) { return { ok: false, configured: !!(geminiKey || groqKey), error: e.message }; } },

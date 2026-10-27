@@ -111,7 +111,7 @@ const { londonToDate } = await import("./reminders.js");
 const PUBLIC_URL = (process.env.PUBLIC_URL || "https://bernud-server.onrender.com").replace(/\/+$/, "");
 const googleBase = { kv: db.kv, clientId: process.env.GOOGLE_OAUTH_CLIENT_ID || "", clientSecret: process.env.GOOGLE_OAUTH_CLIENT_SECRET || "", redirectUri: PUBLIC_URL + "/google/callback", secret: API_KEY };
 export const gmail = createGmail({ ...googleBase, name: "ccp", account: process.env.GMAIL_ADDRESS || "corycarpaints@gmail.com", kvKey: "gmail_refresh_token", scopes: [SCOPES.gmailRead, SCOPES.gmailCompose, SCOPES.calendar, SCOPES.drive], signature: CCP_SIGNATURE });
-export const personalGoogle = createGmail({ ...googleBase, name: "personal", account: process.env.PERSONAL_GOOGLE_ADDRESS || "nickventon@gmail.com", kvKey: "google_personal_refresh_token", scopes: [SCOPES.calendar, SCOPES.gmailRead] });
+export const personalGoogle = createGmail({ ...googleBase, name: "personal", account: process.env.PERSONAL_GOOGLE_ADDRESS || "nickventon@gmail.com", kvKey: "google_personal_refresh_token", scopes: [SCOPES.calendar, SCOPES.gmailRead, SCOPES.driveFile] });
 const googleAccounts = { ccp: gmail, personal: personalGoogle };
 // Bernard's alerts go to his Telegram chat (Nicholas's choice, 27 Oct). The phone notification app (ntfy)
 // is only the fallback, for when Telegram isn't linked or can't be reached.
@@ -250,6 +250,8 @@ async function dayVerdict({ done = [] } = {}) {
 // ---------------- Shopping list, wake-up, Fire TV, watchdog ----------------
 const { createPriorities } = await import("./priorities.js");
 export const priorities = createPriorities({ kv: db.kv });
+const { createReceipts } = await import("./receipts.js");
+export const receipts = createReceipts({ kv: db.kv, vision: (a) => brain.vision(a), drive: personalGoogle });
 const { createShopping } = await import("./shopping.js");
 export const shopping = createShopping({ kv: db.kv, notify, telegram: () => telegram,
   openNote: async (text) => {
@@ -288,7 +290,8 @@ async function speakMp3(text) {
   return null;
 }
 const { createTelegram } = await import("./telegram.js");
-export const telegram = createTelegram({ token: (process.env.TELEGRAM_BOT_TOKEN || "").trim(), kv: db.kv, shopping, chat: (a) => brain.chat(a), transcribe: transcribeAudio, speak: speakMp3 });
+export const telegram = createTelegram({ token: (process.env.TELEGRAM_BOT_TOKEN || "").trim(), kv: db.kv, shopping, chat: (a) => brain.chat(a), transcribe: transcribeAudio, speak: speakMp3,
+  photo: (a) => { dayLog.add("asked", "receipt photo", "telegram"); return receipts.ingest({ ...a, via: "telegram" }); } });
 if (telegram.configured) telegramAlert = telegram.alert;
 dayLogRef = dayLog;
 // Sunday evening: Bernard's week in review.
@@ -618,11 +621,11 @@ function send(res, status, body, req) {
   res.end(JSON.stringify(body));
 }
 
-async function readJson(req) {
+async function readJson(req, limit = 20000) {
   let raw = "";
   for await (const chunk of req) {
     raw += chunk;
-    if (raw.length > 20000) throw Object.assign(new Error("too large"), { status: 413 });
+    if (raw.length > limit) throw Object.assign(new Error("too large"), { status: 413 });
   }
   if (!raw) return {};
   try { return JSON.parse(raw); } catch { throw Object.assign(new Error("invalid JSON"), { status: 400 }); }
@@ -792,6 +795,15 @@ export async function handle(req, res) {
     if (b.action === "add" && out.added?.length) dayLog.add("asked", "add priority: " + out.added.join(", "), "dashboard");
     return send(res, 200, out, req);
   }
+  // A receipt photo from the dashboard / phone app: { image: base64, mime, note }.
+  if (path === "/receipts/photo" && req.method === "POST") {
+    if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
+    const b = await readJson(req, 16 * 1024 * 1024);
+    if (!b.image) return send(res, 400, { ok: false, message: "No photo." }, req);
+    dayLog.add("asked", "receipt photo", req.headers["x-bernud-via"] === "phone" ? "phone" : "dashboard");
+    try { return send(res, 200, await receipts.ingest({ data: String(b.image).replace(/^data:[^,]*,/, ""), mime: b.mime || "image/jpeg", note: b.note || "", via: req.headers["x-bernud-via"] === "phone" ? "phone" : "dashboard" }), req); }
+    catch (e) { return send(res, 200, { ok: false, message: "Couldn't read the receipt: " + String(e.message).slice(0, 160) }, req); }
+  }
   // Everything the dashboard panels show, in one call (dashboard passcode). Nothing here is made up:
   // calendar from Google, priorities from the latest brief, activity from the day log, status from the watchdog.
   if (path === "/dash" && req.method === "GET") {
@@ -818,6 +830,7 @@ export async function handle(req, res) {
     } catch (e) { out.tasks = { error: e.message }; }
     out.status = { watchdog: watchdog.last(), phone: phone.online(), pc: pc.online(), work_laptop: workPc.online(), storage: db.kind, telegram: await telegram.status().catch(() => null) };
     try { out.credits = await creditsStatus(); } catch {}
+    try { out.spend = await receipts.dash(); } catch {}
     try {
       const g = {};
       for (const [k, a] of Object.entries(googleAccounts)) { const c = a.configured() && (await a.connected()); g[k] = { account: a.account, connected: c, mail: c && (await a.hasScope(SCOPES.gmailRead)), calendar: c && (await a.hasScope(SCOPES.calendar)) }; }
@@ -1041,6 +1054,7 @@ export async function handle(req, res) {
       catch (e) { return send(res, 200, { ok: false, error: e.code || "error", message: String(e.message).slice(0, 300), connect_link: e.link }); }
     }
     if (path === "/shopping" && req.method === "POST") return send(res, 200, await shopping.handle(await readJson(req)));
+    if (path === "/receipts" && req.method === "POST") return send(res, 200, await receipts.handle(await readJson(req)));
     if (path === "/priorities" && req.method === "POST") { const b = await readJson(req); return send(res, 200, await priorities.handle({ ...b, brief: await briefPriorities() })); }
     if (path === "/wakeup" && req.method === "POST") return send(res, 200, await wakeup.handle(await readJson(req)));
     if (path === "/firetv" && req.method === "POST") {

@@ -147,6 +147,8 @@
   .pri .box svg { width: 14px; height: 14px; display: none; } .pri .box.on svg { display: block; }
   .pri .t { font-size: 15px; } .pri.done .t { color: var(--muted); text-decoration: line-through; }
   .pri .when { font-size: 12px; color: var(--muted); }
+  .spend-top { display: flex; gap: 22px; margin-bottom: 8px; } .spend-top .big { font-size: 26px; font-weight: 500; letter-spacing: -.02em; } .spend-top .big.dim { color: var(--muted); } .spend-top .s, #spendShops, #receiptMsg { font-size: 12px; color: var(--muted); }
+  .rcpt { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 6px 0; border-bottom: 1px solid rgba(255, 45, 45, 0.10); font-size: 13.5px; } .rcpt small { color: var(--muted); margin-left: 6px; font-size: 12px; } .rcpt a { color: var(--muted); text-decoration: none; }
   .pri-add { display: flex; gap: 8px; margin-top: 10px; }
   .pri-add input { flex: 1; min-width: 0; background: rgba(255,255,255,0.03); border: 1px solid var(--line); border-radius: 10px; color: var(--text); font: inherit; font-size: 13.5px; padding: 8px 10px; }
   .pri-add input:focus { outline: none; border-color: var(--line-strong); }
@@ -407,6 +409,15 @@
     <div class="panel" id="appsPanel" aria-label="Connected apps">
       <div class="p-head"><div class="p-title">Connected apps</div><div class="p-tag"><button type="button" id="manageApps">Manage</button></div></div>
       <div id="appsList"><div class="empty">—</div></div>
+    </div>
+
+    <div class="panel" id="spendPanel" aria-label="Food spend">
+      <div class="p-head"><div class="p-title">Food spend</div><div class="p-tag" id="spendTag"></div></div>
+      <div class="spend-top"><div><div class="big" id="spendNow">—</div><div class="s" id="spendNowLbl">this month</div></div><div><div class="big dim" id="spendPrev">—</div><div class="s" id="spendPrevLbl">last month</div></div></div>
+      <div id="spendShops" class="s"></div>
+      <div id="spendList"></div>
+      <div class="pri-add"><button type="button" id="receiptBtn" style="width:auto;padding:0 14px;font-size:13.5px">Add a receipt</button><span class="s" id="receiptMsg" style="align-self:center"></span></div>
+      <input type="file" id="receiptInput" accept="image/*" capture="environment" hidden>
     </div>
 
     <div class="panel" aria-label="Headlines">
@@ -698,7 +709,7 @@
 
   // ---- Version numbers (bottom of the screen) ----
   // DASH_VERSION goes up by one with every dashboard change (a git hook bumps it automatically).
-  const DASH_VERSION = 20;
+  const DASH_VERSION = 21;
   (async () => {
     const set = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
     set("dashVer", DASH_VERSION);
@@ -2339,12 +2350,38 @@
       $("sysRows").innerHTML = show.map((r) => `<div class="row"><div class="ico">${icon('<circle cx="12" cy="12" r="9"/>' + (r.ok ? '<path d="M8 12l3 3 5-6"/>' : '<path d="M12 8v5M12 16h.01"/>'))}</div><div class="lbl"><b>${esc(r.name)}</b><small>${esc(r.ok ? "Working" : r.detail || "Not working")}</small></div><div class="val"><span class="state ${r.ok ? "ok" : "bad"}"><span class="dot ${r.ok ? "" : "off"}"></span>${r.ok ? "OK" : "Check"}</span></div><span class="chev">›</span></div>`).join("");
       const fd = document.getElementById("footDot"); if (fd) fd.className = "dot " + (bad.length ? "red" : "");
     }
+    if (d.spend) renderSpend(d.spend);
     if (d.credits) {
       const eng = (store.get("bernud.engine") || "auto");
       $("engineTag").textContent = eng === "free" ? "Free mode" : d.credits.ok ? `${d.credits.left.toLocaleString("en-GB")} credits` : "ElevenLabs";
       $("voicePillText").textContent = eng === "free" || (eng === "auto" && d.credits.saving) ? "Free mode" : "Voice ready";
     }
   }
+  // Food spend panel (receipts Bernard has read).
+  function renderSpend(sp) {
+    if (!sp) return;
+    const gbp = (n) => "£" + Number(n || 0).toFixed(2);
+    $("spendNow").textContent = gbp(sp.month.total); $("spendNowLbl").textContent = sp.month.month_name + (sp.month.receipts ? ` · ${sp.month.receipts} receipt${sp.month.receipts === 1 ? "" : "s"}` : "");
+    $("spendPrev").textContent = sp.previous.receipts ? gbp(sp.previous.total) : "—"; $("spendPrevLbl").textContent = sp.previous.month_name;
+    $("spendTag").textContent = sp.month.receipts && sp.previous.receipts ? (sp.month.total > sp.previous.total ? "Up on last month" : "Below last month") : "";
+    $("spendShops").textContent = sp.month.shops.slice(0, 4).map((b) => `${b.shop} ${gbp(b.total)}`).join(" · ");
+    $("spendList").innerHTML = sp.recent.length ? sp.recent.map((r) => `<div class="rcpt"><div>${esc(r.shop)}<small>${esc(r.day)}</small></div><div>${gbp(r.total)}${r.photo ? ` <a href="${esc(r.photo)}" target="_blank" rel="noopener" title="Open the photo in Drive">↗</a>` : ""}</div></div>`).join("") : `<div class="empty">No receipts yet. Snap one here or send the photo to Bernard on Telegram.</div>`;
+  }
+  $("receiptBtn").addEventListener("click", () => $("receiptInput").click());
+  $("receiptInput").addEventListener("change", async () => {
+    const f = $("receiptInput").files && $("receiptInput").files[0]; $("receiptInput").value = "";
+    const pass = store.get("bernud.dashKey"); if (!f) return; if (!pass) { $("receiptMsg").textContent = "Enter your passcode first (CCP brief button)."; return; }
+    $("receiptMsg").textContent = "Reading the receipt…";
+    try {
+      // Shrink big phone photos before sending (the figures read fine at ~1600px).
+      const bmp = await createImageBitmap(f); const scale = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+      const c = document.createElement("canvas"); c.width = Math.round(bmp.width * scale); c.height = Math.round(bmp.height * scale); c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+      const image = c.toDataURL("image/jpeg", 0.85);
+      const j = await (await fetch(`${SERVER}/receipts/photo`, { method: "POST", headers: { "content-type": "application/json", "x-dashboard-key": pass, "x-bernud-via": window.BernudApp ? "phone" : "dashboard" }, body: JSON.stringify({ image, mime: "image/jpeg" }) })).json();
+      $("receiptMsg").textContent = j.message || (j.ok ? "Saved." : "That didn't work.");
+      if (j.ok) { if (!busy) setMode(mode, j.message); loadDash(); }
+    } catch (e) { $("receiptMsg").textContent = "Couldn't send it: " + String(e.message || e).slice(0, 80); }
+  });
   async function priAction(action, text) {
     const pass = store.get("bernud.dashKey"); if (!pass || !text) return;
     try { const j = await (await fetch(`${SERVER}/dash/priorities`, { method: "POST", headers: { "content-type": "application/json", "x-dashboard-key": pass }, body: JSON.stringify({ action, items: [text] }) })).json(); if (j.ok) loadDash(); } catch {}
