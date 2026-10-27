@@ -42,9 +42,10 @@ export function notificationText(md) {
 }
 
 // One text-only conversation with the ElevenLabs agent over its public WebSocket.
-export function converse(agentId, text, { until, timeoutMs = 240_000, WS = globalThis.WebSocket, log = () => {} } = {}) {
+// signedUrl: a server-fetched signed WebSocket URL (needed once the agent is private); falls back to the public one.
+export function converse(agentId, text, { until, timeoutMs = 240_000, WS = globalThis.WebSocket, log = () => {}, signedUrl = null } = {}) {
   return new Promise((resolve, reject) => {
-    const ws = new WS(`wss://api.elevenlabs.io/v1/convai/conversation?agent_id=${encodeURIComponent(agentId)}`);
+    const ws = new WS(signedUrl || `wss://api.elevenlabs.io/v1/convai/conversation?agent_id=${encodeURIComponent(agentId)}`);
     const said = [];
     let done = false, checker = null;
     const finish = (err) => {
@@ -78,7 +79,7 @@ export function converse(agentId, text, { until, timeoutMs = 240_000, WS = globa
 
 export const SCHEDULED_MESSAGE = "This is your scheduled 9am run. Give me my CCP morning brief. I'm not listening live, so save the full written brief as usual and keep the spoken part to one sentence.";
 
-export function createScheduler({ kv, ccp, notify, agentId, config = {}, log = console.log, converseImpl = converse, fallback = null, extraLine = null }) {
+export function createScheduler({ kv, ccp, notify, agentId, config = {}, log = console.log, converseImpl = converse, fallback = null, extraLine = null, signedUrl = null }) {
   const cfg = { time: config.time || "09:00", days: config.days || "1-5" };
   let running = false, last = null;
 
@@ -88,7 +89,9 @@ export function createScheduler({ kv, ccp, notify, agentId, config = {}, log = c
     const started = Date.now();
     const saved = async () => { const b = await ccp.latestBrief(); return b && new Date(b.created_at).getTime() >= started - 1000 ? b : null; };
     let error = null;
-    try { await converseImpl(agentId, SCHEDULED_MESSAGE, { until: async () => Boolean(await saved()), log }); }
+    let url = null;
+    if (signedUrl) { try { url = await signedUrl(); } catch (e) { log("brief: couldn't get a signed link (" + e.message + "), trying the public one"); } }
+    try { await converseImpl(agentId, SCHEDULED_MESSAGE, { until: async () => Boolean(await saved()), log, signedUrl: url }); }
     catch (e) { error = e; }
     let brief = await saved().catch(() => null);
     let via = "voice agent";

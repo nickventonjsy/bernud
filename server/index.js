@@ -414,8 +414,43 @@ async function briefByFreeBrain() {
   return saved;
 }
 
+// Session links for Bernard's ElevenLabs agent. Once the agent is private, these are the only way in:
+// the dashboard asks for one with the passcode; the 9am brief gets one here directly.
+const ELEVEN_AGENT = process.env.AGENT_ID || "agent_0501m5q6cc15eqcrnamk2e1w84xc";
+async function elevenSession(kind = "both") {
+  const key = process.env.ELEVENLABS_API_KEY || "";
+  if (!key) throw new Error("no ElevenLabs key on the server");
+  const h = { "xi-api-key": key };
+  const out = {};
+  if (kind !== "websocket") {
+    const r = await fetch(`https://api.elevenlabs.io/v1/convai/conversation/token?agent_id=${ELEVEN_AGENT}`, { headers: h, signal: AbortSignal.timeout(10_000) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.detail?.message || j.detail?.status || `ElevenLabs token ${r.status}`);
+    out.token = j.token;
+  }
+  if (kind !== "webrtc") {
+    const r = await fetch(`https://api.elevenlabs.io/v1/convai/conversation/get-signed-url?agent_id=${ELEVEN_AGENT}`, { headers: h, signal: AbortSignal.timeout(10_000) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.detail?.message || j.detail?.status || `ElevenLabs signed url ${r.status}`);
+    out.signed_url = j.signed_url;
+  }
+  return out;
+}
+// Is the agent private (needs a signed link) or public (anyone with the id)? And flip it.
+async function agentPrivacy(set = null) {
+  const key = process.env.ELEVENLABS_API_KEY || "";
+  if (!key) return { ok: false, error: "no ElevenLabs key on the server" };
+  const h = { "xi-api-key": key, "content-type": "application/json" };
+  if (set !== null) {
+    const r = await fetch(`https://api.elevenlabs.io/v1/convai/agents/${ELEVEN_AGENT}`, { method: "PATCH", headers: h, body: JSON.stringify({ platform_settings: { auth: { enable_auth: Boolean(set) } } }), signal: AbortSignal.timeout(15_000) });
+    if (!r.ok) return { ok: false, error: `ElevenLabs said ${r.status}: ${(await r.text().catch(() => "")).slice(0, 160)}` };
+  }
+  const a = await (await fetch(`https://api.elevenlabs.io/v1/convai/agents/${ELEVEN_AGENT}`, { headers: h, signal: AbortSignal.timeout(10_000) })).json();
+  return { ok: true, private: Boolean(a?.platform_settings?.auth?.enable_auth) };
+}
+
 export const scheduler = createScheduler({
-  kv: db.kv, ccp, notify, fallback: briefByFreeBrain, extraLine: creditsLine,
+  kv: db.kv, ccp, notify, fallback: briefByFreeBrain, extraLine: creditsLine, signedUrl: async () => (await elevenSession("websocket")).signed_url,
   agentId: process.env.AGENT_ID || "agent_0501m5q6cc15eqcrnamk2e1w84xc",
   config: { time: process.env.BRIEF_TIME, days: process.env.BRIEF_DAYS },
 });
@@ -718,6 +753,16 @@ export async function handle(req, res) {
     catch (e) { console.error("brain", e.message); return send(res, 200, { ok: false, code: e.code || "error", reply: ["quota", "busy", "no_config"].includes(e.code) ? e.message : "Sorry, my free brain hit a problem: " + String(e.message).slice(0, 160) }, req); }
   }
   // Gemini's natural voices for free mode: the list, and a reply turned into a WAV.
+  if (path === "/elevenlabs/session" && req.method === "GET") {
+    if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
+    try { return send(res, 200, { ok: true, ...(await elevenSession(url.searchParams.get("kind") || "both")) }, req); }
+    catch (e) { return send(res, 200, { ok: false, error: String(e.message).slice(0, 200) }, req); }
+  }
+  if (path === "/elevenlabs/privacy" && (req.method === "GET" || req.method === "POST")) {
+    if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
+    try { return send(res, 200, await agentPrivacy(req.method === "POST" ? Boolean((await readJson(req)).private) : null), req); }
+    catch (e) { return send(res, 200, { ok: false, error: String(e.message).slice(0, 200) }, req); }
+  }
   if (path === "/google/accounts" && (req.method === "GET" || req.method === "POST")) {
     if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
     const out = {};

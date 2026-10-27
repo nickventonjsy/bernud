@@ -511,6 +511,10 @@
     <textarea id="workSetup" readonly rows="4" style="display:none;width:100%;margin-top:8px;padding:10px;background:transparent;color:var(--text);border:1px solid var(--line, #5a1a1f);border-radius:8px;font:12px ui-monospace,monospace"></textarea>
     <div class="note" id="workNote"></div>
     <hr style="border:0;border-top:1px solid var(--line, #5a1a1f);margin:16px 0">
+    <p><b style="color:var(--text)">Who can talk to Bernard.</b> Private means only this dashboard and app, with your passcode, can start a voice conversation with him. Public means anyone who knew his ElevenLabs agent id could.</p>
+    <div class="btnrow"><button class="btn" type="button" id="privBtn">Check</button><button class="btn primary" type="button" id="privLockBtn" style="display:none">Make Bernard private</button><button class="btn" type="button" id="privOpenBtn" style="display:none">Make public again</button></div>
+    <div class="note" id="privNote"></div>
+    <hr style="border:0;border-top:1px solid var(--line, #5a1a1f);margin:16px 0">
     <p><b style="color:var(--text)">Google accounts.</b> The Cory Car Paints account gives Bernard the CCP inbox, drafts, calendar and Drive. Your personal account lets him read your own email (read-only, never drafts) and calendar, so he can find booking references, orders, tickets and the like when you ask.</p>
     <div class="btnrow"><button class="btn" type="button" id="gBtn">Show accounts</button></div>
     <div id="gList"></div>
@@ -552,7 +556,7 @@
 
   // ---- Version numbers (bottom of the screen) ----
   // DASH_VERSION goes up by one with every dashboard change (a git hook bumps it automatically).
-  const DASH_VERSION = 13;
+  const DASH_VERSION = 14;
   (async () => {
     const set = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
     set("dashVer", DASH_VERSION);
@@ -1534,8 +1538,19 @@
     try {
       await navigator.mediaDevices.getUserMedia({ audio: true });
       const { Conversation } = await import("https://esm.sh/@elevenlabs/client@1.30.0");
+      // A short-lived session link from Bernard's server (needs the passcode). Falls back to the public agent id
+      // only while Bernard is still public.
+      const wantWs = store.get(STORE.conn) === "websocket";
+      let session = { agentId: AGENT_ID };
+      const pass = store.get("bernud.dashKey");
+      if (pass) {
+        try {
+          const j = await (await fetch(`${SERVER}/elevenlabs/session?kind=${wantWs ? "websocket" : "webrtc"}`, { headers: { "x-dashboard-key": pass }, signal: AbortSignal.timeout(8000) })).json();
+          if (j.ok) session = wantWs ? { signedUrl: j.signed_url } : { conversationToken: j.token };
+        } catch {}
+      }
       conversation = await Conversation.startSession({
-        agentId: AGENT_ID,
+        ...session,
         overrides: { agent: { firstMessage: pickGreeting() } },
         clientTools: { show_camera: async ({ camera } = {}) => { openCamera(camera || ""); return "The camera is now showing on Nicholas's screen."; } },
         connectionType: store.get(STORE.conn) === "websocket" ? "websocket" : "webrtc",
@@ -1563,6 +1578,7 @@
       busy = false; conversation = null;
       appCall("conversationEnded");
       const msg = String(err && (err.message || err.name || err)).toLowerCase();
+      if (!store.get("bernud.dashKey") && /auth|unauthori|403|401|signed|token/.test(msg)) { setMode("idle", "Bernard is private now: enter your passcode (CCP brief button) and try again."); return; }
       if (msg.includes("quota") || msg.includes("credits")) {
         // Out of ElevenLabs credits: say so once and stop the wake word retrying in a loop.
         // Carry on in free mode instead, so Bernard still answers.
@@ -2186,6 +2202,20 @@
     } catch { $("gNote").textContent = "Couldn't reach Bernard's server."; }
   }
   $("gBtn").addEventListener("click", () => gShow());
+  // ---- Agent privacy (behind the dashboard passcode) ----
+  async function privShow(set) {
+    const pass = store.get("bernud.dashKey"); if (!pass) { $("privNote").textContent = "Enter your passcode in the CCP brief first."; return; }
+    $("privNote").textContent = set === undefined ? "Checking…" : "Changing…";
+    try {
+      const j = await (await fetch(`${SERVER}/elevenlabs/privacy`, set === undefined ? { headers: { "x-dashboard-key": pass } } : { method: "POST", headers: { "content-type": "application/json", "x-dashboard-key": pass }, body: JSON.stringify({ private: set }) })).json();
+      if (!j.ok) { $("privNote").textContent = "Couldn't check: " + j.error; return; }
+      $("privNote").textContent = j.private ? "Bernard is private. Only this dashboard and app can start a conversation." : "Bernard is PUBLIC: anyone with his agent id could talk to him.";
+      $("privLockBtn").style.display = j.private ? "none" : ""; $("privOpenBtn").style.display = j.private ? "" : "none";
+    } catch { $("privNote").textContent = "Couldn't reach Bernard's server."; }
+  }
+  $("privBtn").addEventListener("click", () => privShow());
+  $("privLockBtn").addEventListener("click", () => privShow(true));
+  $("privOpenBtn").addEventListener("click", () => privShow(false));
   $("learnAddBtn").addEventListener("click", () => { const t = $("learnAdd").value.trim(); if (t) { learnShow({ add: t }); $("learnAdd").value = ""; } });
   $("weeklyBtn").addEventListener("click", async () => {
     const pass = store.get("bernud.dashKey"); if (!pass) { $("tgNote").textContent = "Enter your passcode in the CCP brief first."; return; }
