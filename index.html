@@ -162,6 +162,11 @@
   .verb::after, .verb.r::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--text); opacity: 0.7; }
   .verb.r::after { display: none; }
   .tagline { margin-top: -6px; font-size: 30px; letter-spacing: 0.22em; font-weight: 500; text-align: center; min-height: 1.3em; }
+  .tlog-btn { margin-top: 4px; background: none; border: 0; color: var(--muted); font-family: var(--mono); font-size: 10px; letter-spacing: .2em; text-transform: uppercase; opacity: .55; cursor: pointer; }
+  .tlog-btn:hover { opacity: 1; }
+  .tlog { max-width: 560px; width: 100%; max-height: 150px; overflow-y: auto; margin-top: 4px; padding: 6px 12px; font-family: var(--mono); font-size: 11.5px; line-height: 1.5; color: var(--muted); text-align: left; border-top: 1px solid var(--line, #5a1a1f); }
+  .tlog div { margin: 2px 0; } .tlog b { color: var(--text); font-weight: 500; } .tlog .me { color: var(--red); }
+  .subline .cap-w { opacity: 0; transition: opacity .18s; } .subline .cap-w.on { opacity: 1; }
   .subline { margin-top: 6px; font-family: var(--mono); font-size: 12px; letter-spacing: 0.1em; color: var(--muted); text-align: center; min-height: 1.4em; max-width: 560px; padding: 0 12px; }
   #wave { width: min(100%, 460px); height: 56px; margin-top: 10px; }
 
@@ -341,6 +346,8 @@
     </div>
     <div class="tagline" id="tagline">At your service.</div>
     <div class="subline" id="subline" aria-live="polite">Tap the core or the microphone to talk.</div>
+    <button class="tlog-btn" type="button" id="tlogBtn" aria-expanded="false" title="Show the last few exchanges">transcript</button>
+    <div class="tlog" id="tlog" hidden></div>
     <canvas id="wave" aria-hidden="true"></canvas>
   </section>
 
@@ -463,6 +470,7 @@
     <select id="boostSelect" style="width:100%;padding:10px;background:transparent;color:var(--text);border:1px solid var(--line, #5a1a1f);border-radius:8px">
       <option value="1">Off</option><option value="2">2× (recommended for laptops)</option><option value="3">3×</option><option value="4">4× (quiet mics)</option>
     </select>
+    <label style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="exprChk" style="width:auto"> Expressions: Bernard's eyes follow you and his face reacts to what he says</label>
     <label style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="rawMic" style="width:auto"> Laptop mic mode (turns off Chrome's voice isolation, which can cut out your voice)</label>
     <label for="connSelect">Connection</label>
     <select id="connSelect" style="width:100%;padding:10px;background:transparent;color:var(--text);border:1px solid var(--line, #5a1a1f);border-radius:8px">
@@ -556,7 +564,7 @@
 
   // ---- Version numbers (bottom of the screen) ----
   // DASH_VERSION goes up by one with every dashboard change (a git hook bumps it automatically).
-  const DASH_VERSION = 14;
+  const DASH_VERSION = 15;
   (async () => {
     const set = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
     set("dashVer", DASH_VERSION);
@@ -1012,7 +1020,84 @@
     "await memory.recall(\"Nicholas\");", "voice.render(reply, { tone: \"dry\" });",
   ];
 
-  const face = { yaw: -0.52, pitch: 0, gx: 0, gy: 0, gtx: 0, gty: 0, nextGlance: 0, nextBlink: 2, blinkAt: -9, mouth: 0, open: 1 };
+  const face = { yaw: -0.52, pitch: 0, gx: 0, gy: 0, gtx: 0, gty: 0, nextGlance: 0, nextBlink: 2, blinkAt: -9, mouth: 0, open: 1,
+    // Expression: eased values the renderer uses. roll = head tilt, squint = lids half closed, boost = eye brightness,
+    // tint = how far the eye glow shifts toward the emotion's colour, look = where the eyes are pointing (-1..1).
+    roll: 0, squint: 0, boost: 0, tint: 0, lookX: 0, lookY: 0, emo: "neutral", emoUntil: 0 };
+
+  // ---- Expressions: what Bernard feels shows in his eyes, his tilt and his chip ----
+  const EMOTIONS = {
+    neutral:    { roll: 0,     squint: 0,    boost: 0,    colour: null,          chip: 1 },
+    amused:     { roll: 0.035, squint: 0.35, boost: 0.25, colour: [255, 170, 60],  chip: 1.4 },
+    warm:       { roll: 0.025, squint: 0.2,  boost: 0.2,  colour: [255, 120, 90],  chip: 0.8 },
+    proud:      { roll: -0.02, squint: 0.1,  boost: 0.35, colour: [255, 190, 90],  chip: 1.2 },
+    curious:    { roll: 0.05,  squint: 0,    boost: 0.3,  colour: [255, 230, 200], chip: 2 },
+    concerned:  { roll: -0.03, squint: 0.3,  boost: -0.1, colour: [255, 90, 40],   chip: 3 },
+    apologetic: { roll: 0.04,  squint: 0.45, boost: -0.25, colour: [200, 60, 60],  chip: 0.6 },
+    alert:      { roll: 0,     squint: -0.1, boost: 0.6,  colour: [255, 255, 255], chip: 6 },
+  };
+  const expressionsOn = () => store.get("bernud.expressions") !== "0";
+  function setEmotion(name, holdSec = 6) {
+    if (!EMOTIONS[name] || !expressionsOn()) return;
+    face.emo = name; face.emoUntil = performance.now() / 1000 + holdSec;
+  }
+  // A rough read of the feeling in a line Bernard says.
+  function emotionFromText(s) {
+    s = String(s || "").toLowerCase();
+    if (/\b(sorry|apolog|afraid|couldn'?t|can'?t do that|didn'?t work|failed|unable)\b/.test(s)) return "apologetic";
+    if (/\b(warning|careful|offline|not connected|problem|urgent|attention|alert|smoke|person at|intruder|low on|running out)\b/.test(s)) return "concerned";
+    if (/\bmichelle\b/.test(s)) return "warm";
+    if (/\b(done|sorted|all set|very good|certainly|right you are|consider it done|sent|saved|added)\b/.test(s) && s.length < 120) return "proud";
+    if (/\?\s*$/.test(s) || /\b(which|shall i|would you like|do you mean)\b/.test(s)) return "curious";
+    if (/\b(ha|quite|indeed|naturally|i dare say|one might|sir|insufferabl|dare i)\b/.test(s) || /!\s*$/.test(s)) return "amused";
+    return "neutral";
+  }
+  function reactTo(text) { const e = emotionFromText(text); if (e !== "neutral") setEmotion(e, e === "alert" ? 3 : 6); }
+
+  // ---- Gaze: he follows your finger or mouse, and glances about when idle ----
+  const gaze = { tx: 0, ty: 0, at: 0, nextIdle: 0 };
+  addEventListener("pointermove", (e) => {
+    if (!expressionsOn()) return;
+    const r = faceCv.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    gaze.tx = Math.max(-1, Math.min(1, (e.clientX - cx) / (innerWidth / 2))); gaze.ty = Math.max(-1, Math.min(1, (e.clientY - cy) / (innerHeight / 2))); gaze.at = performance.now() / 1000;
+  }, { passive: true });
+  function updateExpression(t) {
+    if (t > face.emoUntil && face.emo !== "neutral") face.emo = "neutral";
+    const e = EMOTIONS[face.emo], ease = 0.06;
+    face.roll += (e.roll - face.roll) * ease; face.squint += (e.squint - face.squint) * ease; face.boost += (e.boost - face.boost) * ease;
+    face.tint += ((e.colour ? 1 : 0) - face.tint) * ease;
+    // Where to look: the pointer if it moved recently, otherwise straight ahead with the odd glance away;
+    // while you're talking he looks straight at you.
+    let lx = 0, ly = 0;
+    if (mode === "listening") { lx = 0; ly = 0.05; }
+    else if (t - gaze.at < 4) { lx = gaze.tx * 0.8; ly = gaze.ty * 0.6; }
+    else { if (t > gaze.nextIdle) { gaze.nextIdle = t + 3 + Math.random() * 6; gaze.ix = (Math.random() - 0.5) * 0.7; gaze.iy = (Math.random() - 0.5) * 0.3; gaze.iUntil = t + 0.8 + Math.random() * 1.2; } if (t < gaze.iUntil) { lx = gaze.ix; ly = gaze.iy; } }
+    if (!expressionsOn() || reduceMotion) { lx = 0; ly = 0; }
+    face.lookX += (lx - face.lookX) * 0.08; face.lookY += (ly - face.lookY) * 0.08;
+  }
+
+  // ---- Live captions: Bernard's words appear as he says them, and a small transcript keeps the last exchanges ----
+  const tlog = [];
+  function logLine(who, text) {
+    if (!text) return;
+    tlog.push({ who, text: String(text).slice(0, 400) }); while (tlog.length > 12) tlog.shift();
+    const box = $("tlog");
+    box.innerHTML = tlog.map((l) => `<div><b class="${l.who === "You" ? "me" : ""}">${l.who}:</b> ${l.text.replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" })[c])}</div>`).join("");
+    box.scrollTop = box.scrollHeight;
+  }
+  $("tlogBtn").addEventListener("click", () => { const b = $("tlog"); b.hidden = !b.hidden; $("tlogBtn").setAttribute("aria-expanded", String(!b.hidden)); });
+  let capTimer = null;
+  function caption(text, { progressive = true, seconds = null } = {}) {
+    clearInterval(capTimer);
+    const el = $("subline"); text = String(text || "");
+    if (!progressive || reduceMotion || text.length < 12) { el.textContent = text.length > 220 ? text.slice(0, 217) + "…" : text; return; }
+    const words = text.split(/\s+/).slice(0, 60);
+    el.textContent = ""; el.append(...words.map((w) => { const s = document.createElement("span"); s.className = "cap-w"; s.textContent = w + " "; return s; }));
+    const per = Math.max(120, Math.min(420, ((seconds || words.length * 0.36) * 1000) / words.length));
+    let i = 0; const spans = el.querySelectorAll(".cap-w");
+    capTimer = setInterval(() => { if (i < spans.length) spans[i++].classList.add("on"); else clearInterval(capTimer); }, per);
+  }
+  function captionDone() { clearInterval(capTimer); $("subline").querySelectorAll(".cap-w").forEach((s) => s.classList.add("on")); }
 
   // ---- Bernard's picture face (his own ChatGPT-made portrait, bernard-face.webp), brought to life ----
   // Coordinates below are in the original 1254-pixel picture.
@@ -1057,10 +1142,15 @@
     const col = (c3, a) => `rgba(${c3[0]},${c3[1]},${c3[2]},${a})`;
     const listening = mode === "listening", speaking = mode === "speaking", thinking = mode === "connecting";
     const still = reduceMotion;
+    updateExpression(t);
+    const EM = EMOTIONS[face.emo];
+    // Eye glow colour drifts toward the emotion's colour
+    const mix = (a, b, f) => [0, 1, 2].map((i) => Math.round(a[i] + ((b || a)[i] - a[i]) * f));
+    const Gc = mix(G, EM.colour, face.tint * 0.7), COc = mix(CO, EM.colour, face.tint * 0.5);
 
-    // Blinks and mouth, as for the dot face
-    if (t > face.nextBlink && !still) { face.blinkAt = t; face.nextBlink = t + 2.4 + Math.random() * 4; }
-    const bp = (t - face.blinkAt) / 0.2, blink = bp >= 0 && bp <= 1 ? Math.sin(bp * Math.PI) : 0;
+    // Blinks (and a half-closed squint when amused or sorry) and the mouth
+    if (t > face.nextBlink && !still) { face.blinkAt = t; face.nextBlink = t + (face.emo === "curious" ? 1.6 : 2.4) + Math.random() * 4; }
+    const bp = (t - face.blinkAt) / 0.2, blink = Math.max(bp >= 0 && bp <= 1 ? Math.sin(bp * Math.PI) : 0, Math.max(0, face.squint));
     let mt = 0;
     if (speaking) mt = lv > 0.04 ? Math.min(1, lv * 1.4) : (still ? 0.3 : 0.1 + 0.6 * Math.abs(Math.sin(t * 9.5)) * (0.55 + 0.45 * Math.sin(t * 2.9 + 1)));
     face.mouth += (mt - face.mouth) * 0.35;
@@ -1069,8 +1159,10 @@
     const k = Math.min(w, h) / W * (1.02 + (still ? 0 : 0.01 * Math.sin(t * 0.9)) + (listening ? 0.025 : 0) + lv * 0.012);
     const ox = w / 2 + (still ? 0 : 4 * DPR * Math.sin(t * 0.37)), oy = h / 2 + (still ? 0 : 3 * DPR * Math.sin(t * 0.53));
     face.pitch += (((still ? 0 : 0.01 * Math.sin(t * 0.29)) + (thinking ? -0.025 : 0)) - face.pitch) * 0.05;
+    // Head: tilt for the emotion, and a slight turn toward wherever he's looking
+    const look = { x: face.lookX * 14, y: face.lookY * 9 };
     c.save();
-    c.translate(ox, oy); c.rotate(face.pitch); c.scale(k, k); c.translate(-W / 2, -W / 2);
+    c.translate(ox + look.x * 0.6 * DPR, oy + look.y * 0.4 * DPR); c.rotate(face.pitch + face.roll); c.scale(k, k); c.translate(-W / 2, -W / 2);
     c.drawImage(img, 0, 0, W, W);
 
     // Jaw: the lower lip and chin slide down as he speaks, opening a dark mouth
@@ -1104,17 +1196,18 @@
 
     c.globalCompositeOperation = "lighter";
     // Eye glow: brighter when listening or speaking, out while blinking
-    const eyeA = (0.32 + (still ? 0 : 0.1 * Math.sin(t * 2.1)) + lv * 0.6 + (listening ? 0.25 : 0) + (thinking ? 0.1 : 0)) * (1 - blink);
-    for (const [ex, ey] of CYB.eyes) {
-      const r = 70 * (1 + lv * 0.5 + (listening ? 0.15 : 0));
+    const eyeA = Math.max(0.08, (0.32 + face.boost * 0.5 + (still ? 0 : 0.1 * Math.sin(t * 2.1)) + lv * 0.6 + (listening ? 0.25 : 0) + (thinking ? 0.1 : 0)) * (1 - Math.max(0, blink - face.squint * 0.5)));
+    for (const [ex0, ey0] of CYB.eyes) {
+      const ex = ex0 + look.x, ey = ey0 + look.y;   // the glow (the "pupil") moves with his gaze
+      const r = 70 * (1 + lv * 0.5 + (listening ? 0.15 : 0) + face.boost * 0.3);
       const g = c.createRadialGradient(ex, ey, 0, ex, ey, r);
-      g.addColorStop(0, col(CO, Math.min(1, eyeA * 1.2))); g.addColorStop(0.25, col(G, eyeA * 0.8)); g.addColorStop(1, col(G, 0));
+      g.addColorStop(0, col(COc, Math.min(1, eyeA * 1.2))); g.addColorStop(0.25, col(Gc, eyeA * 0.8)); g.addColorStop(1, col(Gc, 0));
       c.fillStyle = g; c.fillRect(ex - r, ey - r, r * 2, r * 2);
     }
-    // Forehead chip pulses (fast while thinking)
-    const chipA = 0.25 + 0.25 * Math.sin(t * (thinking ? 7 : 1.6)) + lv * 0.3;
+    // Forehead chip pulses (fast while thinking, racing when alarmed, lazy when sorry)
+    const chipA = 0.25 + 0.25 * Math.sin(t * (thinking ? 7 : 1.6) * EM.chip) + lv * 0.3;
     const cg = c.createRadialGradient(CYB.chip[0], CYB.chip[1], 0, CYB.chip[0], CYB.chip[1], 90);
-    cg.addColorStop(0, col(CO, chipA)); cg.addColorStop(0.3, col(G, chipA * 0.6)); cg.addColorStop(1, col(G, 0));
+    cg.addColorStop(0, col(COc, chipA)); cg.addColorStop(0.3, col(Gc, chipA * 0.6)); cg.addColorStop(1, col(Gc, 0));
     c.fillStyle = cg; c.fillRect(CYB.chip[0] - 90, CYB.chip[1] - 90, 180, 180);
     // Light pulses along the circuits
     if (!still) for (let i = 0; i < CYB.traces.length; i++) {
@@ -1562,15 +1655,15 @@
           else if (pendingText) { const t = pendingText; pendingText = null; setTimeout(() => sendText(t), 400); }
         },
         onDisconnect: () => onConversationEnded(),
-        onError: (e) => { console.error("Bernard error", e); $("subline").textContent = "Error: " + String((e && e.message) || e).slice(0, 120); },
+        onError: (e) => { console.error("Bernard error", e); setEmotion("concerned", 5); $("subline").textContent = "Error: " + String((e && e.message) || e).slice(0, 120); },
         onModeChange: ({ mode: m }) => {
           if (!busy) return;
           setMode(m === "speaking" ? "speaking" : "listening");
         },
         onMessage: ({ message, source }) => {
           if (!message) return;
-          if (source === "ai") { lastAgentLine = message; $("subline").textContent = message.length > 160 ? message.slice(0, 157) + "…" : message; }
-          else $("subline").textContent = "You: " + (message.length > 140 ? message.slice(0, 137) + "…" : message);
+          if (source === "ai") { lastAgentLine = message; caption(message); reactTo(message); logLine("Bernard", message); }
+          else { captionDone(); $("subline").textContent = "You: " + (message.length > 140 ? message.slice(0, 137) + "…" : message); logLine("You", message); setEmotion("curious", 2); }
         },
       });
     } catch (err) {
@@ -1806,7 +1899,7 @@
 
   // One question and answer. Returns true when the conversation should stop.
   async function freeTurn(text) {
-    $("subline").textContent = "You: " + text;
+    $("subline").textContent = "You: " + text; logLine("You", text); setEmotion("curious", 3);
     setMode("connecting", "Thinking…");
     const r = await freeAsk(text);
     if (!freeActive) return true;
@@ -1814,8 +1907,8 @@
     if (r.ui && r.ui.brief) { try { openBrief(); } catch {} }
     const reply = String(r.reply || "Sorry, no answer came back.");
     lastAgentLine = reply; freeLast = reply;
-    setMode("speaking", reply.length > 220 ? reply.slice(0, 217) + "…" : reply);
-    await freeSpeak(reply);
+    setMode("speaking"); caption(reply); reactTo(reply); logLine("Bernard", reply);
+    await freeSpeak(reply); captionDone();
     return (r.tools || []).includes("goodnight") || ["quota", "busy", "not_set_up", "no_pass", "no_config", "offline"].includes(r.code);
   }
 
@@ -2111,6 +2204,8 @@
     renderVoices();
   }
   if (window.speechSynthesis) speechSynthesis.onvoiceschanged = () => { if ($("drawer").classList.contains("open") && !APP) loadVoices(); };
+  $("exprChk").checked = expressionsOn();
+  $("exprChk").addEventListener("change", (e) => { store.set("bernud.expressions", e.target.checked ? "1" : "0"); if (!e.target.checked) { face.emo = "neutral"; } });
   $("engineSelect").addEventListener("change", (e) => { store.set(ENGINE_KEY, e.target.value); $("saveAtRow").style.display = e.target.value === "auto" ? "" : "none"; });
   $("saveAtBtn").addEventListener("click", async () => {
     const pass = store.get("bernud.dashKey"); if (!pass) return;
