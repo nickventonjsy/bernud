@@ -72,12 +72,12 @@
             <meta-data android:name="android.accessibilityservice" android:resource="@xml/send_helper" />
         </service>
 
-        <!-- Reads WhatsApp messages from their notifications, kept on the phone until Nicholas asks Bernard to read them
+        <!-- Reads WhatsApp and Telegram messages from their notifications, kept on the phone until Nicholas asks Bernard to read them
              (you turn it on in Settings > Notifications > Notification access). -->
         <service
             android:name=".WaNotifications"
             android:exported="true"
-            android:label="Bernard: read WhatsApp messages"
+            android:label="Bernard: read WhatsApp and Telegram messages"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
             <intent-filter>
                 <action android:name="android.service.notification.NotificationListenerService" />

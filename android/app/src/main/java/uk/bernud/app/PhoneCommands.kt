@@ -67,9 +67,9 @@ class PhoneCommands(private val ctx: Context) {
                 "firetv" -> FireTv.run(ctx, arg)
                 "note" -> openNote(arg)
                 "audio" -> { val m = AudioRoute.setMode(ctx, arg); if (m == "earpiece") "Bernard will now talk through the earpiece: hold the phone to your ear." else "Bernard will now talk through the loudspeaker." }
-                "wa_read" -> {
+                "wa_read", "tg_read" -> {
                     if (!WaNotifications.enabled(ctx)) start(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-                    WaNotifications.read(ctx, arg)
+                    WaNotifications.read(ctx, arg, if (action == "tg_read") "telegram" else "whatsapp")
                 }
                 "come_back" -> { start(Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)); "Bernard is back on screen." }
                 else -> throw Fail("The phone app doesn't know '$action' yet.")

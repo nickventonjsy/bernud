@@ -95,7 +95,7 @@ export const GROUPS = {
   wakeup: { tools: ["wakeup"], re: /\b(wake|wake-?up|alarm|morning routine)\b/ },
   system: { tools: ["system_check"], re: /\b(working|status|system|broken|watchdog|health)\b/ },
   meals: { tools: ["send_to_phone"], re: /\b(cook|cooking|recipes?|meals?|dinner|lunch|breakfast|supper|tea tonight|eat|hungry|ingredients|fridge|cupboard|make with|bake|baking)\b/ },
-  devices: { tools: ["pc_control", "phone_control"], re: /\b(pc|computer|laptop|desktop|phone|mobile|torch|flash|ring|whatsapps?|call|ring|texts?|messages?|brightness|earpiece|ear ?speaker|loud ?speaker|speaker ?phone|do not disturb|dnd|open|app|lock|shut ?down|restart|sleep|volume|script|powershell|window|type)\b/ },
+  devices: { tools: ["pc_control", "phone_control"], re: /\b(pc|computer|laptop|desktop|phone|mobile|torch|flash|ring|whatsapps?|telegrams?|call|ring|texts?|messages?|brightness|earpiece|ear ?speaker|loud ?speaker|speaker ?phone|do not disturb|dnd|open|app|lock|shut ?down|restart|sleep|volume|script|powershell|window|type)\b/ },
   markets: { tools: ["zentrawire", "get_crypto_prices", "price_alert"], re: /\b(crypto|bitcoin|btc|eth|ethereum|coins?|xrp|ripple|solana|doge|market|markets|watchlist|zentrawire|signals?|stocks?|shares|nvidia|tesla|moving|movers)\b/ },
   email: { tools: ["gmail_search", "gmail_read", "gmail_draft", "gmail_delete"], re: /\b(e-?mails?|mail|inbox|gmail|drafts?|reply|replies|wrote|sent|supplier|invoice|spam|junk)\b/ },
   calendar: { tools: ["calendar"], re: /\b(calendar|diary|meetings?|appointments?|events?|book|booked|schedule|what'?s on|today|tomorrow|tonight|this week|next week|monday|tuesday|wednesday|thursday|friday|saturday|sunday|busy|free)\b/ },
