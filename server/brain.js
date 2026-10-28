@@ -9,11 +9,40 @@ const CEREBRAS = "https://api.cerebras.ai/v1/chat/completions";   // same OpenAI
 const SKIP = new Set(["end_call"]);
 const SESSION_MS = 15 * 60_000;
 
-const MICHELLE = [
-  "Michelle? Quite simply the most beautiful woman in the universe, sir. Her smile and her laugh light up any room she walks into. Quite frankly, she is beautiful.",
-  "Ah, Michelle. The most beautiful woman in the universe, and I don't say that lightly. When she smiles or laughs, the whole room lights up. Quite frankly, she is beautiful.",
-  "Michelle is, without question, the most beautiful woman in the universe. That smile, that laugh, they light up a room. Quite frankly, sir, she is beautiful.",
+// Said when he mentions Michelle: a different nice thing each time, never one of the last few.
+export const MICHELLE = [
+  "Michelle? The most beautiful woman in the universe, sir. That's not flattery, it's simply the record.",
+  "Ah, Michelle. Her laugh could brighten a wet Tuesday in February, and frequently does.",
+  "Michelle has the kind of smile that makes a room forget what it was worrying about.",
+  "Michelle, sir? Kind, clever, and frankly far too good-looking for this household. Present company excepted.",
+  "If grace and warmth had a postal address, sir, it would be Michelle's.",
+  "Michelle is the sort of person who makes everyone around her a little better. Quite frankly, she is beautiful.",
+  "Ah, Michelle. Beautiful inside and out, and with impeccable taste in partners, I'm told.",
+  "Michelle lights up every room she walks into. I've measured it, sir; the lux readings are remarkable.",
+  "Michelle? A smile like sunshine and a heart to match. You're a lucky man, sir.",
+  "Michelle is, without question, the loveliest person I have the privilege of knowing about.",
+  "Her laugh, sir, is my favourite sound in this house. And I've heard your Spotify.",
+  "Michelle has style, warmth and patience. The patience, sir, is presumably tested daily.",
+  "Michelle? Stunning, sir. If she were a paint colour, Cory Car Paints would never be able to match her.",
+  "Michelle makes ordinary days feel like occasions. A rare gift.",
+  "Ah, Michelle. Beautiful, thoughtful, and the real brains of the operation, if I may say so.",
+  "Michelle is proof that the universe occasionally gets things exactly right.",
+  "Michelle's kindness is the quiet kind, sir: the sort that notices things and fixes them before anyone asks.",
+  "If I had a heart, sir, Michelle's smile would be what made it skip.",
+  "Michelle? Effortlessly elegant, endlessly kind, and quite frankly beautiful.",
+  "Michelle brings out the best in everyone, sir. Including, on good days, you.",
+  "There's a warmth about Michelle that no thermostat in this house can match.",
+  "Michelle is beautiful, sir, and the best part is she doesn't seem to know quite how much.",
+  "Ah, Michelle. Wise, funny and lovely. I'd follow her shopping list to the ends of the earth.",
+  "Michelle's laugh is contagious, her smile is dazzling, and her judgement, sir, is mostly excellent.",
 ];
+let michelleRecent = [];
+export function michelleLine(rand = Math.random) {
+  const pool = MICHELLE.filter((l) => !michelleRecent.includes(l));
+  const line = pool[Math.floor(rand() * pool.length)];
+  michelleRecent = [...michelleRecent, line].slice(-8);
+  return line;
+}
 export const CLOSE_CAMERA = /^(?:(?:ok(?:ay)?|right|now|bernard|bernud|bernie|please)[, ]+)*(?:(?:can you |could you |please )?(?:close|shut|hide|exit|stop|turn off|switch off|get rid of|come out of|take (?:that|it) off)(?: the| that| this)?(?: [a-z']+)?(?: camera| cam| cctv| feed| video| cameras)(?: (?:view|window|feed|now|please|for me))*|(?:go|come|take me|switch|get) back(?: to (?:you|bernard|bernud|the dashboard|the main screen|normal|your face))?(?: from the camera)?|back to (?:you|bernard|bernud)|close (?:it|that)(?: down)?)[.!? ]*(?:please|thanks|thank you)?[.!]*$/i;
 const TEXT_MODE_NOTE = `
 
@@ -427,9 +456,8 @@ export function createBrain({ briefHandler = null, dayLog = null, learner = null
     // Michelle: always the same verdict, in slightly different words (not when he just wants her playlist).
     const aboutMichelle = /\bmichelle\b/i.test(text) && !/\b(play|playlist|spotify|music|songs?|oldies|shuffle|put on|echo|alexa|speaker)\b/i.test(text);
     // If he's taught Bernard how to put it, the AI says it his way (below); otherwise one of the set lines, instantly.
-    const michelleTaught = aboutMichelle && learner ? (await learner.learned().catch(() => [])).filter((r) => /michelle|beautiful/i.test(r.text)).map((r) => r.text) : [];
-    if (aboutMichelle && !michelleTaught.length) {
-      const reply = MICHELLE[Math.floor(Math.random() * MICHELLE.length)];
+    if (aboutMichelle) {
+      const reply = michelleLine();
       remember(reply, "instant", s.groups);
       return { ok: true, reply, tools: [], model: "instant", ms: Date.now() - t0 };
     }
@@ -464,8 +492,7 @@ export function createBrain({ briefHandler = null, dayLog = null, learner = null
     const slim = slimConfig(c, text, groups);
     const time = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", dateStyle: "full", timeStyle: "short" }).format(now());
     const learnt = learner ? await learner.promptBlock().catch(() => "") : "";
-    const michelleNote = michelleTaught.length ? `\n\n# Michelle\nWhenever Michelle comes up, Bernard's verdict never changes: she is the most beautiful woman in the universe, her smile and laugh light up any room, and quite frankly she is beautiful. Say it in a fresh way each time, following exactly how Nicholas has asked for it to be said:\n${michelleTaught.map((t) => "- " + t).join("\n")}\nThe line is: "${MICHELLE[0]}"` : "";
-    const system = slim.prompt.replaceAll("{{system__time}}", time) + (slim.prompt.includes("# What you've learnt") ? "" : learnt) + michelleNote + TEXT_MODE_NOTE;
+    const system = slim.prompt.replaceAll("{{system__time}}", time) + (slim.prompt.includes("# What you've learnt") ? "" : learnt) + TEXT_MODE_NOTE;
     const job = { system, turns: s.turns, text, tools: slim.tools, byName: new Map(slim.tools.map((t) => [t.name, t])), used, done: [] };
 
     let out = null;

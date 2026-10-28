@@ -177,14 +177,12 @@ assert.equal(matchQuick("show me the shop camera", "").args.screen, "");
   const rc = await bc.chat({ session: "cb", text: "hi" });
   assert.equal(rc.reply, "Cerebras hello."); assert.equal(cb[0].model, "gpt-oss-120b"); assert.match(rc.model, /cerebras/); }
 
-// Michelle: the set line instantly, unless he's taught Bernard how to say it; then the AI says it his way.
-const lrn = (rows) => ({ learned: async () => rows, promptBlock: async () => "", fromExchange: async () => {} });
-r = await mk({ learner: lrn([]) }).chat({ session: "m1", text: "what about Michelle" });
-assert.equal(r.model, "instant"); assert.match(r.reply, /beautiful/); assert.ok(!/Nicholas/.test(r.reply));
-const nGm = gemBodies.length;
-r = await mk({ learner: lrn([{ text: "Nicholas wants Bernard to end with 'she is beautiful, sir'" }]) }).chat({ session: "m2", text: "what about Michelle" });
-assert.notEqual(r.model, "instant"); assert.equal(gemBodies.length, nGm + 1);
-assert.match(gemBodies.at(-1).systemInstruction.parts[0].text, /# Michelle[\s\S]*she is beautiful, sir/);
+// Michelle: a different nice thing each time, instantly, never repeating the last few, never "Nicholas".
+{ const lrn = (rows) => ({ learned: async () => rows, promptBlock: async () => "", fromExchange: async () => {} });
+  const b = mk({ learner: lrn([{ text: "Nicholas wants different things said about Michelle" }]) });
+  const seen = new Set();
+  for (let i = 0; i < 8; i++) { const r = await b.chat({ session: "m" + i, text: "Michelle" }); assert.equal(r.model, "instant"); assert.ok(!/Nicholas/.test(r.reply)); seen.add(r.reply); }
+  assert.equal(seen.size, 8, "no repeats within 8"); }
 
 // ElevenLabs unreachable later: falls back to the kv copy. Not set up: says so.
 const b3 = createBrain({ geminiKey: "G", elevenKey: "E", agentId: "a", kv, port: 10000, bernudKey: "BK", zwKey: "ZK", fetchImpl: async (u, o) => (String(u).includes("elevenlabs") ? { ok: false, status: 500 } : fetchImpl(u, o)), log: { error() {} } });
