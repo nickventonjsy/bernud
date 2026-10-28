@@ -1153,6 +1153,13 @@ export async function handle(req, res) {
         const action = String(b.action || "show");
         if (action === "list") return send(res, 200, { ok: true, cameras: (await imou.cameras()).map((c) => ({ name: c.name, online: c.online })) });
         if (action === "snapshot") { const cam = await imou.find(b.camera); return send(res, 200, { ok: true, camera: cam.name, image_url: await imou.snapshot(cam) }); }
+        // A test camera alert with a fresh picture, to check alerts reach Telegram without waiting for real motion.
+        if (action === "test_alert") {
+          const cam = await imou.find(b.camera);
+          const pic = await imou.snapshot(cam).catch(() => "");
+          const sent = await notify(`Test alert from ${cam.name}. If you can see the picture, camera alerts are working.`, { title: `Test: ${cam.name}`, click: `https://bernud.onrender.com/camera.html?camera=${encodeURIComponent(cam.name)}`, attach: pic && /^https?:/.test(pic) ? pic : undefined });
+          return send(res, 200, { ok: Boolean(sent), camera: cam.name, with_picture: Boolean(pic), message: sent ? `Test alert sent for ${cam.name}${pic ? " with a picture" : " (no picture: the snapshot failed)"}.` : "Couldn't send the test alert." });
+        }
         if (action === "events") return send(res, 200, await camAlerts.events({ camera: b.camera, hours: b.hours }));
         if (action === "alerts") return send(res, 200, await camAlerts.configure({ action: b.mode || b.people_only !== undefined || b.enabled !== undefined || b.start || b.end || b.saturday_from || b.weekends !== undefined ? "set" : "status", camera: b.camera, mode: b.mode, people_only: b.people_only, enabled: b.enabled, start: b.start, end: b.end, saturday_from: b.saturday_from, weekends: b.weekends }));
         const cam = await imou.find(b.camera);
@@ -1166,7 +1173,7 @@ export async function handle(req, res) {
             note: `Opened the web browser on ${r.tv}${r.woke ? " (woke it up first)" : ""}; its home page shows ${cam.name} full screen within a few seconds. If the TV shows a different page instead, its browser home page needs setting to bernud.onrender.com/camera.html?tv=1 (one-off).` + (cam.online === false ? ` ${cam.name} looks offline right now.` : "") });
         }
         return send(res, 200, { ok: true, show_camera: { id: cam.id, name: cam.name, screen: "here" }, camera: cam.name, online: cam.online,
-          note: cam.guessed ? `No camera matched that name, so showing ${cam.name}.` : `Showing ${cam.name} on Nicholas's screen now.` });
+          note: `Now call show_camera with camera "${cam.name}": that is what opens it on his screen.${cam.guessed ? ` (No camera matched that name exactly, so it's ${cam.name}.)` : ""}` });
       } catch (e) { return send(res, 200, { ok: false, error: e.code || "error", message: String(e.message).slice(0, 200) }); }
     }
     if (path === "/home/settings" && req.method === "POST") return send(res, 200, await home.settings(await readJson(req)));
