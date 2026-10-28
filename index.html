@@ -739,7 +739,7 @@
 
   // ---- Version numbers (bottom of the screen) ----
   // DASH_VERSION goes up by one with every dashboard change (a git hook bumps it automatically).
-  const DASH_VERSION = 38;
+  const DASH_VERSION = 39;
   (async () => {
     const set = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
     set("dashVer", DASH_VERSION);
@@ -1849,7 +1849,8 @@
       conversation = await Conversation.startSession({
         ...session,
         overrides: { agent: { firstMessage: pickGreeting() } },
-        clientTools: { show_camera: async ({ camera } = {}) => { openCamera(camera || ""); return "The camera is now showing on Nicholas's screen."; } },
+        clientTools: { show_camera: async ({ camera } = {}) => { openCamera(camera || ""); return "The camera is now showing on Nicholas's screen."; },
+          close_camera: async () => { const open = $("camOverlay").style.display !== "none"; closeCamera(); return open ? "The camera window is closed; Nicholas is back on the main screen." : "No camera window was open."; } },
         connectionType: store.get(STORE.conn) === "websocket" ? "websocket" : "webrtc",
         ...(store.get(STORE.mic) ? { inputDeviceId: store.get(STORE.mic) } : {}),
         onConnect: () => {
