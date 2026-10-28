@@ -1159,11 +1159,26 @@ export async function handle(req, res) {
     }
     if (path === "/system/check") return send(res, 200, await watchdog.status());
     if (path === "/music/play-on" && req.method === "POST") {
-      try { return send(res, 200, await speakers.playOn(await readJson(req))); }
+      try { return send(res, 200, await phoneMusic(await speakers.playOn(await readJson(req)))); }
       catch (e) { return send(res, 200, { ok: false, error: "speaker_error", message: String(e.message).slice(0, 300) }); }
     }
+    // Music started on his phone: while he's talking to Bernard through the phone, Spotify there is held (the call has
+    // the audio), so the app presses Play the moment the conversation ends. Tell Bernard which it is.
+    async function phoneMusic(r) {
+      if (!r || !r.ok || !r.phone) return r;
+      let held = false;
+      if (phone.online()) { try { const p = await phone.send("music_started", ""); held = /^in_conversation/.test(String(p.output || "")); } catch {} }
+      return { ...r, ...(held ? { starts_when_call_ends: true, note: "He's talking to you on his phone, and Spotify on the phone stays quiet while the call has the audio. Tell him in one short sentence that it'll start the moment you hang up, then end the call with end_call (unless he has something else to ask)." } : {}) };
+    }
     if (path === "/music/dj" && req.method === "POST") {
-      try { return send(res, 200, await dj.mix(await readJson(req))); }
+      try {
+        const b = await readJson(req);
+        // "a mix on my phone / on the Echo": the named device, never a fallback speaker.
+        if (String(b.device || "").trim()) return send(res, 200, await phoneMusic(await speakers.playOn({ device: b.device, mood: b.mood || "" })));
+        const r = await dj.mix(b);
+        if (r.ok && r.playing_on && r.phone === undefined) { try { const f = await speakers.findDevice(r.playing_on); r.phone = Boolean(f.device && speakers.isPhone(f.device)); } catch {} }
+        return send(res, 200, await phoneMusic(r));
+      }
       catch (e) { return send(res, 200, { ok: false, error: e.code || "dj_error", message: String(e.message).slice(0, 300) }); }
     }
     if (path === "/routine/goodnight" && req.method === "POST") {

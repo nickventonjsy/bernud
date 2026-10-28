@@ -72,6 +72,7 @@ class PhoneCommands(private val ctx: Context) {
                     WaNotifications.read(ctx, arg, if (action == "tg_read") "telegram" else "whatsapp")
                 }
                 "wa_reply", "tg_reply" -> WaNotifications.reply(ctx, arg, if (action == "tg_reply") "telegram" else "whatsapp")
+                "music_started" -> if (MusicResume.musicStarted(ctx)) "in_conversation: Spotify on the phone is held while he talks to Bernard here; it starts when the conversation ends." else "Playing on the phone."
                 "come_back" -> { start(Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)); "Bernard is back on screen." }
                 else -> throw Fail("The phone app doesn't know '$action' yet.")
             }

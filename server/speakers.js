@@ -7,6 +7,7 @@ export function createSpeakers({ zw, dj, fetchImpl = fetch }) {
   };
   const words = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter((w) => w.length > 1 && !["the", "my", "s", "speaker"].includes(w));
 
+  const isPhone = (d) => /smartphone/i.test(d?.type || "");
   async function findDevice(name) {
     const j = await call("/api/assistant/spotify?what=devices");
     if (j.ok === false) throw new Error(j.error || "Couldn't read your Spotify speakers.");
@@ -39,16 +40,16 @@ export function createSpeakers({ zw, dj, fetchImpl = fetch }) {
     if (!d) return { ok: false, error: "speaker_not_found", message: `Spotify isn't listing ${device || "that speaker"} for you right now${all.length ? ` (I can see: ${all.join(", ")})` : ""}. Pick it once from the Spotify app on your phone (speaker icon), then ask me again.` };
     if (mood) {
       const r = await dj.mix({ mood, device_id: d.id });
-      return r.ok ? { ...r, device: d.name } : r;
+      return r.ok ? { ...r, device: d.name, phone: isPhone(d) } : r;
     }
     if (!String(query).trim()) {
       const r = await call("/api/assistant/spotify/control", { action: "transfer", value: d.id });
-      return r.ok === false ? { ok: false, error: "transfer_failed", message: r.error || "Spotify wouldn't move the music." } : { ok: true, device: d.name, moved: true };
+      return r.ok === false ? { ok: false, error: "transfer_failed", message: r.error || "Spotify wouldn't move the music." } : { ok: true, device: d.name, moved: true, phone: isPhone(d) };
     }
     const found = await pick(query);
     if (!found) return { ok: false, error: "not_found", message: `I couldn't find "${query}" on Spotify.` };
     const r = await call("/api/assistant/spotify/control", { action: "play", uri: found.uri, device_id: d.id });
-    return r.ok === false ? { ok: false, error: "play_failed", message: r.error || "Spotify wouldn't start it on that speaker." } : { ok: true, device: d.name, playing: found.label };
+    return r.ok === false ? { ok: false, error: "play_failed", message: r.error || "Spotify wouldn't start it on that speaker." } : { ok: true, device: d.name, playing: found.label, phone: isPhone(d) };
   }
-  return { playOn, findDevice };
+  return { playOn, findDevice, isPhone };
 }

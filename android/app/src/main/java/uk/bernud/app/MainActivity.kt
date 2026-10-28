@@ -144,11 +144,11 @@ class MainActivity : ComponentActivity() {
     inner class Bridge {
         // The installed app's build number (the same N as the android-vN release), shown on the dashboard.
         @JavascriptInterface fun appVersion(): String = try { packageManager.getPackageInfo(packageName, 0).versionName ?: "" } catch (_: Exception) { "" }
-        @JavascriptInterface fun conversationStarted() { runOnUiThread { WakeWord.conversationStarted(); AudioRoute.conversationStarted(this@MainActivity) } }
-        @JavascriptInterface fun conversationEnded() { runOnUiThread { WakeWord.conversationEnded(); AudioRoute.conversationEnded(this@MainActivity) } }
+        @JavascriptInterface fun conversationStarted() { runOnUiThread { MusicResume.conversationStarted(); WakeWord.conversationStarted(); AudioRoute.conversationStarted(this@MainActivity) } }
+        @JavascriptInterface fun conversationEnded() { runOnUiThread { WakeWord.conversationEnded(); AudioRoute.conversationEnded(this@MainActivity); MusicResume.conversationEnded(this@MainActivity) } }
         // Free mode: phone listens and speaks itself; the wake word just gives up the mic meanwhile.
-        @JavascriptInterface fun freeStarted() { runOnUiThread { WakeWord.conversationStarted() } }
-        @JavascriptInterface fun freeEnded() { runOnUiThread { free.stopListening(); free.stopSpeaking(); WakeWord.conversationEnded() } }
+        @JavascriptInterface fun freeStarted() { runOnUiThread { MusicResume.conversationStarted(); WakeWord.conversationStarted() } }
+        @JavascriptInterface fun freeEnded() { runOnUiThread { free.stopListening(); free.stopSpeaking(); WakeWord.conversationEnded(); MusicResume.conversationEnded(this@MainActivity) } }
         @JavascriptInterface fun listenOnce() { free.listenOnce() }
         @JavascriptInterface fun stopListening() { free.stopListening() }
         @JavascriptInterface fun speak(text: String) { free.speak(text) }
