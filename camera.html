@@ -25,6 +25,13 @@
   .tv .msg { font-size: 26px; }
   .tag { position: absolute; top: 24px; left: 32px; padding: 8px 16px; border-radius: 8px; background: rgba(0,0,0,.55); color: #fff; font-size: 28px; transition: opacity 1s; pointer-events: none; }
   .tag.gone { opacity: 0; }
+  /* TV camera picker: appears on any remote button, arrows to move, OK to pick; hides itself. */
+  .picker { position: absolute; left: 0; right: 0; bottom: 0; display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; padding: 24px 32px 36px; background: linear-gradient(transparent, rgba(0,0,0,.85)); transition: opacity .4s; }
+  .picker.gone { opacity: 0; pointer-events: none; }
+  .picker button { font-size: 26px; padding: 14px 26px; border: 2px solid rgba(255,255,255,.35); border-radius: 12px; background: rgba(20,8,9,.85); color: #fff; }
+  .picker button.on { border-color: var(--red); }
+  .picker button:focus { outline: none; border-color: #fff; background: var(--red); }
+  .picker .hint { flex-basis: 100%; text-align: center; color: var(--dim); font-size: 18px; }
 </style>
 </head>
 <body>
@@ -46,6 +53,7 @@
   <img id="snap" class="snap hidden" alt="Latest camera snapshot">
   <div class="msg" id="msg">Loading…</div>
   <div class="tag gone" id="tag"></div>
+  <div class="picker gone hidden" id="picker" role="toolbar" aria-label="Cameras"></div>
 </main>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.13/hls.min.js"></script>
 <script>
@@ -107,35 +115,50 @@
     next(true);
   }
 
-  async function play(name, q = quality, triedOther = false) {
+  // Ways to play, best first. The cameras send HEVC video: the web player (hls.js) can't decode it, but a TV's or
+  // iPhone's own player usually can, so where there's a built-in HLS player it goes first. Then the other quality.
+  function attempts(q) {
+    const native = !!$("video").canPlayType("application/vnd.apple.mpegurl");
+    const hlsOk = !!(window.Hls && Hls.isSupported());
+    const other = q === "HD" ? "SD" : "HD";
+    const list = [];
+    for (const qq of [q, other]) { if (native && (tvMode || !hlsOk)) list.push([qq, "native"]); if (hlsOk) list.push([qq, "hls"]); if (native && !tvMode && hlsOk) list.push([qq, "native"]); }
+    return list;
+  }
+  async function play(name, q = quality, step = 0) {
     stopVideo(); stopSnaps();
     const id = ++playId;
+    const plan = attempts(q);
+    if (step >= plan.length) { diag("no player", "nothing could play it"); return snapshotFallback(name); }
+    const [qq, how] = plan[step];
     $("snap").classList.add("hidden");
-    msg("Connecting to the camera…");
+    msg(step ? "Trying another way to play it…" : "Connecting to the camera…");
     let j;
-    try { j = await api(`/camera/stream?camera=${encodeURIComponent(name)}&quality=${q}`); } catch { return; }
+    try { j = await api(`/camera/stream?camera=${encodeURIComponent(name)}&quality=${qq}`); } catch { return; }
+    if (id !== playId) return;
     if (!j.ok) { msg(j.error || "Couldn't get the camera stream."); return; }
     if (j.camera && j.camera.online === false) msg(`${j.camera.name} looks offline, trying anyway…`);
     const v = $("video"); v.classList.remove("hidden");
-    const ready = () => { msg(""); retries = 0; };
-    // Didn't play: try the other quality (the SD stream is often an older, more widely playable format), then snapshots.
-    const giveUp = (why) => { if (id !== playId) return; diag(`${q} failed`, why); if (!triedOther) { retries = 0; msg("Trying the other picture quality…"); play(name, q === "HD" ? "SD" : "HD", true); } else snapshotFallback(name); };
-    const watchdog = setTimeout(() => { if (v.paused || v.readyState < 2) giveUp("no picture after 20s"); }, 20000);
-    v.onplaying = () => { clearTimeout(watchdog); ready(); };
-    if (window.Hls && Hls.isSupported()) {
+    let done = false;
+    const giveUp = (why) => { if (id !== playId || done) return; done = true; clearTimeout(watchdog); diag(`${qq} ${how} failed`, why); play(name, q, step + 1); };
+    const watchdog = setTimeout(() => { if (v.paused || v.readyState < 2) giveUp("no picture after 15s"); }, 15000);
+    v.onplaying = () => { if (id !== playId) return; done = true; clearTimeout(watchdog); msg(""); retries = 0; if (tvMode) tag(name + (qq === "SD" ? " · SD" : "")); };
+    if (how === "native") {
+      v.onerror = () => giveUp("native player error " + (v.error && v.error.code));
+      v.src = j.url; v.play().catch(() => {});
+    } else {
+      v.onerror = null;
       hls = new Hls({ liveSyncDurationCount: 2, maxBufferLength: 10 });
       hls.loadSource(j.url); hls.attachMedia(v);
       hls.on(Hls.Events.MANIFEST_PARSED, () => v.play().catch(() => {}));
       hls.on(Hls.Events.ERROR, (_, d) => {
-        if (!d.fatal) return;
-        if (retries++ < 2 && d.type === Hls.ErrorTypes.NETWORK_ERROR) { msg("Reconnecting…"); setTimeout(() => play(name, q, triedOther), 1500); }
-        else { clearTimeout(watchdog); giveUp(`${d.type}/${d.details}${d.reason ? " " + d.reason : ""}`); }
+        if (!d.fatal || id !== playId) return;
+        if (retries++ < 2 && d.type === Hls.ErrorTypes.NETWORK_ERROR) { done = true; clearTimeout(watchdog); msg("Reconnecting…"); setTimeout(() => { if (id === playId) play(name, q, step); }, 1500); }
+        else giveUp(`${d.type}/${d.details}${d.reason ? " " + d.reason : ""}`);
       });
-    } else if (v.canPlayType("application/vnd.apple.mpegurl")) {
-      v.src = j.url; v.play().catch(() => {});
-      v.onerror = () => { clearTimeout(watchdog); giveUp("native player error " + (v.error && v.error.code)); };
-    } else { clearTimeout(watchdog); diag("no player", "neither hls.js nor native HLS"); snapshotFallback(name); }
+    }
   }
+
 
   async function start() {
     let j;
@@ -171,8 +194,42 @@
       }
     } catch {}
   }
+  // TV camera picker.
+  let pickTimer = null;
+  function buildPicker() {
+    const box = $("picker"); box.innerHTML = "";
+    [...$("cam").options].forEach((o, i) => {
+      const b = document.createElement("button"); b.type = "button"; b.textContent = `${i + 1}  ${o.textContent}`; b.dataset.cam = o.value;
+      b.addEventListener("click", () => pick(o.value));
+      box.appendChild(b);
+    });
+    const h = document.createElement("div"); h.className = "hint"; h.textContent = "Arrows to choose, OK to show. Or press a number."; box.appendChild(h);
+  }
+  function showPicker() {
+    const box = $("picker"); if (!box.children.length) return;
+    box.classList.remove("hidden", "gone");
+    const btns = [...box.querySelectorAll("button")];
+    btns.forEach((b) => b.classList.toggle("on", b.dataset.cam === $("cam").value));
+    if (!box.contains(document.activeElement)) (btns.find((b) => b.dataset.cam === $("cam").value) || btns[0]).focus();
+    clearTimeout(pickTimer); pickTimer = setTimeout(hidePicker, 8000);
+  }
+  function hidePicker() { $("picker").classList.add("gone"); if ($("picker").contains(document.activeElement)) document.activeElement.blur(); }
+  function pick(name) { const sel = $("cam"); sel.value = name; store.set("bernud.lastCam", name); retries = 0; play(name); tag(name); hidePicker(); }
   if (tvMode) {
-    start().then(() => { followBernard(); setInterval(followBernard, 4000); });
+    document.addEventListener("keydown", (e) => {
+      const box = $("picker"), btns = [...box.querySelectorAll("button")];
+      const n = Number(e.key);
+      if (n >= 1 && n <= btns.length) { e.preventDefault(); pick(btns[n - 1].dataset.cam); return; }
+      const hidden = box.classList.contains("gone");
+      if (hidden) { if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter"].includes(e.key)) { e.preventDefault(); showPicker(); } return; }
+      const i = btns.indexOf(document.activeElement);
+      if (e.key === "ArrowRight" || e.key === "ArrowDown") { e.preventDefault(); btns[(i + 1) % btns.length].focus(); }
+      else if (e.key === "ArrowLeft" || e.key === "ArrowUp") { e.preventDefault(); btns[(i - 1 + btns.length) % btns.length].focus(); }
+      else if (e.key === "Escape" || e.key === "Backspace" || e.keyCode === 10009) { e.preventDefault(); hidePicker(); return; }
+      clearTimeout(pickTimer); pickTimer = setTimeout(hidePicker, 8000);
+    });
+    document.addEventListener("mousemove", showPicker);   // the TV remote's pointer
+    start().then(() => { buildPicker(); showPicker(); }).then(() => { followBernard(); setInterval(followBernard, 4000); });
     // Imou's live links expire: start the picture afresh every 20 minutes so a long watch doesn't freeze.
     setInterval(() => { retries = 0; if ($("cam").value && !snapFor) play($("cam").value); }, 20 * 60 * 1000);
   } else start();
