@@ -1,7 +1,10 @@
 package uk.bernud.app
 
+import android.content.ComponentName
 import android.content.Context
 import android.media.AudioManager
+import android.media.session.MediaSessionManager
+import android.media.session.PlaybackState
 import android.os.Handler
 import android.os.Looper
 import android.view.KeyEvent
@@ -23,10 +26,20 @@ object MusicResume {
     fun conversationStarted() { inConversation = true }
     fun conversationEnded(ctx: Context) {
         inConversation = false
-        if (System.currentTimeMillis() < armedUntil) { armedUntil = 0; main.postDelayed({ play(ctx) }, 1500); main.postDelayed({ play(ctx) }, 4000) }
+        if (System.currentTimeMillis() < armedUntil) { armedUntil = 0; for (ms in longArrayOf(1500, 4000, 8000)) main.postDelayed({ play(ctx) }, ms) }
     }
 
+    // Press Play on Spotify itself (through its media session, which the notification access already allows), so the
+    // key doesn't land on Bernard's own web view instead. Falls back to a general Play key.
     private fun play(ctx: Context) {
+        try {
+            val msm = ctx.getSystemService(MediaSessionManager::class.java)
+            val sp = msm?.getActiveSessions(ComponentName(ctx, WaNotifications::class.java))?.firstOrNull { it.packageName.startsWith("com.spotify") }
+            if (sp != null) {
+                if (sp.playbackState?.state != PlaybackState.STATE_PLAYING) sp.transportControls.play()
+                return
+            }
+        } catch (_: Exception) {}
         val am = ctx.getSystemService(AudioManager::class.java) ?: return
         if (am.isMusicActive) return
         am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY))
