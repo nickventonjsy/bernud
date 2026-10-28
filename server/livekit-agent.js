@@ -82,7 +82,11 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   // No warm spare job process: memory is shared with the main server on Render. A job starts on demand (~1s).
   // loadThreshold Infinity: on Render's shared CPUs the machine load reads ~100% all the time, which would make the
   // worker mark itself unavailable and never take a call. It's one person; always take the job.
-  cli.runApp(new WorkerOptions({ agent: fileURLToPath(import.meta.url), numIdleProcesses: 0, production: true, loadThreshold: Infinity, loadFunc: async () => 0,
+  const opts = new WorkerOptions({ agent: fileURLToPath(import.meta.url), production: true, loadThreshold: Infinity, loadFunc: async () => 0,
     // Health port: localhost only when running beside the main server; 0.0.0.0:$PORT when this is its own Render service.
-    host: process.env.LIVEKIT_HEALTH_HOST || "127.0.0.1", port: Number(process.env.LIVEKIT_HEALTH_PORT || 8081) }));
+    host: process.env.LIVEKIT_HEALTH_HOST || "127.0.0.1", port: Number(process.env.LIVEKIT_HEALTH_PORT || 8081) });
+  // No warm spare call processes: each one loads the voice-detection model, and 512MB holds only one call at a time.
+  // (Passing numIdleProcesses: 0 to the constructor doesn't work: the library treats 0 as unset and keeps up to 4.)
+  opts.numIdleProcesses = Number(process.env.LIVEKIT_IDLE_PROCESSES || 0);
+  cli.runApp(opts);
 }
