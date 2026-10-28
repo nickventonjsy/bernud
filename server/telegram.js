@@ -77,7 +77,19 @@ export function createTelegram({ token, kv, chat, shopping, transcribe = null, s
     if (!owner || !token) return false;
     const body = (title ? `<b>${esc(title)}</b>\n` : "") + esc(text) + (click ? `\n<a href="${esc(click)}">Open</a>` : "");
     try {
-      if (photo && body.length <= 1000) { try { await api("sendPhoto", { chat_id: owner.id, photo, caption: body, parse_mode: "HTML" }); return true; } catch (e) { log.error?.("telegram photo", e.message); } }
+      if (photo && body.length <= 1000) {
+        try { await api("sendPhoto", { chat_id: owner.id, photo, caption: body, parse_mode: "HTML" }); return true; }
+        catch (e) {
+          // Telegram won't fetch some camera picture links itself (e.g. ones with an unusual port): fetch it here and upload it.
+          try {
+            const r = await fetchImpl(photo, { signal: AbortSignal.timeout(15_000) });
+            if (!r.ok) throw new Error(`picture ${r.status}`);
+            const data = Buffer.from(await r.arrayBuffer());
+            await apiForm("sendPhoto", { chat_id: String(owner.id), caption: body, parse_mode: "HTML" }, { photo: { name: "camera.jpg", data, type: r.headers?.get?.("content-type") || "image/jpeg" } });
+            return true;
+          } catch (e2) { log.error?.("telegram photo", e.message, "| upload:", e2.message); }
+        }
+      }
       await say(owner.id, body, { parse_mode: "HTML" }); return true;
     } catch (e) { log.error?.("telegram alert", e.message); return false; }
   }
