@@ -176,7 +176,24 @@ export function createSmartThings({ kv, clientId, clientSecret, redirectUri, sec
     return { ok: true, device: d.label || d.name, done: action + (val ? " " + val : ""), note: action === "on" && isTv(d) ? "If the TV doesn't wake, enable 'Power on with mobile' (Settings > General > Network > Expert Settings) so SmartThings can turn it on from standby." : undefined };
   }
 
+  // Put the TV's web browser up (it opens on its home page, which Nicholas sets once to the camera page).
+  // The TV is woken first; launching an app on a TV that's still waking can fail, so it's tried again.
+  async function openBrowser(tvName = "", { wait = (ms) => new Promise((r) => setTimeout(r, ms)), wakeMs = 6000 } = {}) {
+    const all = await devices();
+    const tvs = all.filter(isTv);
+    if (!tvs.length) throw new Error("No TVs found in SmartThings.");
+    const q = String(tvName || "").toLowerCase().replace(/\b(the|my|tv|telly|television)\b/g, "").trim();
+    const label = (d) => (d.label || d.name || "").toLowerCase();
+    const tv = (q && tvs.find((d) => label(d).includes(q) || label(d).replace(/\s+/g, "").includes(q.replace(/\s+/g, "")))) || tvs.find((d) => /s95|55/.test(label(d))) || tvs[0];
+    const on = (await status(tv).catch(() => ({}))).power === "on";
+    if (!on) { await api(`/v1/devices/${tv.deviceId}/commands`, { method: "POST", body: { commands: [cmd("switch", "on")] } }).catch(() => {}); await wait(wakeMs); }
+    const launch = () => api(`/v1/devices/${tv.deviceId}/commands`, { method: "POST", body: { commands: [cmd("custom.launchapp", "launchApp", ["org.tizen.browser", "Internet"])] } });
+    try { await launch(); } catch { await wait(4000); await launch(); }
+    return { tv: tv.label || tv.name, woke: !on };
+  }
+
   return {
+    openBrowser,
     configured: () => Boolean(clientId && clientSecret && redirectUri),
     connected: async () => Boolean(await getRT().catch(() => null)),
     connectLink() { sweep(links); const t = randomBytes(18).toString("base64url"); links.set(t, Date.now() + 15 * 60_000); return redirectUri.replace(/\/smartthings\/callback$/, "") + "/smartthings/connect?t=" + t; },

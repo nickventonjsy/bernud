@@ -20,6 +20,11 @@
   .pass { display: grid; gap: 10px; padding: 24px; max-width: 360px; }
   .embed header b { display: none; }
   .hidden { display: none !important; }
+  /* TV mode (the TV browser's home page): just the picture, full screen, and a name tag that fades. */
+  .tv header { display: none; }
+  .tv .msg { font-size: 26px; }
+  .tag { position: absolute; top: 24px; left: 32px; padding: 8px 16px; border-radius: 8px; background: rgba(0,0,0,.55); color: #fff; font-size: 28px; transition: opacity 1s; pointer-events: none; }
+  .tag.gone { opacity: 0; }
 </style>
 </head>
 <body>
@@ -40,6 +45,7 @@
   <video id="video" playsinline muted autoplay controls class="hidden"></video>
   <img id="snap" class="snap hidden" alt="Latest camera snapshot">
   <div class="msg" id="msg">Loading…</div>
+  <div class="tag gone" id="tag"></div>
 </main>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.13/hls.min.js"></script>
 <script>
@@ -48,6 +54,9 @@
   const params = new URLSearchParams(location.search);
   const embed = params.get("embed") === "1";
   if (embed) { document.body.classList.add("embed"); $("close").classList.remove("hidden"); }
+  // ?tv=1: the Samsung TV's browser home page. Bernard sets which camera to show; this page follows it.
+  const tvMode = params.get("tv") === "1";
+  if (tvMode) { document.body.classList.add("tv"); $("video").removeAttribute("controls"); }
   const store = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
   let quality = store.get("bernud.camQuality") || "HD";
   let hls = null, retries = 0;
@@ -122,7 +131,25 @@
   $("full").addEventListener("click", () => { const el = $("stage"); (el.requestFullscreen || el.webkitRequestFullscreen || (() => {})).call(el); });
   $("close").addEventListener("click", () => { stopVideo(); parent.postMessage({ bernud: "closeCamera" }, "*"); });
   window.addEventListener("message", (e) => { if (e.data && e.data.bernud === "showCamera") { const n = e.data.camera || ""; const sel = $("cam"); const o = [...sel.options].find((x) => x.value.toLowerCase().includes(n.toLowerCase())); if (o) { sel.value = o.value; play(o.value); } } });
-  start();
+  // TV mode: check every few seconds which camera Bernard was asked to show, and switch to it.
+  let tvAt = 0, tagTimer = null;
+  function tag(t) { const el = $("tag"); el.textContent = t; el.classList.remove("gone"); clearTimeout(tagTimer); tagTimer = setTimeout(() => el.classList.add("gone"), 5000); }
+  async function followBernard() {
+    try {
+      const j = await api("/camera/tv");
+      const want = j && j.camera;
+      if (want && want.at > tvAt) {
+        tvAt = want.at;
+        const sel = $("cam"); const o = [...sel.options].find((x) => x.value === want.name) || [...sel.options].find((x) => x.value.toLowerCase().includes(String(want.name).toLowerCase()));
+        if (o) { sel.value = o.value; store.set("bernud.lastCam", o.value); retries = 0; play(o.value); tag(o.value); }
+      }
+    } catch {}
+  }
+  if (tvMode) {
+    start().then(() => { followBernard(); setInterval(followBernard, 4000); });
+    // Imou's live links expire: start the picture afresh every 20 minutes so a long watch doesn't freeze.
+    setInterval(() => { retries = 0; if ($("cam").value) play($("cam").value); }, 20 * 60 * 1000);
+  } else start();
 </script>
 </body>
 </html>

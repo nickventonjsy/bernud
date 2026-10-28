@@ -922,6 +922,12 @@ export async function handle(req, res) {
     try { return send(res, 200, { ok: true, ...(await cameraShow(url.searchParams.get("camera") || "", url.searchParams.get("quality") || "HD")) }, req); }
     catch (e) { return send(res, 200, { ok: false, code: e.code, error: String(e.message).slice(0, 200) }, req); }
   }
+  // The camera the TV should be showing (asked for by voice); the TV-mode camera page checks it every few seconds.
+  if (path === "/camera/tv" && req.method === "GET") {
+    if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
+    let want = null; try { want = JSON.parse((await db.kv.get("tv_camera")) || "null"); } catch {}
+    return send(res, 200, { ok: true, camera: want }, req);
+  }
   if (path === "/camera/snapshot" && req.method === "GET") {
     if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
     try { const cam = await imou.find(url.searchParams.get("camera") || ""); return send(res, 200, { ok: true, camera: cam, url: await imou.snapshot(cam) }, req); }
@@ -1143,9 +1149,17 @@ export async function handle(req, res) {
         if (action === "events") return send(res, 200, await camAlerts.events({ camera: b.camera, hours: b.hours }));
         if (action === "alerts") return send(res, 200, await camAlerts.configure({ action: b.mode || b.people_only !== undefined || b.enabled !== undefined || b.start || b.end || b.saturday_from || b.weekends !== undefined ? "set" : "status", camera: b.camera, mode: b.mode, people_only: b.people_only, enabled: b.enabled, start: b.start, end: b.end, saturday_from: b.saturday_from, weekends: b.weekends }));
         const cam = await imou.find(b.camera);
-        const tv = /tv|telly|television/i.test(String(b.screen || ""));
-        return send(res, 200, { ok: true, show_camera: { id: cam.id, name: cam.name, screen: tv ? "tv" : "here" }, camera: cam.name, online: cam.online,
-          note: tv ? "Bernard can't put video on the TV by himself: on the TV, open the bookmarked page bernud.onrender.com/camera.html in its web browser." : cam.guessed ? `No camera matched that name, so showing ${cam.name}.` : `Showing ${cam.name} on Nicholas's screen now.` });
+        const tv = /tv|telly|television|s95|samsung|lounge/i.test(String(b.screen || ""));
+        if (tv) {
+          // The TV's browser home page is the camera page in TV mode; it watches for this and switches to the camera asked for.
+          await db.kv.set("tv_camera", JSON.stringify({ id: cam.id, name: cam.name, at: Date.now() }));
+          if (!(await smartthings.connected().catch(() => false))) return send(res, 200, { ok: false, error: "not_connected", message: "SmartThings isn't connected, so I can't put the browser up on the TV." });
+          const r = await smartthings.openBrowser(String(b.screen || ""));
+          return send(res, 200, { ok: true, camera: cam.name, online: cam.online, tv: r.tv,
+            note: `Opened the web browser on ${r.tv}${r.woke ? " (woke it up first)" : ""}; its home page shows ${cam.name} full screen within a few seconds. If the TV shows a different page instead, its browser home page needs setting to bernud.onrender.com/camera.html?tv=1 (one-off).` + (cam.online === false ? ` ${cam.name} looks offline right now.` : "") });
+        }
+        return send(res, 200, { ok: true, show_camera: { id: cam.id, name: cam.name, screen: "here" }, camera: cam.name, online: cam.online,
+          note: cam.guessed ? `No camera matched that name, so showing ${cam.name}.` : `Showing ${cam.name} on Nicholas's screen now.` });
       } catch (e) { return send(res, 200, { ok: false, error: e.code || "error", message: String(e.message).slice(0, 200) }); }
     }
     if (path === "/home/settings" && req.method === "POST") return send(res, 200, await home.settings(await readJson(req)));

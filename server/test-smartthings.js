@@ -55,6 +55,11 @@ assert.deepEqual(allCol.devices, ["Lounge lamp"]); assert.equal(allCol.failed.le
 await assert.rejects(st.control({ device: "kitchen", action: "on" }), /No SmartThings device called/);
 const s = await st.control({ device: "s95", action: "status" });
 assert.equal(s.device.power, "on"); assert.equal(s.device.volume, 11); assert.equal(s.device.input, "HDMI1"); assert.deepEqual(s.device.inputs_available, ["TV", "PlayStation"]); assert.equal(s.device.online, "ONLINE");
+// Camera on the TV: the TV (already on) gets its web browser opened, without a wake-up wait.
+sent.length = 0; sentBy.length = 0;
+const ob = await st.openBrowser("the S95B TV", { wait: async () => {} });
+assert.deepEqual(ob, { tv: "Nick's S95BA 55 Tv", woke: false }); assert.deepEqual(sentBy, ["tv1"]);
+assert.deepEqual(sent[0], { component: "main", capability: "custom.launchapp", command: "launchApp", arguments: ["org.tizen.browser", "Internet"] });
 // refresh rotates and stores the new token; revoked -> not connected + notify via keepalive path
 await st.refresh(); assert.equal(rtCount, 1);
 revoke = true; await assert.rejects(st.refresh(), /reconnect/); assert.equal(await st.connected(), false);

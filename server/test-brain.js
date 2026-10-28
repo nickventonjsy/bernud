@@ -153,6 +153,11 @@ const nCalls = calls.length, nGem = gemBodies.length;
 r = await b2.chat({ session: "g3", text: "what's the weather" });
 assert.equal(calls.length, nCalls + 1); assert.equal(gemBodies.length, nGem + 1); assert.equal(r.reply, "Taken over: twelve degrees.");
 
+// Camera on the TV by voice: straight to the camera tool with the TV named.
+assert.deepEqual(matchQuick("play the living room camera on the sb95 tv", "").args, { action: "show", camera: "living room", screen: "S95B tv" });
+assert.deepEqual(matchQuick("put the car park camera on the telly", "").args, { action: "show", camera: "car park", screen: "telly" });
+assert.equal(matchQuick("show me the shop camera", "").args.screen, "");
+
 // Michelle: the set line instantly, unless he's taught Bernard how to say it; then the AI says it his way.
 const lrn = (rows) => ({ learned: async () => rows, promptBlock: async () => "", fromExchange: async () => {} });
 r = await mk({ learner: lrn([]) }).chat({ session: "m1", text: "what about Michelle" });
