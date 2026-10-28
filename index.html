@@ -739,7 +739,7 @@
 
   // ---- Version numbers (bottom of the screen) ----
   // DASH_VERSION goes up by one with every dashboard change (a git hook bumps it automatically).
-  const DASH_VERSION = 35;
+  const DASH_VERSION = 36;
   (async () => {
     const set = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
     set("dashVer", DASH_VERSION);
@@ -1975,6 +1975,13 @@
         if (mine && BYE_RE.test(text)) lkBye = true;
         if (mine) { captionDone(); $("subline").textContent = "You: " + (text.length > 140 ? text.slice(0, 137) + "…" : text); logLine("You", text); setEmotion("curious", 2); }
         else { lastAgentLine = text; caption(text); captionDone(); reactTo(text); logLine("Bernard", text); }
+      });
+      // Screen actions from Bernard (open a camera, the brief), the same as in the other modes.
+      room.registerTextStreamHandler("bernud.ui", async (reader) => {
+        let t = ""; for await (const c of reader) t += c;
+        let ui = null; try { ui = JSON.parse(t); } catch { return; }
+        if (ui && ui.camera) openCamera(ui.camera.name);
+        if (ui && ui.brief) { try { openBrief(); } catch {} }
       });
       await room.connect(j.url, j.token);
       await room.localParticipant.setMicrophoneEnabled(true, store.get(STORE.mic) ? { deviceId: store.get(STORE.mic) } : undefined);

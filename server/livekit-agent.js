@@ -47,7 +47,7 @@ export async function askBrain({ session, text, fetchImpl = fetch, server = SERV
   });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error || `brain ${r.status}`);
-  return { reply: String(j.reply || "").trim() || "I'm afraid I've nothing to say to that.", ok: j.ok !== false, code: j.code };
+  return { reply: String(j.reply || "").trim() || "I'm afraid I've nothing to say to that.", ok: j.ok !== false, code: j.code, ui: j.ui || undefined };
 }
 
 // Spoken replies shouldn't carry markdown, links or control tags meant for a screen.
@@ -85,7 +85,12 @@ export class BernardAgent extends voice.Agent {
       return new ReadableStream({ start(c) { c.enqueue(bye); c.close(); } });
     }
     let reply; const t0 = Date.now();
-    try { reply = speakable((await askBrain({ session: this.session_id, text, fetchImpl: this.fetchImpl })).reply); say(`brain: ${Date.now() - t0}ms -> "${reply.slice(0, 80)}"`); }
+    try {
+      const a = await askBrain({ session: this.session_id, text, fetchImpl: this.fetchImpl });
+      reply = speakable(a.reply); say(`brain: ${Date.now() - t0}ms -> "${reply.slice(0, 80)}"`);
+      // Screen actions (open the camera, the brief…) go to the dashboard or phone on their own text topic.
+      if (a.ui && this.room) this.room.localParticipant.sendText(JSON.stringify(a.ui), { topic: "bernud.ui" }).then(() => say("screen: " + Object.keys(a.ui).join(","))).catch((e) => say("screen send failed: " + String(e.message || e).slice(0, 100)));
+    }
     catch (e) { reply = "I'm afraid my brain didn't answer: " + String(e.message || e).slice(0, 80) + "."; say("brain error: " + String(e.message || e).slice(0, 200)); }
     return new ReadableStream({ start(c) { c.enqueue(reply); c.close(); } });
   }
@@ -107,6 +112,7 @@ export default defineAgent({
       userAwayTimeout: null,
     });
     const agent = new BernardAgent({ session: "lk-" + ctx.room.name });
+    agent.room = ctx.room;
     let leaving = false;
     say(`call in room ${ctx.room.name}; keys: groq ${process.env.GROQ_API_KEY ? "set" : "MISSING"}, elevenlabs ${process.env.ELEVENLABS_API_KEY ? "set" : "MISSING"}, dashboard ${DASH_KEY ? "set" : "MISSING"}; brain at ${SERVER}`);
     session.on("user_state_changed", (e) => say(`you: ${e.oldState} -> ${e.newState}`));
