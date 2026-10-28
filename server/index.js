@@ -256,6 +256,7 @@ const { createRequests } = await import("./requests.js");
 export const claudeRequests = createRequests({ kv: db.kv });
 const { createReceipts } = await import("./receipts.js");
 export const receipts = createReceipts({ kv: db.kv, vision: (a) => brain.vision(a), drive: personalGoogle });
+let shoppingSendTimer = null;
 const { createShopping } = await import("./shopping.js");
 export const shopping = createShopping({ kv: db.kv, notify, telegram: () => telegram,
   openNote: async (text) => {
@@ -1105,7 +1106,17 @@ export async function handle(req, res) {
       try { return send(res, 200, await ccpDelete.handle(await readJson(req))); }
       catch (e) { return send(res, 200, { ok: false, error: e.code || "error", message: String(e.message).slice(0, 300), connect_link: e.link }); }
     }
-    if (path === "/shopping" && req.method === "POST") return send(res, 200, await shopping.handle(await readJson(req)));
+    if (path === "/shopping" && req.method === "POST") {
+      const r = await shopping.handle(await readJson(req));
+      // Whenever things are added, the updated list (with tick-off buttons) goes to his Telegram a few seconds later;
+      // several adds in a row send one list.
+      if (r.added?.length && telegram.configured) {
+        clearTimeout(shoppingSendTimer);
+        shoppingSendTimer = setTimeout(() => telegram.sendList("owner").catch((e) => console.error("shopping to telegram", e.message)), 8000);
+        r.note = "The updated list goes to his Telegram automatically in a few seconds; no need to send it.";
+      }
+      return send(res, 200, r);
+    }
     if (path === "/claude/requests" && req.method === "POST") { const b = await readJson(req); return send(res, 200, await claudeRequests.handle({ ...b, via: b.action === "add" ? String(req.headers["x-bernud-via"] || "voice").slice(0, 12) : "" })); }
     if (path === "/receipts" && req.method === "POST") return send(res, 200, await receipts.handle(await readJson(req)));
     if (path === "/priorities" && req.method === "POST") { const b = await readJson(req); return send(res, 200, await priorities.handle({ ...b, brief: await briefPriorities() })); }

@@ -72,7 +72,8 @@ export function createTelegram({ token, kv, chat, shopping, transcribe = null, s
 
   // The shopping list with tick-off buttons, to every linked chat (or one).
   async function sendList(only = null) {
-    const chats = only ? [{ id: only }] : await getChats();
+    // only: one chat id, "owner" for Nicholas's chats only, or nothing for every linked chat.
+    const chats = only === "owner" ? (await getChats()).filter((c) => roleOf(c) === "owner") : only ? [{ id: only }] : await getChats();
     if (!chats.length) return { sent: 0 };
     const m = listMessage(await shopping.handle({ action: "list" }));
     let sent = 0;
