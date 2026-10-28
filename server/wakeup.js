@@ -32,7 +32,7 @@ export function createWakeup({ kv, lights, speakers, sayOnPhone, todayEvents, fe
   let running = false;
 
   async function greeting(cfg) {
-    const parts = ["Good morning, Nicholas."];
+    const parts = ["Good morning, sir."];
     const t = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", hour: "numeric", minute: "2-digit", hour12: true }).format(now());
     parts.push(`It's ${t}.`);
     try {

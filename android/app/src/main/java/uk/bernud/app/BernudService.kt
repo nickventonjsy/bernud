@@ -31,7 +31,7 @@ class BernudService : Service() {
     private val carObserver = androidx.lifecycle.Observer<Int> { type ->
         // Android Auto connected: open a Bernard conversation the car can read aloud and reply to by voice.
         val now = type == androidx.car.app.connection.CarConnection.CONNECTION_TYPE_PROJECTION
-        if (now && !inCar) CarChat.start(this, "I'm here, Nicholas. Reply to talk to me.")
+        if (now && !inCar) CarChat.start(this, "I'm here, sir. Reply to talk to me.")
         if (!now && inCar) CarChat.clear(this)
         inCar = now
     }

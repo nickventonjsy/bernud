@@ -52,7 +52,7 @@ assert.equal(q("open the camera").tool, "camera");
 assert.equal(q("turn the music up"), null);
 assert.equal(q("what's the weather like"), null);
 assert.equal(q("turn on do not disturb").args.action, "dnd");
-assert.match(q("goodnight").reply({ ok: true, done: ["lights off (3)", "TVs off (Lounge)", "Spotify paused"], tomorrow: { events: [{ title: "Site visit", time: "9:30 am" }], weather: { summary: "rainy", high_c: 13, rain_chance_pct: 70 } } }), /Goodnight, Nicholas\. Lights off, TVs off and Spotify paused\. Tomorrow you've got Site visit at 9:30 am\. It'll be rainy, 13 degrees, with a 70 percent chance of rain\. Sleep well\./);
+assert.match(q("goodnight").reply({ ok: true, done: ["lights off (3)", "TVs off (Lounge)", "Spotify paused"], tomorrow: { events: [{ title: "Site visit", time: "9:30 am" }], weather: { summary: "rainy", high_c: 13, rain_chance_pct: 70 } } }), /Goodnight, sir\. Lights off, TVs off and Spotify paused\. Tomorrow you've got Site visit at 9:30 am\. It'll be rainy, 13 degrees, with a 70 percent chance of rain\. Sleep well\./);
 
 // ---- Brain with fake ElevenLabs/Gemini/Groq/tools
 const store = new Map(); const kv = { get: async (k) => store.get(k), set: async (k, v) => store.set(k, v) };
@@ -152,6 +152,15 @@ const b2 = mk({ groqKey: "GQ", fetchImpl: async (u, o) => {
 const nCalls = calls.length, nGem = gemBodies.length;
 r = await b2.chat({ session: "g3", text: "what's the weather" });
 assert.equal(calls.length, nCalls + 1); assert.equal(gemBodies.length, nGem + 1); assert.equal(r.reply, "Taken over: twelve degrees.");
+
+// Michelle: the set line instantly, unless he's taught Bernard how to say it; then the AI says it his way.
+const lrn = (rows) => ({ learned: async () => rows, promptBlock: async () => "", fromExchange: async () => {} });
+r = await mk({ learner: lrn([]) }).chat({ session: "m1", text: "what about Michelle" });
+assert.equal(r.model, "instant"); assert.match(r.reply, /beautiful/); assert.ok(!/Nicholas/.test(r.reply));
+const nGm = gemBodies.length;
+r = await mk({ learner: lrn([{ text: "Nicholas wants Bernard to end with 'she is beautiful, sir'" }]) }).chat({ session: "m2", text: "what about Michelle" });
+assert.notEqual(r.model, "instant"); assert.equal(gemBodies.length, nGm + 1);
+assert.match(gemBodies.at(-1).systemInstruction.parts[0].text, /# Michelle[\s\S]*she is beautiful, sir/);
 
 // ElevenLabs unreachable later: falls back to the kv copy. Not set up: says so.
 const b3 = createBrain({ geminiKey: "G", elevenKey: "E", agentId: "a", kv, port: 10000, bernudKey: "BK", zwKey: "ZK", fetchImpl: async (u, o) => (String(u).includes("elevenlabs") ? { ok: false, status: 500 } : fetchImpl(u, o)), log: { error() {} } });

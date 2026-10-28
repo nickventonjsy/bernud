@@ -35,8 +35,8 @@ const PAUSE_MS = Number(process.env.LIVEKIT_PAUSE_MS || 1400);
 
 // "Goodbye" ends the call: he says a short farewell and leaves the room (the dashboard uses the same words).
 export const BYE_RE = /^(?:ok(?:ay)?[ ,]*)?(?:bye|goodbye|good night|goodnight|that'?s all|that is all|that'?s it|nothing|no(?:pe)?(?:,? thanks?| thank you)?|thanks?(?: you)?(?: bernard| bernie| bernud)?|cheers|stop|cancel|never ?mind)[.!, ]*$/i;
-const FAREWELLS = ["Very good, sir.", "Right you are, sir.", "Any time, sir.", "I'll be here, sir.", "Good night, Nicholas."];
-const GREETINGS = ["Hello, sir.", "Sir.", "At your service, sir.", "Good to hear you, Nicholas.", "Yes, sir?"];
+const FAREWELLS = ["Very good, sir.", "Right you are, sir.", "Any time, sir.", "I'll be here, sir.", "Good night, sir."];
+const GREETINGS = ["Hello, sir.", "Sir.", "At your service, sir.", "Good to hear you, sir.", "Yes, sir?"];
 
 // Bernard's brain lives in the main server (free mode's /brain/chat): one call per turn, with the same session
 // so the conversation carries on. The reply comes back as plain text for ElevenLabs to speak.

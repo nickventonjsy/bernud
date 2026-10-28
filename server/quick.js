@@ -44,7 +44,7 @@ function switchCommand(device, onOff) {
 function goodnightReply(r) {
   if (!r || r.ok === false) return null;
   const done = (r.done || []).map((d) => d.replace(/ \(.*\)$/, ""));
-  const parts = [`Goodnight, Nicholas.`];
+  const parts = [`Goodnight, sir.`];
   if (done.length) parts.push(done.length === 1 ? `${cap(done[0])}.` : `${cap(done.slice(0, -1).join(", "))} and ${done.at(-1)}.`);
   if (r.failed?.length) parts.push(`I couldn't manage ${r.failed.map((f) => f.split(":")[0]).join(" or ")}.`);
   const t = r.tomorrow || {};

@@ -739,7 +739,7 @@
 
   // ---- Version numbers (bottom of the screen) ----
   // DASH_VERSION goes up by one with every dashboard change (a git hook bumps it automatically).
-  const DASH_VERSION = 31;
+  const DASH_VERSION = 32;
   (async () => {
     const set = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
     set("dashVer", DASH_VERSION);
@@ -1800,17 +1800,17 @@
   // A different opening line each time, so Bernard doesn't sound like a recording.
   const GREETINGS = {
     any: [
-      "Yes, Nicholas?", "At your service, Nicholas.", "Nicholas. What can I do for you?", "I'm listening.",
-      "You rang, sir?", "Go ahead, Nicholas.", "Bernud here. What do you need?", "Right here, Nicholas.",
-      "What's on your mind?", "How can I help?", "Ready when you are.", "Nicholas. Fire away.",
-      "All ears, Nicholas.", "Reporting for duty.", "What are we doing, Nicholas?", "Mm? What can I do?",
+      "Yes, sir?", "At your service, sir.", "Sir. What can I do for you?", "I'm listening.",
+      "You rang, sir?", "Go ahead, sir.", "Bernud here. What do you need?", "Right here, sir.",
+      "What's on your mind?", "How can I help?", "Ready when you are.", "Sir. Fire away.",
+      "All ears, sir.", "Reporting for duty.", "What are we doing, sir?", "Mm? What can I do?",
       "Standing by. What's the plan?", "Your wish, my command. Within reason.", "Yes, sir. What'll it be?",
-      "Hello again, Nicholas.", "Talk to me.", "I'm here. Go on.",
+      "Hello again, sir.", "Talk to me.", "I'm here. Go on.",
     ],
-    morning: ["Morning, Nicholas. What's first?", "Good morning. Coffee first, or straight to business?", "Morning. How can I help?", "Good morning, Nicholas. What do you need?"],
-    afternoon: ["Afternoon, Nicholas. What can I do?", "Good afternoon. What's next?", "Afternoon. Go ahead."],
-    evening: ["Evening, Nicholas. What can I do for you?", "Good evening. What do you need?", "Evening. Still at it, are we?"],
-    late: ["Burning the midnight oil, Nicholas?", "Still up? What can I do?", "Late one tonight. How can I help?"],
+    morning: ["Morning, sir. What's first?", "Good morning. Coffee first, or straight to business?", "Morning. How can I help?", "Good morning, sir. What do you need?"],
+    afternoon: ["Afternoon, sir. What can I do?", "Good afternoon. What's next?", "Afternoon. Go ahead."],
+    evening: ["Evening, sir. What can I do for you?", "Good evening. What do you need?", "Evening. Still at it, are we?"],
+    late: ["Burning the midnight oil, sir?", "Still up? What can I do?", "Late one tonight. How can I help?"],
   };
   function pickGreeting() {
     const h = new Date().getHours();
@@ -2210,7 +2210,7 @@
         if (!freeActive) return;
         if (heard === null) { $("subline").textContent = "Speech recognition isn't available here. Type instead, or switch to ElevenLabs in Settings."; return; }
         if (!heard) return;
-        if (BYE_RE.test(heard)) { $("subline").textContent = "You: " + heard; await freeSpeak(oneOf(["Very good, Nicholas.", "Right you are.", "Any time.", "I'll be here."])); return; }
+        if (BYE_RE.test(heard)) { $("subline").textContent = "You: " + heard; await freeSpeak(oneOf(["Very good, sir.", "Right you are.", "Any time.", "I'll be here."])); return; }
         if (await freeTurn(heard)) return;
       }
     } finally { if (freeActive) freeEnd(); }
@@ -2734,7 +2734,7 @@
   $("pitchInput").addEventListener("input", showVoiceNums); $("pitchInput").addEventListener("change", saveVoice);
   $("rateInput").addEventListener("input", showVoiceNums); $("rateInput").addEventListener("change", saveVoice);
   $("voiceTest").addEventListener("click", async () => {
-    const line = "Good evening, Nicholas. Bernud at your service. Shall I turn the lights down?";
+    const line = "Good evening, sir. Bernud at your service. Shall I turn the lights down?";
     saveVoice();
     store.del("bernud.gvoiceRest");
     if ($("voiceSelect").value.startsWith("g:")) {

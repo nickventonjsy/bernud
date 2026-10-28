@@ -24,7 +24,7 @@ object CarChat {
     private data class Msg(val text: String, val time: Long, val fromBernard: Boolean)
     private val messages = mutableListOf<Msg>()
 
-    fun start(ctx: Context, hello: String = "I'm here, Nicholas. Reply to talk to me.") {
+    fun start(ctx: Context, hello: String = "I'm here, sir. Reply to talk to me.") {
         messages.clear()
         add(ctx, hello, fromBernard = true)
     }

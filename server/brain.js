@@ -9,9 +9,9 @@ const SKIP = new Set(["end_call"]);
 const SESSION_MS = 15 * 60_000;
 
 const MICHELLE = [
-  "Michelle? Quite simply the most beautiful woman in the universe, Nicholas. Her smile and her laugh light up any room she walks into. Quite frankly, she is beautiful.",
+  "Michelle? Quite simply the most beautiful woman in the universe, sir. Her smile and her laugh light up any room she walks into. Quite frankly, she is beautiful.",
   "Ah, Michelle. The most beautiful woman in the universe, and I don't say that lightly. When she smiles or laughs, the whole room lights up. Quite frankly, she is beautiful.",
-  "Michelle is, without question, the most beautiful woman in the universe. That smile, that laugh, they light up a room. Quite frankly, Nicholas, she is beautiful.",
+  "Michelle is, without question, the most beautiful woman in the universe. That smile, that laugh, they light up a room. Quite frankly, sir, she is beautiful.",
 ];
 const TEXT_MODE_NOTE = `
 
@@ -405,7 +405,10 @@ export function createBrain({ briefHandler = null, dayLog = null, learner = null
       return { ok: true, reply, tools: [], model: "instant", ms: Date.now() - t0 };
     }
     // Michelle: always the same verdict, in slightly different words (not when he just wants her playlist).
-    if (/\bmichelle\b/i.test(text) && !/\b(play|playlist|spotify|music|songs?|oldies|shuffle|put on|echo|alexa|speaker)\b/i.test(text)) {
+    const aboutMichelle = /\bmichelle\b/i.test(text) && !/\b(play|playlist|spotify|music|songs?|oldies|shuffle|put on|echo|alexa|speaker)\b/i.test(text);
+    // If he's taught Bernard how to put it, the AI says it his way (below); otherwise one of the set lines, instantly.
+    const michelleTaught = aboutMichelle && learner ? (await learner.learned().catch(() => [])).filter((r) => /michelle|beautiful/i.test(r.text)).map((r) => r.text) : [];
+    if (aboutMichelle && !michelleTaught.length) {
       const reply = MICHELLE[Math.floor(Math.random() * MICHELLE.length)];
       remember(reply, "instant", s.groups);
       return { ok: true, reply, tools: [], model: "instant", ms: Date.now() - t0 };
@@ -435,7 +438,8 @@ export function createBrain({ briefHandler = null, dayLog = null, learner = null
     const slim = slimConfig(c, text, groups);
     const time = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", dateStyle: "full", timeStyle: "short" }).format(now());
     const learnt = learner ? await learner.promptBlock().catch(() => "") : "";
-    const system = slim.prompt.replaceAll("{{system__time}}", time) + (slim.prompt.includes("# What you've learnt") ? "" : learnt) + TEXT_MODE_NOTE;
+    const michelleNote = michelleTaught.length ? `\n\n# Michelle\nWhenever Michelle comes up, Bernard's verdict never changes: she is the most beautiful woman in the universe, her smile and laugh light up any room, and quite frankly she is beautiful. Say it in a fresh way each time, following exactly how Nicholas has asked for it to be said:\n${michelleTaught.map((t) => "- " + t).join("\n")}\nThe line is: "${MICHELLE[0]}"` : "";
+    const system = slim.prompt.replaceAll("{{system__time}}", time) + (slim.prompt.includes("# What you've learnt") ? "" : learnt) + michelleNote + TEXT_MODE_NOTE;
     const job = { system, turns: s.turns, text, tools: slim.tools, byName: new Map(slim.tools.map((t) => [t.name, t])), used, done: [] };
 
     let out = null;

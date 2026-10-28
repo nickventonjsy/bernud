@@ -47,7 +47,7 @@ await wk.tick(); await new Promise((r) => setTimeout(r, 20));
 assert.deepEqual(calls.filter((c) => c[0] === "light").map((c) => c[2]).filter(Boolean), ["5", "20", "40", "60", "80", "100"]);
 assert.deepEqual(calls.find((c) => c[0] === "music"), ["music", "michelle's echo", "a gentle, happy start to the morning"]);
 const said = calls.find((c) => c[0] === "say")[1];
-assert.match(said, /^Good morning, Nicholas\. It's 6:35 am\. It's 10 degrees out, with rain today and a high of 13, and a 70 percent chance of rain\. First up today: Paint rep at 10:00 am\.$/);
+assert.match(said, /^Good morning, sir\. It's 6:35 am\. It's 10 degrees out, with rain today and a high of 13, and a 70 percent chance of rain\. First up today: Paint rep at 10:00 am\.$/);
 const n = calls.length; await wk.tick(); assert.equal(calls.length, n);   // once a day
 clock = new Date("2026-10-31T06:35:00Z"); await wk.tick(); assert.equal(calls.length, n);   // Saturday: off
 console.log("home2 ok");
