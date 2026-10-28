@@ -25,4 +25,8 @@ const { speakable, askBrain } = await import("./livekit-agent.js");
 assert.equal(speakable("Done, **sir**. See [the brief](https://x) at https://y/z."), "Done, sir. See the brief at the link");
 const fetchImpl = async (url, o) => { assert.match(url, /\/brain\/chat$/); assert.equal(JSON.parse(o.body).session, "lk-r1"); return { ok: true, json: async () => ({ ok: true, reply: "Lamp on." }) }; };
 assert.deepEqual(await askBrain({ session: "lk-r1", text: "lamp on", fetchImpl, server: "http://s", key: "d" }), { reply: "Lamp on.", ok: true, code: undefined });
+// The placeholder model the session needs before it will reply at all.
+const { BrainLLM } = await import("./livekit-agent.js");
+const { llm } = await import("@livekit/agents");
+const b = new BrainLLM(); assert.ok(b instanceof llm.LLM); assert.equal(b.label(), "bernard.brain"); assert.throws(() => b.chat(), /llmNode answers instead/);
 console.log("livekit ok");

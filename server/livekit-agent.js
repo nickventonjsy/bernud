@@ -6,7 +6,7 @@
 //   node server/livekit-agent.js start
 // It talks to the main server over localhost for the brain, so it needs DASHBOARD_KEY and PORT in its env.
 import { fileURLToPath } from "node:url";
-import { cli, WorkerOptions, defineAgent, voice, InferenceRunner } from "@livekit/agents";
+import { cli, WorkerOptions, defineAgent, voice, InferenceRunner, llm } from "@livekit/agents";
 
 // Memory: the Render instance has 512MB. Out of the box this library starts ~900MB of processes; three things trim it.
 // 1) Don't preload LiveKit's local inference models into every call process (child processes inherit this).
@@ -51,6 +51,16 @@ export function speakable(text) {
   return String(text || "").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").replace(/https?:\/\/\S+/g, "the link").replace(/[*_`#>]/g, "").replace(/\s+/g, " ").trim();
 }
 
+// The session refuses to reply at all unless it has an LLM ("trying to generate reply without an LLM model", raised
+// silently inside its reply task). Bernard's thinking happens in his own brain via BernardAgent.llmNode, so this is a
+// placeholder that satisfies that check and is never asked to chat.
+export class BrainLLM extends llm.LLM {
+  label() { return "bernard.brain"; }
+  get model() { return "bernard-brain"; }
+  get provider() { return "bernud-server"; }
+  chat() { throw new Error("BrainLLM.chat should not be called: BernardAgent.llmNode answers instead"); }
+}
+
 // One plain line per event in Render's log, so a call that goes quiet can be traced.
 const say = (msg) => console.log("[bernard] " + msg);
 
@@ -79,6 +89,7 @@ export default defineAgent({
     await ctx.connect();
     const session = new voice.AgentSession({
       vad: ctx.proc.userData.vad,
+      llm: new BrainLLM(),
       stt: openai.STT.withGroq({ model: STT_MODEL, apiKey: process.env.GROQ_API_KEY, language: "en" }),
       // Same voice and settings as his ElevenLabs agent (stability .7, similarity .8, a touch slower).
       tts: new elevenlabs.TTS({ voiceId: VOICE_ID, model: TTS_MODEL, apiKey: process.env.ELEVENLABS_API_KEY, language: "en", voiceSettings: { stability: 0.7, similarity_boost: 0.8, speed: 0.95, use_speaker_boost: true } }),
