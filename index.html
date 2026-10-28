@@ -699,6 +699,11 @@
     <div class="btnrow"><button class="btn" type="button" id="privBtn">Check</button><button class="btn primary" type="button" id="privLockBtn" style="display:none">Make Bernard private</button><button class="btn" type="button" id="privOpenBtn" style="display:none">Make public again</button></div>
     <div class="note" id="privNote"></div>
     <hr style="border:0;border-top:1px solid var(--line, #5a1a1f);margin:16px 0">
+    <p><b style="color:var(--text)">Round-ups and reminders.</b> Sent to your Telegram: end-of-day wrap-up (weekdays), weekly spend (Sundays), overnight cameras (8am), payroll reminders, bin night, and the camera popping up on the TV when someone's seen after hours (only if the TV is already on).</p>
+    <div class="btnrow"><button class="btn" type="button" id="rdBtn">Show round-ups</button></div>
+    <div id="rdList"></div>
+    <div class="note" id="rdNote"></div>
+    <hr style="border:0;border-top:1px solid var(--line, #5a1a1f);margin:16px 0">
     <p><b style="color:var(--text)">Google accounts.</b> The Cory Car Paints account gives Bernard the CCP inbox, drafts, calendar and Drive. Your personal account lets him read your own email (read-only, never drafts) and calendar, so he can find booking references, orders, tickets and the like when you ask.</p>
     <div class="btnrow"><button class="btn" type="button" id="gBtn">Show accounts</button></div>
     <div id="gList"></div>
@@ -740,7 +745,7 @@
 
   // ---- Version numbers (bottom of the screen) ----
   // DASH_VERSION goes up by one with every dashboard change (a git hook bumps it automatically).
-  const DASH_VERSION = 41;
+  const DASH_VERSION = 42;
   (async () => {
     const set = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
     set("dashVer", DASH_VERSION);
@@ -2805,6 +2810,25 @@
     } catch { $("learnNote").textContent = "Couldn't reach Bernard's server."; }
   }
   $("learnBtn").addEventListener("click", () => learnShow());
+  // ---- Round-ups: switch each scheduled Telegram round-up on or off (behind the dashboard passcode) ----
+  async function rdShow(post) {
+    const pass = store.get("bernud.dashKey"); if (!pass) { $("rdNote").textContent = "Enter your passcode in the CCP brief first."; return; }
+    $("rdNote").textContent = "Checking…";
+    try {
+      const j = await (await fetch(`${SERVER}/dash/digests`, { method: "POST", headers: { "content-type": "application/json", "x-dashboard-key": pass }, body: JSON.stringify(post || { action: "status" }) })).json();
+      const box = $("rdList"); box.innerHTML = ""; $("rdNote").textContent = "";
+      const rows = [["wrapup", "End-of-day wrap-up"], ["spend", "Weekly spend"], ["cameras", "Overnight cameras"], ["payroll", "Payroll"], ["bins", "Bin night"], ["tv_popup", "Camera on the TV"]];
+      for (const [k, name] of rows) {
+        const v = k === "tv_popup" ? j.tv_camera_popup : j[k]; const on = /^on/.test(String(v));
+        const row = document.createElement("div"); row.className = "btnrow"; row.style.alignItems = "center";
+        const label = document.createElement("span"); label.textContent = `${name}: ${v}`; label.style.flex = "1"; label.style.fontSize = "13px";
+        const b = document.createElement("button"); b.className = "btn"; b.type = "button"; b.textContent = on ? "Turn off" : "Turn on";
+        b.onclick = () => rdShow(k === "tv_popup" ? { action: "status", tv_popup: !on } : { action: "set", [k]: !on });
+        row.append(label, b); box.appendChild(row);
+      }
+    } catch { $("rdNote").textContent = "Couldn't reach Bernard's server."; }
+  }
+  $("rdBtn").addEventListener("click", () => rdShow());
   // ---- Google accounts: status and connect links (behind the dashboard passcode) ----
   async function gShow(post) {
     const pass = store.get("bernud.dashKey"); if (!pass) { $("gNote").textContent = "Enter your passcode in the CCP brief first."; return; }

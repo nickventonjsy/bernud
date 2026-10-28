@@ -829,6 +829,13 @@ export async function handle(req, res) {
     catch { return { from: null, items: [] }; }
   }
   // Tick, untick, add or remove a priority from the dashboard.
+  if (path === "/dash/digests" && req.method === "POST") {
+    if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
+    const b = await readJson(req);
+    if (b.tv_popup !== undefined) await db.kv.set("camera_tv_popup", b.tv_popup ? "on" : "off");
+    const r = await digests.handle({ action: b.action === "set" ? "set" : "status", wrapup: b.wrapup, spend: b.spend, cameras: b.cameras, payroll: b.payroll, bins: b.bins });
+    return send(res, 200, { ...r, tv_camera_popup: (await db.kv.get("camera_tv_popup")) === "off" ? "off" : "on" }, req);
+  }
   if (path === "/dash/priorities" && req.method === "POST") {
     if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
     const b = await readJson(req);

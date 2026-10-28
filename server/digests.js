@@ -4,12 +4,12 @@
 //   cameras  daily 08:00     who/what the cameras saw overnight
 //   payroll  payroll day (default the 25th) plus the Combined Employer Return / ITIS / Social Security deadline
 //            (15 days after the month ends, per gov.je), reminded on the 10th and on the 15th
-//   bins     19:00 the evening before collection, with that week's St Brelade recycling box
+//   bins     19:00 the evening before collection (Thursdays in St Brelade, so Wednesday evening), with that week's St Brelade recycling box
 // Settings live in kv "digests"; each can be switched off.
 import { londonNow, isDue } from "./scheduler.js";
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-export const DEFAULTS = { wrapup: true, wrapup_time: "17:30", spend: true, cameras: true, payroll: true, payroll_day: 25, bins: false, bin_day: null };
+export const DEFAULTS = { wrapup: true, wrapup_time: "17:30", spend: true, cameras: true, payroll: true, payroll_day: 25, bins: true, bin_day: 4 };
 
 // St Brelade 2026 planner: blue (paper) every other week, red (plastic) and black (metals) alternating between.
 // Week starting Mon 2 Nov 2026 is blue, 9 Nov red, 16 Nov blue, 23 Nov black. The pattern is carried on after that.
