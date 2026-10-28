@@ -66,6 +66,10 @@ class PhoneCommands(private val ctx: Context) {
                 "wa_send" -> waMessage(arg, send = true)
                 "firetv" -> FireTv.run(ctx, arg)
                 "note" -> openNote(arg)
+                "wa_read" -> {
+                    if (!WaNotifications.enabled(ctx)) start(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                    WaNotifications.read(ctx, arg)
+                }
                 "come_back" -> { start(Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)); "Bernard is back on screen." }
                 else -> throw Fail("The phone app doesn't know '$action' yet.")
             }

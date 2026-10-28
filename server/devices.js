@@ -4,7 +4,7 @@
 import { randomUUID } from "node:crypto";
 
 export const PC_ACTIONS = ["status", "open_app", "close_app", "open_url", "media", "volume", "power", "run_script", "list_scripts", "list_windows", "type_text", "say", "powershell", "system_info", "print", "list_printers"];
-export const PHONE_ACTIONS = ["ring", "stop_ring", "torch", "volume", "media", "dnd", "open_url", "open_app", "wifi", "bluetooth", "brightness", "say", "wa_message", "wa_call", "wa_video", "firetv", "note", "come_back", "wa_send"];
+export const PHONE_ACTIONS = ["ring", "stop_ring", "torch", "volume", "media", "dnd", "open_url", "open_app", "wifi", "bluetooth", "brightness", "say", "wa_message", "wa_call", "wa_video", "firetv", "note", "come_back", "wa_send", "wa_read"];
 
 export const cleanContactName = (name) => String(name || "").replace(/['"]/g, "_").replace(/[|:\r\n%]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 60);
 // WhatsApp message for Tasker: "<contact name>::<url-encoded text>" (Tasker splits on "::" and builds a wa.me link).
