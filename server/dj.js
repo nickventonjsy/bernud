@@ -42,8 +42,8 @@ export function createDJ({ zw, complete, fetchImpl = fetch, sample = 300 }) {
     const tracks = got.picks.slice(0, count).map((n) => pool[n - 1]);
     await zwCall("/api/assistant/spotify/control", { action: "shuffle", value: false, device_id: device_id || undefined }).catch(() => {}); // keep the running order
     const play = await zwCall("/api/assistant/spotify/control", { action: "play", uris: tracks.map((t) => t.u), device_id: device_id || undefined });
-    if (play.ok === false) return { ok: false, error: "play_failed", message: play.error || "Spotify wouldn't start the mix.", hint: "If nothing is playing anywhere, open Spotify on a device first, or ask me to list devices." };
-    return { ok: true, title: got.title || "Your mix", mood, tracks: tracks.length, from_library: all.length, starts_with: tracks.slice(0, 3).map((t) => `${t.n} by ${t.a}`) };
+    if (play.ok === false) return { ok: false, error: "play_failed", message: play.error || "Spotify wouldn't start the mix.", hint: "No Spotify device could be woken. Open Spotify once on the device he wants so it shows up, then try again." };
+    return { ok: true, title: got.title || "Your mix", mood, ...(play.device ? { playing_on: play.device } : {}), tracks: tracks.length, from_library: all.length, starts_with: tracks.slice(0, 3).map((t) => `${t.n} by ${t.a}`) };
   }
 
   return { mix };
