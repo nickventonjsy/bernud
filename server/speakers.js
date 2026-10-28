@@ -13,6 +13,8 @@ export function createSpeakers({ zw, dj, fetchImpl = fetch }) {
     const list = j.devices || [];
     const want = words(name || "echo").concat(/michelle/i.test(name || "") ? ["echo"] : []);
     const score = (d) => words(d.name + " " + d.type).filter((w) => want.some((x) => w.startsWith(x) || x.startsWith(w))).length;
+    // "my phone" / "mobile" means the Spotify device of type Smartphone (named e.g. "Nick's S24 Ultra").
+    if (/\b(phone|mobile|s2\d|galaxy)\b/i.test(name || "")) { const ph = list.find((d) => /smartphone/i.test(d.type)); if (ph) return { device: ph, all: list.map((d) => d.name) }; }
     const best = list.map((d) => [score(d), d]).filter(([s]) => s > 0).sort((a, b) => b[0] - a[0])[0];
     return { device: best ? best[1] : null, all: list.map((d) => d.name) };
   }

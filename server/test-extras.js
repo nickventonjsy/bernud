@@ -102,4 +102,5 @@ const r1 = await sp.playOn({ device: "michelle's echo", query: "michelle's oldie
 assert.equal(r1.device, "Michelle's Echo Dot"); assert.equal(r1.playing, "Michelle Shelley's oldies");
 assert.deepEqual(calls2.at(-1)[1], { action: "play", uri: "spotify:playlist:abc", device_id: "e1" });
 const r2 = await sp.playOn({ device: "michelle's echo" }); assert.equal(r2.moved, true); assert.deepEqual(calls2.at(-1)[1], { action: "transfer", value: "e1" });
+const r3 = await sp.playOn({ device: "phone" }); assert.equal(r3.device, "Nicholas's S24"); assert.deepEqual(calls2.at(-1)[1], { action: "transfer", value: "p1" });
 console.log("echo ok");
