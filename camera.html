@@ -59,7 +59,7 @@
   if (tvMode) { document.body.classList.add("tv"); $("video").removeAttribute("controls"); }
   const store = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
   let quality = store.get("bernud.camQuality") || "HD";
-  let hls = null, retries = 0;
+  let hls = null, retries = 0, playId = 0;
   const msg = (t) => { $("msg").textContent = t || ""; };
 
   async function api(path) {
@@ -77,38 +77,64 @@
 
   function stopVideo() { if (hls) { hls.destroy(); hls = null; } const v = $("video"); v.removeAttribute("src"); v.load(); }
 
-  async function snapshotFallback(name) {
-    try {
-      const j = await api(`/camera/snapshot?camera=${encodeURIComponent(name)}`);
-      if (j.ok) { $("snap").src = j.url; $("snap").classList.remove("hidden"); $("video").classList.add("hidden"); msg("Live video wouldn't load, so this is a still snapshot. Tap Reload to try live again."); return; }
-    } catch {}
-    msg("Couldn't load this camera. Check it's online in the Imou app, then tap Reload.");
+  // Tell the server what went wrong (it logs it), so a TV that won't play can be diagnosed.
+  function diag(stage, detail) {
+    const pass = store.get("bernud.dashKey"); if (!pass) return;
+    fetch(SERVER + "/camera/diag", { method: "POST", headers: { "x-dashboard-key": pass, "content-type": "application/json" }, body: JSON.stringify({ stage, detail: String(detail || "").slice(0, 300), tv: tvMode, ua: navigator.userAgent.slice(0, 160), hls: !!(window.Hls && Hls.isSupported()), native: $("video").canPlayType("application/vnd.apple.mpegurl") }) }).catch(() => {});
   }
 
-  async function play(name) {
-    stopVideo();
+  // When live video won't play here, keep the picture moving with a fresh snapshot every few seconds.
+  let snapTimer = null, snapFor = "";
+  function stopSnaps() { clearTimeout(snapTimer); snapTimer = null; snapFor = ""; }
+  async function snapshotFallback(name) {
+    stopSnaps(); snapFor = name;
+    const next = async (first) => {
+      if (snapFor !== name) return;
+      try {
+        const j = await api(`/camera/snapshot?camera=${encodeURIComponent(name)}`);
+        if (j.ok) {
+          // Imou makes the picture a moment after giving its address: try loading it a few times.
+          for (let i = 0; i < 4 && snapFor === name; i++) {
+            const ok = await new Promise((r) => { const im = new Image(); im.onload = () => r(true); im.onerror = () => r(false); im.src = j.url; });
+            if (ok) { $("snap").src = j.url; $("snap").classList.remove("hidden"); $("video").classList.add("hidden"); if (first) msg(tvMode ? "" : "Live video wouldn't load here, so this picture refreshes every few seconds. Tap Reload to try live again."); first = false; break; }
+            await new Promise((r) => setTimeout(r, 1200));
+          }
+        } else if (first) msg(j.error || "Couldn't load this camera.");
+      } catch {}
+      if (snapFor === name) snapTimer = setTimeout(() => next(first), 3000);
+    };
+    if (tvMode) tag(name + " · updates every few seconds");
+    next(true);
+  }
+
+  async function play(name, q = quality, triedOther = false) {
+    stopVideo(); stopSnaps();
+    const id = ++playId;
     $("snap").classList.add("hidden");
     msg("Connecting to the camera…");
     let j;
-    try { j = await api(`/camera/stream?camera=${encodeURIComponent(name)}&quality=${quality}`); } catch { return; }
+    try { j = await api(`/camera/stream?camera=${encodeURIComponent(name)}&quality=${q}`); } catch { return; }
     if (!j.ok) { msg(j.error || "Couldn't get the camera stream."); return; }
     if (j.camera && j.camera.online === false) msg(`${j.camera.name} looks offline, trying anyway…`);
     const v = $("video"); v.classList.remove("hidden");
     const ready = () => { msg(""); retries = 0; };
-    v.onplaying = ready;
+    // Didn't play: try the other quality (the SD stream is often an older, more widely playable format), then snapshots.
+    const giveUp = (why) => { if (id !== playId) return; diag(`${q} failed`, why); if (!triedOther) { retries = 0; msg("Trying the other picture quality…"); play(name, q === "HD" ? "SD" : "HD", true); } else snapshotFallback(name); };
+    const watchdog = setTimeout(() => { if (v.paused || v.readyState < 2) giveUp("no picture after 20s"); }, 20000);
+    v.onplaying = () => { clearTimeout(watchdog); ready(); };
     if (window.Hls && Hls.isSupported()) {
       hls = new Hls({ liveSyncDurationCount: 2, maxBufferLength: 10 });
       hls.loadSource(j.url); hls.attachMedia(v);
       hls.on(Hls.Events.MANIFEST_PARSED, () => v.play().catch(() => {}));
       hls.on(Hls.Events.ERROR, (_, d) => {
         if (!d.fatal) return;
-        if (retries++ < 2) { msg("Reconnecting…"); setTimeout(() => play(name), 1500); }
-        else snapshotFallback(name);
+        if (retries++ < 2 && d.type === Hls.ErrorTypes.NETWORK_ERROR) { msg("Reconnecting…"); setTimeout(() => play(name, q, triedOther), 1500); }
+        else { clearTimeout(watchdog); giveUp(`${d.type}/${d.details}${d.reason ? " " + d.reason : ""}`); }
       });
     } else if (v.canPlayType("application/vnd.apple.mpegurl")) {
       v.src = j.url; v.play().catch(() => {});
-      v.onerror = () => (retries++ < 2 ? setTimeout(() => play(name), 1500) : snapshotFallback(name));
-    } else snapshotFallback(name);
+      v.onerror = () => { clearTimeout(watchdog); giveUp("native player error " + (v.error && v.error.code)); };
+    } else { clearTimeout(watchdog); diag("no player", "neither hls.js nor native HLS"); snapshotFallback(name); }
   }
 
   async function start() {
@@ -148,7 +174,7 @@
   if (tvMode) {
     start().then(() => { followBernard(); setInterval(followBernard, 4000); });
     // Imou's live links expire: start the picture afresh every 20 minutes so a long watch doesn't freeze.
-    setInterval(() => { retries = 0; if ($("cam").value) play($("cam").value); }, 20 * 60 * 1000);
+    setInterval(() => { retries = 0; if ($("cam").value && !snapFor) play($("cam").value); }, 20 * 60 * 1000);
   } else start();
 </script>
 </body>

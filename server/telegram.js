@@ -7,7 +7,7 @@ const chunks = (t, n = 3900) => { const out = []; t = String(t || ""); while (t.
 
 // transcribe(buffer, mime) -> text; speak(text) -> { mp3: Buffer } or null. Both optional.
 // photo({ data: Buffer, mime, note }) -> { ok, message } handles a photo (a receipt). Optional.
-export function createTelegram({ token, kv, chat, shopping, transcribe = null, speak = null, photo = null, requests = null, log = console, fetchImpl = fetch }) {
+export function createTelegram({ token, kv, chat, shopping, transcribe = null, speak = null, photo = null, requests = null, log = console, fetchImpl = fetch, photoRetryMs = 2500 }) {
   const base = `https://api.telegram.org/bot${token}`;
   let me = null, running = false, lastError = null;
 
@@ -82,9 +82,16 @@ export function createTelegram({ token, kv, chat, shopping, transcribe = null, s
         catch (e) {
           // Telegram won't fetch some camera picture links itself (e.g. ones with an unusual port): fetch it here and upload it.
           try {
-            const r = await fetchImpl(photo, { signal: AbortSignal.timeout(15_000) });
-            if (!r.ok) throw new Error(`picture ${r.status}`);
-            const data = Buffer.from(await r.arrayBuffer());
+            // Imou makes the picture a few seconds after giving its address, so an early fetch gets nothing: try a few times.
+            let r = null, data = null;
+            for (let i = 0; i < 4; i++) {
+              if (i) await new Promise((ok) => setTimeout(ok, photoRetryMs));
+              r = await fetchImpl(photo, { signal: AbortSignal.timeout(15_000) }).catch(() => null);
+              const type = r?.headers?.get?.("content-type") || "image/jpeg";
+              if (r?.ok && /^image\//.test(type)) { data = Buffer.from(await r.arrayBuffer()); if (data.length > 1000) break; }
+              data = null;
+            }
+            if (!data) throw new Error(`picture not ready (${r?.status || "no answer"})`);
             await apiForm("sendPhoto", { chat_id: String(owner.id), caption: body, parse_mode: "HTML" }, { photo: { name: "camera.jpg", data, type: r.headers?.get?.("content-type") || "image/jpeg" } });
             return true;
           } catch (e2) { log.error?.("telegram photo", e.message, "| upload:", e2.message); }

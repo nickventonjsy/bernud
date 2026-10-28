@@ -922,6 +922,13 @@ export async function handle(req, res) {
     try { return send(res, 200, { ok: true, ...(await cameraShow(url.searchParams.get("camera") || "", url.searchParams.get("quality") || "HD")) }, req); }
     catch (e) { return send(res, 200, { ok: false, code: e.code, error: String(e.message).slice(0, 200) }, req); }
   }
+  // The camera page reports when live video won't play (which player, which error), for diagnosing the TV.
+  if (path === "/camera/diag" && req.method === "POST") {
+    if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
+    const b = await readJson(req);
+    console.log("camera diag", JSON.stringify({ stage: String(b.stage || "").slice(0, 40), detail: String(b.detail || "").slice(0, 300), tv: !!b.tv, hls: !!b.hls, native: String(b.native || "").slice(0, 20), ua: String(b.ua || "").slice(0, 160) }));
+    return send(res, 200, { ok: true }, req);
+  }
   // The camera the TV should be showing (asked for by voice); the TV-mode camera page checks it every few seconds.
   if (path === "/camera/tv" && req.method === "GET") {
     if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);

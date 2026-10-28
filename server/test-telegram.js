@@ -64,11 +64,12 @@ assert.match(sent().at(-1).text, /🎙 hello/);
 calls.length = 0; await tg3.alert("Someone at the door", { title: "Person: Living Room", click: "https://bernud.onrender.com/camera.html", photo: "https://x/p.jpg" });
 const ph = calls.find((c) => c.method === "sendPhoto"); assert.ok(ph); assert.match(ph.body.caption, /Person: Living Room[\s\S]*Open/);
 // Telegram refuses to fetch the picture link itself: Bernard downloads it and uploads it instead.
-const up = []; const tg4 = createTelegram({ token: "x", kv, shopping, chat: async () => ({}), log: {}, fetchImpl: async (url, o = {}) => {
-  if (url === "https://cam:8443/p.jpg") return { ok: true, arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer, headers: { get: () => "image/jpeg" } };
+let picTries = 0;
+const up = []; const tg4 = createTelegram({ token: "x", kv, shopping, chat: async () => ({}), log: {}, photoRetryMs: 1, fetchImpl: async (url, o = {}) => {
+  if (url === "https://cam:8443/p.jpg") return ++picTries < 2 ? { ok: false, status: 404, headers: { get: () => "text/html" } } : { ok: true, arrayBuffer: async () => new Uint8Array(3000).buffer, headers: { get: () => "image/jpeg" } };
   if (o.body instanceof FormData) { up.push(o.body); return { status: 200, json: async () => ({ ok: true, result: true }) }; }
   if (url.endsWith("/sendPhoto")) return { status: 400, json: async () => ({ ok: false, description: "Bad Request: invalid file HTTP URL specified: Wrong port number specified in the URL" }) };
   return fetchImpl(url, o); } });
 assert.equal(await tg4.alert("Motion", { title: "Camera", photo: "https://cam:8443/p.jpg" }), true);
-assert.equal(up.length, 1); assert.equal(up[0].get("photo").size, 3); assert.match(up[0].get("caption"), /Camera/);
+assert.equal(up.length, 1); assert.equal(up[0].get("photo").size, 3000); assert.equal(picTries, 2, "waited for the picture"); assert.match(up[0].get("caption"), /Camera/);
 console.log("telegram tests passed"); process.exit(0);
