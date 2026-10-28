@@ -66,6 +66,7 @@ class PhoneCommands(private val ctx: Context) {
                 "wa_send" -> waMessage(arg, send = true)
                 "firetv" -> FireTv.run(ctx, arg)
                 "note" -> openNote(arg)
+                "audio" -> { val m = AudioRoute.setMode(ctx, arg); if (m == "earpiece") "Bernard will now talk through the earpiece: hold the phone to your ear." else "Bernard will now talk through the loudspeaker." }
                 "wa_read" -> {
                     if (!WaNotifications.enabled(ctx)) start(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                     WaNotifications.read(ctx, arg)

@@ -23,12 +23,22 @@ object AudioRoute {
     private var active = false
     private var keep: Runnable? = null
 
+    // Where Bernard's voice comes out during a conversation: "speaker" (default) or "earpiece" (hold it to your ear,
+    // for public places). Chosen by voice ("use the earpiece") or the dashboard button; remembered.
+    fun mode(ctx: Context): String = ctx.getSharedPreferences("bernud", Context.MODE_PRIVATE).getString("audioRoute", "speaker") ?: "speaker"
+    fun setMode(ctx: Context, m: String): String {
+        val mode = if (m.trim().lowercase().startsWith("ear")) "earpiece" else "speaker"
+        ctx.getSharedPreferences("bernud", Context.MODE_PRIVATE).edit().putString("audioRoute", mode).apply()
+        if (active) main.post { apply(ctx) }
+        return mode
+    }
+
     fun conversationStarted(ctx: Context) {
         active = true
         // WebRTC switches the audio mode a moment after connecting (and sometimes again later), so keep re-applying
         // the loudspeaker every couple of seconds for the whole conversation.
         keep?.let { main.removeCallbacks(it) }
-        val r = object : Runnable { override fun run() { if (!active) return; toSpeaker(ctx); main.postDelayed(this, 2000) } }
+        val r = object : Runnable { override fun run() { if (!active) return; apply(ctx); main.postDelayed(this, 2000) } }
         keep = r; main.postDelayed(r, 300)
     }
 
@@ -43,6 +53,20 @@ object AudioRoute {
 
     @Suppress("DEPRECATION")
     private fun legacySpeaker(am: AudioManager, on: Boolean) { am.isSpeakerphoneOn = on }
+
+    private fun apply(ctx: Context) { if (mode(ctx) == "earpiece") toEarpiece(ctx) else toSpeaker(ctx) }
+
+    private fun toEarpiece(ctx: Context) {
+        val am = ctx.getSystemService(AudioManager::class.java) ?: return
+        try {
+            val outs = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+            if (outs.any { it.type in personal && !wearable.containsMatchIn(it.productName ?: "") }) return   // headphones / car win
+            if (Build.VERSION.SDK_INT >= 31) {
+                am.availableCommunicationDevices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE }
+                    ?.let { am.setCommunicationDevice(it) }
+            } else legacySpeaker(am, false)
+        } catch (_: Exception) {}
+    }
 
     private fun toSpeaker(ctx: Context) {
         val am = ctx.getSystemService(AudioManager::class.java) ?: return

@@ -1041,8 +1041,9 @@ export async function handle(req, res) {
   try {
     if (req.method === "POST" && path === "/memory/save") {
       const body = await readJson(req);
-      const text = String(body.text || "").trim().slice(0, 1000);
       const category = String(body.category || "general").trim().toLowerCase().slice(0, 40) || "general";
+      // Recipes are kept whole (ingredients and steps) so he can ask for them again later.
+      const text = String(body.text || "").trim().slice(0, /^recipes?$/.test(category) ? 4000 : 1000);
       if (!text) return send(res, 400, { error: "text is required" });
       const row = await db.save(text, category);
       return send(res, 200, { saved: true, memory: present(row) });

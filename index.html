@@ -536,6 +536,7 @@
         <canvas id="wave" aria-hidden="true"></canvas>
         <div class="voice-state"><span class="dot red" id="micDot"></span><span id="micState">Microphone ready</span></div>
         <label class="vol-row" for="volRange"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 10v4h4l5 4V6L8 10z"/><path d="M16 9a4 4 0 0 1 0 6"/></svg><input type="range" id="volRange" min="0" max="100" step="5" value="100" aria-label="Bernard's speaking volume"><span id="volVal">100%</span></label>
+        <button class="btn" hidden type="button" id="routeBtn" title="Switch Bernard's voice between the loudspeaker and the earpiece" style="margin:4px 0 8px">Voice: loudspeaker</button>
         <div class="voice-row">
           <button class="sq" type="button" id="wakeBtn" title="Start listening for &quot;Hey Bernard&quot;" aria-label="Start listening for Hey Bernard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></button>
           <span id="wakeLabel">"Hey Bernard" standby: off</span>
@@ -739,7 +740,7 @@
 
   // ---- Version numbers (bottom of the screen) ----
   // DASH_VERSION goes up by one with every dashboard change (a git hook bumps it automatically).
-  const DASH_VERSION = 40;
+  const DASH_VERSION = 41;
   (async () => {
     const set = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
     set("dashVer", DASH_VERSION);
@@ -2395,6 +2396,13 @@
   window.bernudEnd = () => setTimeout(() => { if (busy) endConversation(); }, 1500); // used by the Android app's notification button and quick-settings tile
   $("volRange").value = Math.round(volume() * 100);
   $("volRange").addEventListener("input", () => { store.set("bernud.volume", $("volRange").value); applyVolume(); });
+  // Phone app only: loudspeaker or earpiece for Bernard's voice during a conversation (also by voice: "use the earpiece").
+  if (window.BernudApp?.setAudioRoute) {
+    const showRoute = () => { let m = "speaker"; try { m = window.BernudApp.audioRoute(); } catch {} $("routeBtn").textContent = m === "earpiece" ? "Voice: earpiece (hold to your ear)" : "Voice: loudspeaker"; };
+    $("routeBtn").hidden = false; showRoute();
+    $("routeBtn").addEventListener("click", () => { try { window.BernudApp.setAudioRoute(window.BernudApp.audioRoute() === "earpiece" ? "speaker" : "earpiece"); } catch {} showRoute(); });
+    setInterval(showRoute, 5000);
+  }
   applyVolume();
   $("core").addEventListener("click", talkToggle);
   $("core").addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); talkToggle(); } });

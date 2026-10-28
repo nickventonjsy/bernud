@@ -156,6 +156,8 @@ class MainActivity : ComponentActivity() {
         @JavascriptInterface fun ttsVoices() { free.listVoices() }
         @JavascriptInterface fun setTtsVoice(name: String, pitch: Float, rate: Float) { free.setVoice(name, pitch, rate) }
         @JavascriptInterface fun setTtsVolume(v: Float) { free.setVolume(v) }
+        @JavascriptInterface fun audioRoute(): String = AudioRoute.mode(this@MainActivity)
+        @JavascriptInterface fun setAudioRoute(mode: String): String = AudioRoute.setMode(this@MainActivity, mode)
         // The dashboard passcode, for the car conversation and the watch (sent to the watch over Wear OS's own link).
         @JavascriptInterface fun setDashKey(key: String) {
             if (key.isBlank()) return
