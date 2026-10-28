@@ -51,6 +51,9 @@ export function speakable(text) {
   return String(text || "").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").replace(/https?:\/\/\S+/g, "the link").replace(/[*_`#>]/g, "").replace(/\s+/g, " ").trim();
 }
 
+// One plain line per event in Render's log, so a call that goes quiet can be traced.
+const say = (msg) => console.log("[bernard] " + msg);
+
 export class BernardAgent extends voice.Agent {
   constructor({ session, fetchImpl } = {}) {
     super({ instructions: "You are Bernud, Nicholas's butler. (The real instructions and tools live in Bernard's server.)" });
@@ -61,10 +64,10 @@ export class BernardAgent extends voice.Agent {
   async llmNode(chatCtx) {
     const last = [...chatCtx.items].reverse().find((i) => i.type === "message" && i.role === "user");
     const text = last ? (last.textContent ?? "") : "";
-    if (!text.trim()) return null;
-    let reply;
-    try { reply = speakable((await askBrain({ session: this.session_id, text, fetchImpl: this.fetchImpl })).reply); }
-    catch (e) { reply = "I'm afraid my brain didn't answer: " + String(e.message || e).slice(0, 80) + "."; }
+    if (!text.trim()) { say("brain: nothing to answer (empty transcript)"); return null; }
+    let reply; const t0 = Date.now();
+    try { reply = speakable((await askBrain({ session: this.session_id, text, fetchImpl: this.fetchImpl })).reply); say(`brain: ${Date.now() - t0}ms -> "${reply.slice(0, 80)}"`); }
+    catch (e) { reply = "I'm afraid my brain didn't answer: " + String(e.message || e).slice(0, 80) + "."; say("brain error: " + String(e.message || e).slice(0, 200)); }
     return new ReadableStream({ start(c) { c.enqueue(reply); c.close(); } });
   }
 }
@@ -83,9 +86,19 @@ export default defineAgent({
       voiceOptions: { allowInterruptions: true, minInterruptionDuration: 600, minInterruptionWords: 2 },
       userAwayTimeout: null,
     });
+    say(`call in room ${ctx.room.name}; keys: groq ${process.env.GROQ_API_KEY ? "set" : "MISSING"}, elevenlabs ${process.env.ELEVENLABS_API_KEY ? "set" : "MISSING"}, dashboard ${DASH_KEY ? "set" : "MISSING"}; brain at ${SERVER}`);
+    session.on("user_state_changed", (e) => say(`you: ${e.oldState} -> ${e.newState}`));
+    session.on("agent_state_changed", (e) => say(`bernard: ${e.oldState} -> ${e.newState}`));
+    session.on("user_input_transcribed", (e) => { if (e.isFinal) say(`heard: "${String(e.transcript).slice(0, 120)}"`); });
+    session.on("speech_created", (e) => say(`speech created (${e.source}${e.userInitiated ? ", user-initiated" : ""})`));
+    session.on("agent_false_interruption", () => say("false interruption (noise or echo cut him off)"));
+    session.on("metrics_collected", (e) => { const m = e.metrics || {}; if (m.type === "stt_metrics") say(`stt: ${Math.round((m.audioDurationMs ?? m.audioDuration * 1000) || 0)}ms audio in ${Math.round(m.durationMs ?? m.duration * 1000 ?? 0)}ms`); else if (m.type === "tts_metrics") say(`tts: "${String(m.characters ?? "").slice(0, 6)}" chars, first audio after ${Math.round(m.ttfbMs ?? m.ttfb * 1000 ?? 0)}ms`); });
+    session.on("error", (e) => say("ERROR " + (e.source?.constructor?.name || e.source || "") + ": " + String(e.error?.message || e.error || e).slice(0, 300)));
+    session.on("close", (e) => say("closed: " + (e.reason || "") + (e.error ? " " + String(e.error.message || e.error).slice(0, 200) : "")));
     const agent = new BernardAgent({ session: "lk-" + ctx.room.name });
     await session.start({ agent, room: ctx.room, outputOptions: { transcriptionEnabled: true, syncTranscription: true } });
-    session.say(GREETINGS[Math.floor(Math.random() * GREETINGS.length)]);
+    // The greeting can't be interrupted, so the phone speaker's echo or a cough can't cut it off before it's heard.
+    session.say(GREETINGS[Math.floor(Math.random() * GREETINGS.length)], { allowInterruptions: false });
   },
 });
 
