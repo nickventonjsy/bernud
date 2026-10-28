@@ -255,8 +255,10 @@ export function createBrain({ briefHandler = null, dayLog = null, learner = null
       launch();
     });
   }
-  async function runGemini({ system, turns, text, tools, byName, used }) {
-    const contents = [...turns.flatMap((t) => [{ role: "user", parts: [{ text: t.user }] }, { role: "model", parts: [{ text: t.reply }] }]), { role: "user", parts: [{ text }] }];
+  async function runGemini({ system, turns, text, tools, byName, used, done = [] }) {
+    // Taking over from Groq part-way: what it already did and fetched comes along, so nothing is done twice.
+    const ask = done.length ? `${text}\n\n[Already done for this request (do not repeat these actions; use the results to answer):\n${done.map((d) => `${d.name}(${JSON.stringify(d.args)}) -> ${d.result}`).join("\n")}]` : text;
+    const contents = [...turns.flatMap((t) => [{ role: "user", parts: [{ text: t.user }] }, { role: "model", parts: [{ text: t.reply }] }]), { role: "user", parts: [{ text: ask }] }];
     const decls = tools.map(toDeclaration);
     let model = models[0];
     for (let step = 0; step < 6; step++) {
@@ -299,7 +301,7 @@ export function createBrain({ briefHandler = null, dayLog = null, learner = null
       throw e;
     }
   }
-  async function runGroq({ system, turns, text, tools, byName, used }) {
+  async function runGroq({ system, turns, text, tools, byName, used, done = [] }) {
     const messages = [{ role: "system", content: system }, ...turns.flatMap((t) => [{ role: "user", content: t.user }, { role: "assistant", content: t.reply }]), { role: "user", content: text }];
     const oaTools = tools.map(toOpenAiTool);
     let model = null, lastErr = null;
@@ -326,7 +328,9 @@ export function createBrain({ briefHandler = null, dayLog = null, learner = null
       messages.push({ role: "assistant", content: msg.content || "", tool_calls: calls });
       const results = await Promise.all(calls.map(async (c) => {
         let args = {}; try { args = JSON.parse(c.function?.arguments || "{}"); } catch {}
-        return { role: "tool", tool_call_id: c.id, content: JSON.stringify(await callTool(byName, c.function?.name, args, used)).slice(0, 12_000) };
+        const content = JSON.stringify(await callTool(byName, c.function?.name, args, used)).slice(0, 12_000);
+        done.push({ name: c.function?.name, args, result: content });
+        return { role: "tool", tool_call_id: c.id, content };
       }));
       messages.push(...results);
     }
@@ -432,14 +436,19 @@ export function createBrain({ briefHandler = null, dayLog = null, learner = null
     const time = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", dateStyle: "full", timeStyle: "short" }).format(now());
     const learnt = learner ? await learner.promptBlock().catch(() => "") : "";
     const system = slim.prompt.replaceAll("{{system__time}}", time) + (slim.prompt.includes("# What you've learnt") ? "" : learnt) + TEXT_MODE_NOTE;
-    const job = { system, turns: s.turns, text, tools: slim.tools, byName: new Map(slim.tools.map((t) => [t.name, t])), used };
+    const job = { system, turns: s.turns, text, tools: slim.tools, byName: new Map(slim.tools.map((t) => [t.name, t])), used, done: [] };
 
     let out = null;
     if (groqKey && groqModels.some((m) => !cooling("groq:" + m))) {
       try { out = await runGroq(job); }
       catch (e) {
-        // Never repeat actions: if Groq already did something before failing, say so instead of starting again.
-        if (used.length) out = { reply: "That's done, though I couldn't put together a proper answer.", model: "groq" };
+        // Groq often runs out of its per-minute allowance once a tool has fetched something big (emails, say). Hand over to
+        // Gemini with what was already done and fetched, so it can answer without repeating any action.
+        if (used.length) {
+          log.error?.("groq stopped after tools, handing to gemini:", String(e.message || e).slice(0, 120));
+          if (geminiKey) { try { out = await runGemini(job); } catch (g) { log.error?.("gemini takeover", String(g.message || g).slice(0, 120)); } }
+          if (!out) out = { reply: "That's done, though I couldn't put together a proper answer.", model: "groq" };
+        }
       }
     }
     if (!out) {

@@ -71,6 +71,7 @@ const fetchImpl = async (url, o = {}) => {
   if (url.includes("generativelanguage")) {
     const body = JSON.parse(o.body); gemBodies.push(body);
     const last = body.contents.at(-1);
+    if (/\[Already done/.test(last.parts[0].text || "")) { assert.match(last.parts[0].text, /get_weather\(\{"latitude":49.19\}\) -> /); return { ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: "Taken over: twelve degrees." }] } }] }) }; }
     if (last.parts[0].functionResponse) return { ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: "Twelve degrees, Nicholas." }] } }] }) };
     if (/weather/.test(last.parts[0].text)) return { ok: true, json: async () => ({ candidates: [{ content: { parts: [{ functionCall: { name: "get_weather", args: { latitude: 49.19 } } }] } }] }) };
     if (last.parts[0].text === "quota") return { ok: false, status: 429, json: async () => ({ error: { message: "quota" } }) };
@@ -142,7 +143,7 @@ const bw = mk({ groqKey: "GQ", fetchImpl: async (u, o) => {
 groqMode = "ok";
 const tw = Date.now(); r = await bw.chat({ session: "w1", text: "hello there" });
 assert.equal(r.reply, "Groq hello."); assert.ok(Date.now() - tw >= 1200);
-// Groq fails after already running a tool: no repeat on Gemini.
+// Groq fails after already running a tool: Gemini takes over with the results, without running the tool again.
 groqMode = "ok";
 const b2 = mk({ groqKey: "GQ", fetchImpl: async (u, o) => {
   if (String(u).includes("api.groq.com") && JSON.parse(o.body).messages.at(-1).role === "tool") return { ok: false, status: 500, json: async () => ({ error: { message: "boom" } }) };
@@ -150,7 +151,7 @@ const b2 = mk({ groqKey: "GQ", fetchImpl: async (u, o) => {
 } });
 const nCalls = calls.length, nGem = gemBodies.length;
 r = await b2.chat({ session: "g3", text: "what's the weather" });
-assert.equal(calls.length, nCalls + 1); assert.equal(gemBodies.length, nGem); assert.match(r.reply, /done/i);
+assert.equal(calls.length, nCalls + 1); assert.equal(gemBodies.length, nGem + 1); assert.equal(r.reply, "Taken over: twelve degrees.");
 
 // ElevenLabs unreachable later: falls back to the kv copy. Not set up: says so.
 const b3 = createBrain({ geminiKey: "G", elevenKey: "E", agentId: "a", kv, port: 10000, bernudKey: "BK", zwKey: "ZK", fetchImpl: async (u, o) => (String(u).includes("elevenlabs") ? { ok: false, status: 500 } : fetchImpl(u, o)), log: { error() {} } });
