@@ -158,6 +158,12 @@ assert.deepEqual(matchQuick("play the living room camera on the sb95 tv", "").ar
 assert.deepEqual(matchQuick("put the car park camera on the telly", "").args, { action: "show", camera: "car park", screen: "telly" });
 assert.equal(matchQuick("show me the shop camera", "").args.screen, "");
 
+// "Close the camera" / "go back to you": shuts the camera window, nothing else.
+{ const { CLOSE_CAMERA } = await import("./brain.js");
+  for (const w of ["close the camera", "Close that camera.", "go back to you", "Bernard, go back", "close the shop camera please", "take me back", "get rid of the camera", "back to you", "close it"]) assert.ok(CLOSE_CAMERA.test(w), w);
+  for (const w of ["show me the shop camera", "go back to the living room camera", "close the curtains", "turn off the lights"]) assert.ok(!CLOSE_CAMERA.test(w), w);
+  const rc = await mk().chat({ session: "cc", text: "close the camera" }); assert.deepEqual(rc.ui, { closeCamera: true }); assert.equal(rc.model, "instant"); }
+
 // Michelle: the set line instantly, unless he's taught Bernard how to say it; then the AI says it his way.
 const lrn = (rows) => ({ learned: async () => rows, promptBlock: async () => "", fromExchange: async () => {} });
 r = await mk({ learner: lrn([]) }).chat({ session: "m1", text: "what about Michelle" });

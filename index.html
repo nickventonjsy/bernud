@@ -739,7 +739,7 @@
 
   // ---- Version numbers (bottom of the screen) ----
   // DASH_VERSION goes up by one with every dashboard change (a git hook bumps it automatically).
-  const DASH_VERSION = 36;
+  const DASH_VERSION = 37;
   (async () => {
     const set = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
     set("dashVer", DASH_VERSION);
@@ -1981,6 +1981,7 @@
         let t = ""; for await (const c of reader) t += c;
         let ui = null; try { ui = JSON.parse(t); } catch { return; }
         if (ui && ui.camera) openCamera(ui.camera.name);
+        if (ui && ui.closeCamera) closeCamera();
         if (ui && ui.brief) { try { openBrief(); } catch {} }
       });
       await room.connect(j.url, j.token);
@@ -2192,6 +2193,7 @@
     const r = await freeAsk(text);
     if (!freeActive) return true;
     if (r.ui && r.ui.camera) openCamera(r.ui.camera.name);
+    if (r.ui && r.ui.closeCamera) closeCamera();
     if (r.ui && r.ui.brief) { try { openBrief(); } catch {} }
     const reply = String(r.reply || "Sorry, no answer came back.");
     lastAgentLine = reply; freeLast = reply;

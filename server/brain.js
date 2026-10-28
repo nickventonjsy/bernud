@@ -13,6 +13,7 @@ const MICHELLE = [
   "Ah, Michelle. The most beautiful woman in the universe, and I don't say that lightly. When she smiles or laughs, the whole room lights up. Quite frankly, she is beautiful.",
   "Michelle is, without question, the most beautiful woman in the universe. That smile, that laugh, they light up a room. Quite frankly, sir, she is beautiful.",
 ];
+export const CLOSE_CAMERA = /^(?:(?:ok(?:ay)?|right|now|bernard|bernud|bernie|please)[, ]+)*(?:(?:can you |could you |please )?(?:close|shut|hide|exit|stop|turn off|switch off|get rid of|come out of|take (?:that|it) off)(?: the| that| this)?(?: [a-z']+)?(?: camera| cam| cctv| feed| video| cameras)(?: (?:view|window|feed|now|please|for me))*|(?:go|come|take me|switch|get) back(?: to (?:you|bernard|bernud|the dashboard|the main screen|normal|your face))?(?: from the camera)?|back to (?:you|bernard|bernud)|close (?:it|that)(?: down)?)[.!? ]*(?:please|thanks|thank you)?[.!]*$/i;
 const TEXT_MODE_NOTE = `
 
 # Text mode (push-to-talk)
@@ -414,6 +415,12 @@ export function createBrain({ briefHandler = null, dayLog = null, learner = null
       return { ok: true, reply, tools: [], model: "instant", ms: Date.now() - t0 };
     }
 
+    // Close the camera window on his screen (a screen action, nothing else to do).
+    if (CLOSE_CAMERA.test(text.trim())) {
+      const reply = "Camera closed, sir.";
+      s.turns = [...s.turns, { user: text, reply }].slice(-6);
+      return { ok: true, reply, tools: [], ui: { closeCamera: true }, model: "instant", ms: Date.now() - t0 };
+    }
     // 0. "My brief": read the saved CCP brief, or have one prepared (too big a job for the free AIs).
     if (briefHandler && /^(?:(?:hey |ok |okay )?(?:bernard|bernud|bernie)[, ]*)?(?:(?:can i (?:have|get)|give me|read me|get me|show me|what'?s in|let'?s have|do|run|prepare|i'?d like|please)\s+)?(?:a |an |my |the |today'?s )?(?:(?:new|fresh|latest|updated)\s+)?(?:ccp |cory'?s |daily |morning |work )*(?:brief|briefing)(?:\s+(?:please|again|for today|now))*[.!?]*$/i.test(text.trim())) {
       const r = await briefHandler(text);
