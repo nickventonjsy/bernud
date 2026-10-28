@@ -29,4 +29,15 @@ assert.deepEqual(await askBrain({ session: "lk-r1", text: "lamp on", fetchImpl, 
 const { BrainLLM } = await import("./livekit-agent.js");
 const { llm } = await import("@livekit/agents");
 const b = new BrainLLM(); assert.ok(b instanceof llm.LLM); assert.equal(b.label(), "bernard.brain"); assert.throws(() => b.chat(), /llmNode answers instead/);
+// "Goodbye" gets a farewell without asking the brain, and marks the call to end.
+const { BYE_RE, BernardAgent } = await import("./livekit-agent.js");
+for (const w of ["Goodbye.", "ok bye", "That's all", "thanks Bernard", "Good night!"]) assert.ok(BYE_RE.test(w), w);
+for (const w of ["say goodbye to Michelle", "what's the weather", "thanks for that, what time is it"]) assert.ok(!BYE_RE.test(w), w);
+let brainCalls = 0;
+const ag = new BernardAgent({ session: "lk-t", fetchImpl: async () => { brainCalls++; return { ok: true, json: async () => ({ reply: "x" }) }; } });
+const ctxOf = (t) => ({ items: [{ type: "message", role: "user", textContent: t }] });
+const read = async (st) => { let o = ""; for await (const c of st) o += c; return o; };
+assert.match(await read(await ag.llmNode(ctxOf("Good night."))), /night/i); assert.equal(ag.ending, true); assert.equal(brainCalls, 0);
+const ag2 = new BernardAgent({ session: "lk-t", fetchImpl: async () => { brainCalls++; return { ok: true, json: async () => ({ reply: "Sunny." }) }; } });
+assert.equal(await read(await ag2.llmNode(ctxOf("weather?"))), "Sunny."); assert.ok(!ag2.ending); assert.equal(brainCalls, 1);
 console.log("livekit ok");

@@ -33,6 +33,9 @@ const STT_MODEL = process.env.LIVEKIT_STT_MODEL || "whisper-large-v3-turbo";
 // How long a pause counts as "finished speaking". Nicholas thinks mid-sentence, so err long.
 const PAUSE_MS = Number(process.env.LIVEKIT_PAUSE_MS || 1400);
 
+// "Goodbye" ends the call: he says a short farewell and leaves the room (the dashboard uses the same words).
+export const BYE_RE = /^(?:ok(?:ay)?[ ,]*)?(?:bye|goodbye|good night|goodnight|that'?s all|that is all|that'?s it|nothing|no(?:pe)?(?:,? thanks?| thank you)?|thanks?(?: you)?(?: bernard| bernie| bernud)?|cheers|stop|cancel|never ?mind)[.!, ]*$/i;
+const FAREWELLS = ["Very good, sir.", "Right you are, sir.", "Any time, sir.", "I'll be here, sir.", "Good night, Nicholas."];
 const GREETINGS = ["Hello, sir.", "Sir.", "At your service, sir.", "Good to hear you, Nicholas.", "Yes, sir?"];
 
 // Bernard's brain lives in the main server (free mode's /brain/chat): one call per turn, with the same session
@@ -76,6 +79,11 @@ export class BernardAgent extends voice.Agent {
     const last = [...chatCtx.items].reverse().find((i) => i.type === "message" && i.role === "user");
     const text = last ? (last.textContent ?? "") : "";
     if (!text.trim()) { say("brain: nothing to answer (empty transcript)"); return null; }
+    if (BYE_RE.test(text.trim())) {
+      this.ending = true; say(`goodbye heard: "${text.trim()}"`);
+      const bye = /night/i.test(text) ? "Good night, sir." : FAREWELLS[Math.floor(Math.random() * FAREWELLS.length)];
+      return new ReadableStream({ start(c) { c.enqueue(bye); c.close(); } });
+    }
     let reply; const t0 = Date.now();
     try { reply = speakable((await askBrain({ session: this.session_id, text, fetchImpl: this.fetchImpl })).reply); say(`brain: ${Date.now() - t0}ms -> "${reply.slice(0, 80)}"`); }
     catch (e) { reply = "I'm afraid my brain didn't answer: " + String(e.message || e).slice(0, 80) + "."; say("brain error: " + String(e.message || e).slice(0, 200)); }
@@ -98,16 +106,24 @@ export default defineAgent({
       voiceOptions: { allowInterruptions: true, minInterruptionDuration: 600, minInterruptionWords: 2 },
       userAwayTimeout: null,
     });
+    const agent = new BernardAgent({ session: "lk-" + ctx.room.name });
+    let leaving = false;
     say(`call in room ${ctx.room.name}; keys: groq ${process.env.GROQ_API_KEY ? "set" : "MISSING"}, elevenlabs ${process.env.ELEVENLABS_API_KEY ? "set" : "MISSING"}, dashboard ${DASH_KEY ? "set" : "MISSING"}; brain at ${SERVER}`);
     session.on("user_state_changed", (e) => say(`you: ${e.oldState} -> ${e.newState}`));
-    session.on("agent_state_changed", (e) => say(`bernard: ${e.oldState} -> ${e.newState}`));
+    session.on("agent_state_changed", (e) => {
+      say(`bernard: ${e.oldState} -> ${e.newState}`);
+      // After the farewell has been spoken, leave: closing the room ends the call on the dashboard and phone too.
+      if (agent.ending && e.oldState === "speaking" && !leaving) {
+        leaving = true;
+        setTimeout(async () => { say("leaving after goodbye"); try { await ctx.deleteRoom(); } catch (err) { say("deleteRoom failed: " + String(err.message || err).slice(0, 120)); } ctx.shutdown("goodbye"); }, 400);
+      }
+    });
     session.on("user_input_transcribed", (e) => { if (e.isFinal) say(`heard: "${String(e.transcript).slice(0, 120)}"`); });
     session.on("speech_created", (e) => say(`speech created (${e.source}${e.userInitiated ? ", user-initiated" : ""})`));
     session.on("agent_false_interruption", () => say("false interruption (noise or echo cut him off)"));
     session.on("metrics_collected", (e) => { const m = e.metrics || {}; if (m.type === "stt_metrics") say(`stt: ${Math.round((m.audioDurationMs ?? m.audioDuration * 1000) || 0)}ms audio in ${Math.round(m.durationMs ?? m.duration * 1000 ?? 0)}ms`); else if (m.type === "tts_metrics") say(`tts: "${String(m.characters ?? "").slice(0, 6)}" chars, first audio after ${Math.round(m.ttfbMs ?? m.ttfb * 1000 ?? 0)}ms`); });
     session.on("error", (e) => say("ERROR " + (e.source?.constructor?.name || e.source || "") + ": " + String(e.error?.message || e.error || e).slice(0, 300)));
     session.on("close", (e) => say("closed: " + (e.reason || "") + (e.error ? " " + String(e.error.message || e.error).slice(0, 200) : "")));
-    const agent = new BernardAgent({ session: "lk-" + ctx.room.name });
     await session.start({ agent, room: ctx.room, outputOptions: { transcriptionEnabled: true, syncTranscription: true } });
     // The greeting can't be interrupted, so the phone speaker's echo or a cough can't cut it off before it's heard.
     session.say(GREETINGS[Math.floor(Math.random() * GREETINGS.length)], { allowInterruptions: false });

@@ -739,7 +739,7 @@
 
   // ---- Version numbers (bottom of the screen) ----
   // DASH_VERSION goes up by one with every dashboard change (a git hook bumps it automatically).
-  const DASH_VERSION = 30;
+  const DASH_VERSION = 31;
   (async () => {
     const set = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
     set("dashVer", DASH_VERSION);
@@ -847,15 +847,16 @@
       connecting: "Connecting…",
       listening: "Listening…",
       speaking: "Speaking.",
+      thinking: "Thinking…",
     }[m];
     $("tagline").textContent = tag;
     if (sub !== undefined) $("subline").textContent = sub;
-    $("micBtn").classList.toggle("live", m === "listening" || m === "speaking" || m === "connecting");
+    $("micBtn").classList.toggle("live", m === "listening" || m === "speaking" || m === "thinking" || m === "connecting");
     $("micBtn").setAttribute("aria-label", busy ? "Hang up" : "Talk to Bernard");
-    $("linkVal").textContent = { idle: "READY", standby: "STANDBY", connecting: "LINKING", listening: "LISTENING", speaking: "SPEAKING" }[m];
-    $("modePill").classList.toggle("live", m === "listening" || m === "speaking" || m === "connecting");
-    $("linkSub").textContent = { idle: "Ready", standby: "Wake word", connecting: "Handshake", listening: "You're speaking", speaking: "Bernard speaking" }[m];
-    $("micState").textContent = { idle: "Microphone ready", standby: "Listening for \"Hey Bernard\"", connecting: "Connecting…", listening: "Listening", speaking: "Bernard speaking" }[m];
+    $("linkVal").textContent = { idle: "READY", standby: "STANDBY", connecting: "LINKING", listening: "LISTENING", speaking: "SPEAKING", thinking: "THINKING" }[m];
+    $("modePill").classList.toggle("live", m === "listening" || m === "speaking" || m === "thinking" || m === "connecting");
+    $("linkSub").textContent = { idle: "Ready", standby: "Wake word", connecting: "Handshake", listening: "You're speaking", speaking: "Bernard speaking", thinking: "Bernard thinking" }[m];
+    $("micState").textContent = { idle: "Microphone ready", standby: "Listening for \"Hey Bernard\"", connecting: "Connecting…", listening: "Listening", speaking: "Bernard speaking", thinking: "Thinking" }[m];
     $("micDot").className = "dot " + (m === "idle" ? "red" : m === "standby" ? "amber" : "");
     $("wakeBtn").style.borderColor = armed ? "var(--red)" : "";
     $("wakeBtn").style.boxShadow = armed ? "0 0 14px rgba(255,30,30,.5)" : "";
@@ -1927,12 +1928,15 @@
   }
 
   // ---- LiveKit mode: Bernard's own voice through LiveKit (worker on the server), about half the ElevenLabs credits ----
-  let lkRoom = null, lkActive = false, lkAudio = null, lkSpeaking = false, lkTimer = null;
+  let lkRoom = null, lkActive = false, lkAudio = null, lkSpeaking = false, lkTimer = null, lkBye = false, lkStateSeen = false;
+  // A call nobody speaks in is ended after a few quiet minutes, so a forgotten tab doesn't keep the line open.
+  const LK_QUIET_MS = 4 * 60 * 1000;
+  function lkPoke() { clearTimeout(lkTimer); lkTimer = setTimeout(() => { if (lkActive) lkCleanup("Ended after a few quiet minutes."); }, LK_QUIET_MS); }
   async function lkStart(firstText) {
     if (lkActive) { if (firstText) lkSend(firstText); return; }
     const pass = store.get("bernud.dashKey");
     if (!pass) return setMode("idle", "LiveKit mode needs your passcode: enter it in the CCP brief first.");
-    lkActive = true; busy = true;
+    lkActive = true; busy = true; lkBye = false; lkStateSeen = false;
     appCall("conversationStarted");
     await stopWakeWord();
     setMode("connecting", "One moment.");
@@ -1950,20 +1954,32 @@
       });
       room.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
         const agentTalking = speakers.some((p) => p.identity !== room.localParticipant.identity);
-        if (agentTalking !== lkSpeaking) { lkSpeaking = agentTalking; if (busy && lkActive) setMode(agentTalking ? "speaking" : "listening"); }
+        if (agentTalking !== lkSpeaking) { lkSpeaking = agentTalking; if (busy && lkActive && !lkStateSeen) setMode(agentTalking ? "speaking" : "listening"); }
       });
-      room.on(RoomEvent.Disconnected, () => { if (lkActive) lkCleanup("Bernard hung up."); });
+      // Bernard's own state (listening / thinking / speaking), published by the worker: shows "Thinking…" while his brain works.
+      room.on(RoomEvent.ParticipantAttributesChanged, (changed, p) => {
+        const st = changed && changed["lk.agent.state"];
+        if (!st || !p || p.identity === room.localParticipant.identity || !lkActive) return;
+        lkStateSeen = true; lkPoke();
+        if (st === "thinking" || st === "speaking" || st === "listening") setMode(st);
+      });
+      // He leaves the room after "goodbye" (or if his worker stops): end the call here too.
+      room.on(RoomEvent.ParticipantDisconnected, (p) => { if (lkActive && p.identity !== room.localParticipant.identity) lkCleanup(lkBye ? undefined : "Bernard hung up."); });
+      room.on(RoomEvent.Disconnected, () => { if (lkActive) lkCleanup(lkBye ? undefined : "Bernard hung up."); });
       // Live captions: Bernard's words and yours arrive as text streams on the transcription topic.
       room.registerTextStreamHandler("lk.transcription", async (reader, info) => {
         const mine = info.identity === room.localParticipant.identity;
         let text = ""; for await (const chunk of reader) { text += chunk; if (!mine) caption(text); }
         text = text.trim(); if (!text) return;
+        lkPoke();
+        if (mine && BYE_RE.test(text)) lkBye = true;
         if (mine) { captionDone(); $("subline").textContent = "You: " + (text.length > 140 ? text.slice(0, 137) + "…" : text); logLine("You", text); setEmotion("curious", 2); }
         else { lastAgentLine = text; caption(text); captionDone(); reactTo(text); logLine("Bernard", text); }
       });
       await room.connect(j.url, j.token);
       await room.localParticipant.setMicrophoneEnabled(true, store.get(STORE.mic) ? { deviceId: store.get(STORE.mic) } : undefined);
       setMode("listening", "Go ahead. Say \"goodbye\" when you're done.");
+      lkPoke();
       if (firstText) setTimeout(() => lkSend(firstText), 600);
     } catch (err) {
       console.error(err);
