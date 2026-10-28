@@ -7,6 +7,7 @@ import { randomBytes, createHash, createCipheriv, createDecipheriv } from "node:
 export const SCOPES = {
   gmailRead: "https://www.googleapis.com/auth/gmail.readonly",
   gmailCompose: "https://www.googleapis.com/auth/gmail.compose",
+  gmailModify: "https://www.googleapis.com/auth/gmail.modify",   // CCP only: move emails to the Bin (and back) when Nicholas asks
   calendar: "https://www.googleapis.com/auth/calendar.events",
   drive: "https://www.googleapis.com/auth/drive",   // only used to move CCP files to the Bin when Nicholas asks
   driveFile: "https://www.googleapis.com/auth/drive.file",   // personal account: only files Bernard himself creates (receipt photos)
@@ -185,6 +186,14 @@ export function createGmail({ kv, clientId, clientSecret, redirectUri, account, 
     async read(id) {
       const m = await api(`/messages/${encodeURIComponent(id)}?format=full`);
       return { ...summary(m, 300), attachments: attachmentNames(m.payload), body: bodyText(m.payload).slice(0, 6000) };
+    },
+    async meta(id) { return summary(await api(`/messages/${encodeURIComponent(id)}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date`)); },
+    // Moves emails to Gmail's Bin (kept 30 days, restorable), or back out of it. Never deletes permanently.
+    async trash(ids, restore = false) {
+      if (!(await hasScope(SCOPES.gmailModify))) throw Object.assign(new Error(`Deleting emails needs one more permission: reconnect ${account} in Bernard's Settings (Google accounts) and allow Gmail.`), { code: "needs_permission" });
+      const done = [];
+      for (const id of ids) { await request(`${GMAIL}/messages/${encodeURIComponent(id)}/${restore ? "untrash" : "trash"}`, { method: "POST" }); done.push(id); }
+      return done;
     },
     async briefEmails(since) {
       const floor = Date.now() - 7 * 864e5;

@@ -110,7 +110,7 @@ const { createGmail, SCOPES, CCP_SIGNATURE } = await import("./gmail.js");
 const { londonToDate } = await import("./reminders.js");
 const PUBLIC_URL = (process.env.PUBLIC_URL || "https://bernud-server.onrender.com").replace(/\/+$/, "");
 const googleBase = { kv: db.kv, clientId: process.env.GOOGLE_OAUTH_CLIENT_ID || "", clientSecret: process.env.GOOGLE_OAUTH_CLIENT_SECRET || "", redirectUri: PUBLIC_URL + "/google/callback", secret: API_KEY };
-export const gmail = createGmail({ ...googleBase, name: "ccp", account: process.env.GMAIL_ADDRESS || "corycarpaints@gmail.com", kvKey: "gmail_refresh_token", scopes: [SCOPES.gmailRead, SCOPES.gmailCompose, SCOPES.calendar, SCOPES.drive], signature: CCP_SIGNATURE });
+export const gmail = createGmail({ ...googleBase, name: "ccp", account: process.env.GMAIL_ADDRESS || "corycarpaints@gmail.com", kvKey: "gmail_refresh_token", scopes: [SCOPES.gmailRead, SCOPES.gmailCompose, SCOPES.gmailModify, SCOPES.calendar, SCOPES.drive], signature: CCP_SIGNATURE });
 export const personalGoogle = createGmail({ ...googleBase, name: "personal", account: process.env.PERSONAL_GOOGLE_ADDRESS || "nickventon@gmail.com", kvKey: "google_personal_refresh_token", scopes: [SCOPES.calendar, SCOPES.gmailRead, SCOPES.driveFile] });
 const googleAccounts = { ccp: gmail, personal: personalGoogle };
 // Bernard's alerts go to his Telegram chat (Nicholas's choice, 27 Oct). The phone notification app (ntfy)
@@ -794,7 +794,7 @@ export async function handle(req, res) {
     const out = {};
     for (const [k, a] of Object.entries(googleAccounts)) {
       const connected = a.configured() && (await a.connected());
-      out[k] = { account: a.account, connected, mail: connected && (await a.hasScope(SCOPES.gmailRead)), calendar: connected && (await a.hasScope(SCOPES.calendar)), drafts: connected && (await a.hasScope(SCOPES.gmailCompose)) };
+      out[k] = { account: a.account, connected, mail: connected && (await a.hasScope(SCOPES.gmailRead)), calendar: connected && (await a.hasScope(SCOPES.calendar)), drafts: connected && (await a.hasScope(SCOPES.gmailCompose)), delete: connected && (await a.hasScope(SCOPES.gmailModify)) };
     }
     if (req.method === "POST") { const b = await readJson(req); const a = googleAccounts[b.account]; if (a && a.configured()) out.link = a.connectLink(); }
     return send(res, 200, out, req);
@@ -1266,6 +1266,25 @@ export async function handle(req, res) {
           if (b.action === "list") return send(res, 200, { ok: true, drafts: await gmail.listDrafts() });
           if (b.action === "delete") { if (!b.draft_id) return send(res, 400, { error: "draft_id is required" }); return send(res, 200, { ok: true, ...(await gmail.deleteDraft(b.draft_id)) }); }
           return send(res, 200, { ok: true, ...(await gmail.createDraft({ to: b.to, subject: b.subject, body: b.body, replyToId: b.reply_to_id, draftId: b.draft_id })) });
+        }
+        // Delete CCP emails (to Gmail's Bin, restorable for 30 days) only after Nicholas has heard which ones and said yes.
+        if (path === "/gmail/delete" && req.method === "POST") {
+          const b = await readJson(req);
+          const restore = b.action === "restore";
+          let ids = (Array.isArray(b.ids) ? b.ids : String(b.ids || b.id || "").split(/[\s,]+/)).map(String).filter(Boolean);
+          if (restore && !ids.length) { try { ids = JSON.parse((await db.kv.get("gmail_last_trashed")) || "[]"); } catch {} }
+          ids = [...new Set(ids)].slice(0, 10);
+          if (!ids.length) return send(res, 200, { ok: false, error: "no_ids", message: restore ? "Nothing recent to restore." : "Which emails? Search for them first with gmail_search and pass their ids." });
+          if (!(await gmail.hasScope(SCOPES.gmailModify))) return send(res, 200, { ok: false, error: "needs_permission", message: "Deleting emails needs one more permission: Nicholas needs to reconnect the Cory Car Paints Google account in Bernard's Settings (Google accounts) once." });
+          const emails = [];
+          for (const id of ids) { try { const m = await gmail.meta(id); emails.push({ id, from: m.from, subject: m.subject, date: m.date }); } catch (e) { if (e.status === 404) emails.push({ id, missing: true }); else throw e; } }
+          const found = emails.filter((m) => !m.missing);
+          if (!found.length) return send(res, 200, { ok: false, error: "not_found", message: "Couldn't find those emails in the CCP inbox." });
+          if (!restore && b.confirmed !== true) return send(res, 200, { ok: true, confirm_needed: true, emails: found, message: `Read these ${found.length} back to Nicholas (sender and subject) and ask if he's sure. Only after a clear yes, call again with the same ids and confirmed true.` });
+          await gmail.trash(found.map((m) => m.id), restore);
+          if (!restore) await db.kv.set("gmail_last_trashed", JSON.stringify(found.map((m) => m.id)));
+          dayLog.add("event", `${restore ? "Restored" : "Deleted"} ${found.length} CCP email${found.length === 1 ? "" : "s"}: ${found.map((m) => m.subject || "(no subject)").join("; ").slice(0, 160)}`, String(req.headers["x-bernud-via"] || "voice").slice(0, 12));
+          return send(res, 200, { ok: true, [restore ? "restored" : "deleted"]: found, ...(restore ? {} : { note: "Moved to Gmail's Bin, where they stay for 30 days. \"Restore them\" brings them back." }) });
         }
         if (path === "/gmail/disconnect" && req.method === "POST") { await gmail.disconnect(); return send(res, 200, { disconnected: true }); }
       } catch (e) {

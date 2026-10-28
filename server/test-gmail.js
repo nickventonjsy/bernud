@@ -51,6 +51,14 @@ const none = await g.briefEmails(null); assert.equal(none.window.basis, "last 24
 const old = await g.briefEmails("2020-01-01"); assert.ok(Date.now() - Date.parse(old.window.since) <= 7 * 864e5 + 1000, "window capped at 7 days");
 // read
 const r = await g.read("a"); assert.equal(r.body, "Order 123 ships Monday.\n\nThanks"); assert.deepEqual(r.attachments, ["invoice.pdf"]);
+// delete: needs the modify permission; then moves to the Bin (POST .../trash), or back (untrash)
+await assert.rejects(g.trash(["a"]), (e) => e.code === "needs_permission");
+const trashCalls = [];
+const g3 = createGmail({ kv, clientId: "cid", clientSecret: "cs", redirectUri: "https://srv/google/callback", account: "corycarpaints@gmail.com", secret: "k", fetchImpl: async (u, o = {}) => { if (/\/(un)?trash$/.test(u)) { trashCalls.push([u.split("/messages/")[1], o.method]); return { ok: true, status: 200, json: async () => ({}) }; } return fetchImpl(u, o); } });
+m.set("gmail_refresh_token_scopes", "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.modify");
+assert.deepEqual(await g3.trash(["a", "b"]), ["a", "b"]); assert.deepEqual(trashCalls, [["a/trash", "POST"], ["b/trash", "POST"]]);
+await g3.trash(["a"], true); assert.deepEqual(trashCalls.at(-1), ["a/untrash", "POST"]);
+assert.equal((await g3.meta("a")).subject, "Subject a");
 // html body
 assert.equal(bodyText({ mimeType: "text/html", body: { data: b64("<style>x{}</style><p>Hello&nbsp;<b>there</b></p><br>Bye") } }).replace(/\s+/g, " "), "Hello there Bye");
 // revoked token -> not connected

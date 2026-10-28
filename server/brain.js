@@ -67,7 +67,7 @@ export const GROUPS = {
   meals: { tools: ["send_to_phone"], re: /\b(cook|cooking|recipes?|meals?|dinner|lunch|breakfast|supper|tea tonight|eat|hungry|ingredients|fridge|cupboard|make with|bake|baking)\b/ },
   devices: { tools: ["pc_control", "phone_control"], re: /\b(pc|computer|laptop|desktop|phone|mobile|torch|flash|ring|whatsapp|call|ring|text|message|brightness|do not disturb|dnd|open|app|lock|shut ?down|restart|sleep|volume|script|powershell|window|type)\b/ },
   markets: { tools: ["zentrawire", "get_crypto_prices", "price_alert"], re: /\b(crypto|bitcoin|btc|eth|ethereum|coins?|xrp|ripple|solana|doge|market|markets|watchlist|zentrawire|signals?|stocks?|shares|nvidia|tesla|moving|movers)\b/ },
-  email: { tools: ["gmail_search", "gmail_read", "gmail_draft"], re: /\b(e-?mails?|mail|inbox|gmail|drafts?|reply|replies|wrote|sent|supplier|invoice)\b/ },
+  email: { tools: ["gmail_search", "gmail_read", "gmail_draft", "gmail_delete"], re: /\b(e-?mails?|mail|inbox|gmail|drafts?|reply|replies|wrote|sent|supplier|invoice|spam|junk)\b/ },
   calendar: { tools: ["calendar"], re: /\b(calendar|diary|meetings?|appointments?|events?|book|booked|schedule|what'?s on|today|tomorrow|tonight|this week|next week|monday|tuesday|wednesday|thursday|friday|saturday|sunday|busy|free)\b/ },
   ccp: { tools: ["ccp_search", "ccp_read", "ccp_delete", "reorder_list", "ccp_document"], re: /\b(print|printer|printing|copies|ccp|cory|paints?|pricing|prices?|quote|quotation|tds|sds|data ?sheets?|mixing|ratio|pot life|products?|supplier|reorder|order|orders|stock|folder|files?|delete|restore|lacquer|primer|clear ?coat|thinners?|hardener|filler|basecoat|capella|tins?|aerosol|kit)\b/ },
   brief: { tools: ["ccp_brief_context", "ccp_save_brief", "gmail_read"], re: /\bbrief\b/ },
@@ -81,7 +81,7 @@ const DEFAULT_GROUPS = ["web", "weather", "calendar", "reminders"];
 const SECTION_TOOLS = [
   [/^Samsung TVs/, ["tv_control"]], [/^ZentraWire/, ["zentrawire"]], [/^Spotify/, ["spotify_control", "spotify_info", "spotify_dj", "spotify_play_on"]], [/^Meal ideas/, "meals"],
   [/^Calendar/, ["calendar"]], [/^Reminders/, ["reminder", "price_alert"]], [/^Photos/, []], [/^The web/, ["web_search"]],
-  [/^Ordering food/, "food"], [/^CCP email/, ["gmail_search", "gmail_draft"]], [/^Controlling his PC/, ["pc_control", "phone_control"]],
+  [/^Ordering food/, "food"], [/^CCP email/, ["gmail_search", "gmail_draft", "gmail_delete"]], [/^Controlling his PC/, ["pc_control", "phone_control"]],
   [/^The CCP Brain/, ["ccp_search", "ccp_delete"]], [/^CCP morning brief/, ["ccp_brief_context"]], [/^CCP pricing/, ["ccp_search"]],
 ];
 const FOOD = /\b(food|order|takeaway|restaurant|menu|delivery|deliveroo|just eat|pizza|curry|chinese|indian|burger|kebab|book a table|dinner|lunch)\b/;
