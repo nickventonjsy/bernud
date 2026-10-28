@@ -170,6 +170,13 @@ assert.equal(matchQuick("show me the shop camera", "").args.screen, "");
   const rt = await tiny.chat({ session: "tpm", text: "hi" });
   assert.equal(groqBodies.length, nGq, "Groq not called"); assert.equal(gemBodies.length, nGm2 + 1); assert.ok(!/^groq/.test(rt.model)); }
 
+// Cerebras, when its key is set, is asked first (same gpt-oss model, its own address and key).
+{ const cb = []; const bc = mk({ groqKey: "GQ", cerebrasKey: "CB", fetchImpl: async (u, o) => {
+    if (String(u).includes("api.cerebras.ai")) { cb.push(JSON.parse(o.body)); assert.equal(o.headers.authorization, "Bearer CB"); return { ok: true, json: async () => ({ choices: [{ message: { content: "Cerebras hello." } }], usage: { total_tokens: 900 } }) }; }
+    return fetchImpl(u, o); } });
+  const rc = await bc.chat({ session: "cb", text: "hi" });
+  assert.equal(rc.reply, "Cerebras hello."); assert.equal(cb[0].model, "gpt-oss-120b"); assert.match(rc.model, /cerebras/); }
+
 // Michelle: the set line instantly, unless he's taught Bernard how to say it; then the AI says it his way.
 const lrn = (rows) => ({ learned: async () => rows, promptBlock: async () => "", fromExchange: async () => {} });
 r = await mk({ learner: lrn([]) }).chat({ session: "m1", text: "what about Michelle" });
