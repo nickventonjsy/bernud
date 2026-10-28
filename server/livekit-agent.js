@@ -6,7 +6,19 @@
 //   node server/livekit-agent.js start
 // It talks to the main server over localhost for the brain, so it needs DASHBOARD_KEY and PORT in its env.
 import { fileURLToPath } from "node:url";
-import { cli, WorkerOptions, defineAgent, voice } from "@livekit/agents";
+import { cli, WorkerOptions, defineAgent, voice, InferenceRunner } from "@livekit/agents";
+
+// Memory: the Render instance has 512MB. Out of the box this library starts ~900MB of processes; three things trim it.
+// 1) Don't preload LiveKit's local inference models into every call process (child processes inherit this).
+process.env.LIVEKIT_AGENTS_PRELOAD_LOCAL_INFERENCE ??= "0";
+// 2) Don't start LiveKit's audio end-of-turn model (~340MB process): Bernard decides turns from pauses (VAD), so it's
+//    unused. The library registers it whenever its native binding is installed and has no off switch, so its slot in
+//    the runner registry is made a silent, invisible no-op.
+if (process.env.LIVEKIT_LOCAL_EOT !== "on") {
+  const runners = {};
+  Object.defineProperty(runners, "lk_eot_audio", { get: () => undefined, set: () => {}, enumerable: false, configurable: true });
+  InferenceRunner.registeredRunners = runners;
+}
 // The speech plugins (and onnxruntime behind the VAD) are loaded only inside the job process that needs them,
 // so the supervising worker process stays small: memory on Render is shared with the main server.
 
@@ -85,8 +97,9 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const opts = new WorkerOptions({ agent: fileURLToPath(import.meta.url), production: true, loadThreshold: Infinity, loadFunc: async () => 0,
     // Health port: localhost only when running beside the main server; 0.0.0.0:$PORT when this is its own Render service.
     host: process.env.LIVEKIT_HEALTH_HOST || "127.0.0.1", port: Number(process.env.LIVEKIT_HEALTH_PORT || 8081) });
-  // No warm spare call processes: each one loads the voice-detection model, and 512MB holds only one call at a time.
-  // (Passing numIdleProcesses: 0 to the constructor doesn't work: the library treats 0 as unset and keeps up to 4.)
-  opts.numIdleProcesses = Number(process.env.LIVEKIT_IDLE_PROCESSES || 0);
+  // 3) No warm spare call processes (each ~180MB); a call starts its own in about a second. The library treats 0 as
+  //    "unset" (and the CLI rebuilds these options, so setting it afterwards is lost), but anything not > 0 means none:
+  //    hence -1.
+  opts.numIdleProcesses = Number(process.env.LIVEKIT_IDLE_PROCESSES || -1);
   cli.runApp(opts);
 }
