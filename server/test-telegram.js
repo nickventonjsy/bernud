@@ -66,10 +66,20 @@ const ph = calls.find((c) => c.method === "sendPhoto"); assert.ok(ph); assert.ma
 // Telegram refuses to fetch the picture link itself: Bernard downloads it and uploads it instead.
 let picTries = 0;
 const up = []; const tg4 = createTelegram({ token: "x", kv, shopping, chat: async () => ({}), log: {}, photoRetryMs: 1, fetchImpl: async (url, o = {}) => {
-  if (url === "https://cam:8443/p.jpg") return ++picTries < 2 ? { ok: false, status: 404, headers: { get: () => "text/html" } } : { ok: true, arrayBuffer: async () => new Uint8Array(3000).buffer, headers: { get: () => "image/jpeg" } };
+  if (url === "https://cam:8443/p.jpg") return ++picTries < 2 ? { ok: false, status: 404, headers: { get: () => "text/html" } } : { ok: true, arrayBuffer: async () => { const a = new Uint8Array(3000); a[0] = 0xff; a[1] = 0xd8; return a.buffer; }, headers: { get: () => "image/jpeg" } };
   if (o.body instanceof FormData) { up.push(o.body); return { status: 200, json: async () => ({ ok: true, result: true }) }; }
   if (url.endsWith("/sendPhoto")) return { status: 400, json: async () => ({ ok: false, description: "Bad Request: invalid file HTTP URL specified: Wrong port number specified in the URL" }) };
   return fetchImpl(url, o); } });
 assert.equal(await tg4.alert("Motion", { title: "Camera", photo: "https://cam:8443/p.jpg" }), true);
 assert.equal(up.length, 1); assert.equal(up[0].get("photo").size, 3000); assert.equal(picTries, 2, "waited for the picture"); assert.match(up[0].get("caption"), /Camera/);
+// A picture that isn't a JPEG/PNG (e.g. an encrypted camera image) goes as a file, not a photo.
+{ const { pictureKind } = await import("./telegram.js");
+  assert.equal(pictureKind(Buffer.from([0xff, 0xd8, 0xff])), "jpeg"); assert.equal(pictureKind(Buffer.from("RIFF0000WEBPxxxx")), "webp"); assert.equal(pictureKind(Buffer.from([1, 2, 3, 4, 5])), "unknown");
+  const docs = []; const tg5 = createTelegram({ token: "x", kv, shopping, chat: async () => ({}), log: { error() {} }, photoRetryMs: 1, fetchImpl: async (url, o = {}) => {
+    if (url === "https://cam:8443/q.jpg") return { ok: true, arrayBuffer: async () => new Uint8Array(3000).fill(7).buffer, headers: { get: () => "image/jpeg" } };
+    if (o.body instanceof FormData) { docs.push(url.split("/").pop()); return { status: 200, json: async () => ({ ok: true, result: true }) }; }
+    if (url.endsWith("/sendPhoto")) return { status: 400, json: async () => ({ ok: false, description: "Bad Request: Wrong port number" }) };
+    return fetchImpl(url, o); } });
+  assert.equal(await tg5.alert("Motion", { title: "Camera", photo: "https://cam:8443/q.jpg" }), true);
+  assert.deepEqual(docs, ["sendDocument"]); }
 console.log("telegram tests passed"); process.exit(0);

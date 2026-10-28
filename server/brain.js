@@ -139,7 +139,7 @@ const estTokens = (x) => Math.ceil(JSON.stringify(x).length / 3.6);
 export function createBrain({ briefHandler = null, dayLog = null, learner = null, geminiKey, groqKey = "", elevenKey, agentId, kv, port, bernudKey, zwKey,
   models = (process.env.GEMINI_MODELS || "gemini-3.6-flash,gemini-3.8-flash,gemini-3.5-flash-lite").split(",").map((m) => m.trim()).filter(Boolean),
   groqModels = (process.env.GROQ_MODELS || "openai/gpt-oss-120b,openai/gpt-oss-20b,qwen/qwen3.8-27b").split(",").map((m) => m.trim()).filter(Boolean),
-  groqMaxTokens = 7000, fetchImpl = fetch, now = () => new Date(), log = console }) {
+  groqTpm = Number(process.env.GROQ_TPM || 8000), groqMaxTokens = Math.min(Math.round(groqTpm * 0.85), 60000), fetchImpl = fetch, now = () => new Date(), log = console }) {
   let cfg = null, cfgAt = 0;
   const sessions = new Map();
   let lastSwitch = { name: "", at: 0 }; // last thing an instant command switched, for "turn it off"
@@ -288,8 +288,15 @@ export function createBrain({ briefHandler = null, dayLog = null, learner = null
     catch (e) { throw Object.assign(new Error(e.name === "TimeoutError" ? `${model} took too long` : e.message), { status: 504 }); }
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw Object.assign(new Error(j.error?.message || `Groq ${r.status}`), { status: r.status, code: j.error?.code });
+    spend(model, j.usage?.total_tokens || estTokens(body) + 300);
     return j;
   }
+  // Groq's free allowance is a few thousand tokens a minute per model. Keep a running tally, so a request that won't fit
+  // goes straight to the next model (or Gemini) instead of being refused by Groq and waiting it out.
+  const spent = new Map();
+  function used60(m) { const now = Date.now(), list = (spent.get(m) || []).filter((x) => now - x.t < 60_000); spent.set(m, list); return list.reduce((a, x) => a + x.n, 0); }
+  function spend(m, n) { used60(m); spent.get(m).push({ t: Date.now(), n }); }
+  const fits = (m, n) => used60(m) + n <= groqTpm * 0.95;
   const waitFor = (msg) => { const m = String(msg).match(/try again in ([\d.]+)(ms|s)/i); return m ? Math.ceil(parseFloat(m[1]) * (m[2] === "ms" ? 1 : 1000)) + 250 : null; };
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   // One Groq request; if Groq says "try again in a few seconds" (per-minute limit), wait that long once.
@@ -303,7 +310,8 @@ export function createBrain({ briefHandler = null, dayLog = null, learner = null
     }
   }
   async function runGroq({ system, turns, text, tools, byName, used, done = [] }) {
-    const messages = [{ role: "system", content: system }, ...turns.flatMap((t) => [{ role: "user", content: t.user }, { role: "assistant", content: t.reply }]), { role: "user", content: text }];
+    // Smaller than Gemini's: the last few turns, long replies cut short (they're context, not the question).
+    const messages = [{ role: "system", content: system }, ...turns.slice(-4).flatMap((t) => [{ role: "user", content: t.user }, { role: "assistant", content: String(t.reply).slice(0, 300) }]), { role: "user", content: text }];
     const oaTools = tools.map(toOpenAiTool);
     let model = null, lastErr = null;
     for (let step = 0; step < 5; step++) {
@@ -311,7 +319,9 @@ export function createBrain({ briefHandler = null, dayLog = null, learner = null
       if (estTokens(body) > groqMaxTokens) throw Object.assign(new Error("too big for Groq's free allowance"), { status: 413 });
       let j = null;
       // Before anything has been done, any Groq model will do; after a tool ran, stay with the same model.
-      const candidates = model ? [model] : groqModels.filter((m) => !cooling("groq:" + m));
+      const need = estTokens(body) + 300;
+      const candidates = (model ? [model] : groqModels.filter((m) => !cooling("groq:" + m))).filter((m) => fits(m, need));
+      if (!candidates.length) throw Object.assign(new Error(model ? `${model}'s minute allowance is used up` : "Groq's minute allowance is used up"), { status: 429 });
       for (const m of candidates) {
         try { j = await groqOnce(m, { ...body }); model = m; break; }
         catch (e) {
@@ -329,7 +339,7 @@ export function createBrain({ briefHandler = null, dayLog = null, learner = null
       messages.push({ role: "assistant", content: msg.content || "", tool_calls: calls });
       const results = await Promise.all(calls.map(async (c) => {
         let args = {}; try { args = JSON.parse(c.function?.arguments || "{}"); } catch {}
-        const content = JSON.stringify(await callTool(byName, c.function?.name, args, used)).slice(0, 12_000);
+        const content = JSON.stringify(await callTool(byName, c.function?.name, args, used)).slice(0, groqTpm > 20000 ? 12_000 : 6_000);
         done.push({ name: c.function?.name, args, result: content });
         return { role: "tool", tool_call_id: c.id, content };
       }));
@@ -345,7 +355,7 @@ export function createBrain({ briefHandler = null, dayLog = null, learner = null
       if (!groqKey) return null;
       const body = { messages: [{ role: "system", content: system }, { role: "user", content: text }], temperature, max_completion_tokens: maxTokens + 1500, reasoning_effort: "low", ...(json ? { response_format: { type: "json_object" } } : {}) };
       if (estTokens(body) > groqMaxTokens) return null;
-      for (const m of groqModels.filter((x) => !cooling("groq:" + x))) {
+      for (const m of groqModels.filter((x) => !cooling("groq:" + x) && fits(x, estTokens(body) + maxTokens))) {
         try { const j = await groqOnce(m, { ...body }); const out = String(j.choices?.[0]?.message?.content || "").trim(); if (out) return out; }
         catch (e) {
           log.error?.("groq complete", m, e.status, String(e.message).slice(0, 160));

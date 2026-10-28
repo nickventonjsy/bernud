@@ -7,6 +7,16 @@ const chunks = (t, n = 3900) => { const out = []; t = String(t || ""); while (t.
 
 // transcribe(buffer, mime) -> text; speak(text) -> { mp3: Buffer } or null. Both optional.
 // photo({ data: Buffer, mime, note }) -> { ok, message } handles a photo (a receipt). Optional.
+// What a downloaded picture really is, from its first bytes.
+export function pictureKind(b) {
+  if (b[0] === 0xff && b[1] === 0xd8) return "jpeg";
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return "png";
+  if (b.subarray(0, 4).toString() === "RIFF" && b.subarray(8, 12).toString() === "WEBP") return "webp";
+  if (b.subarray(4, 8).toString() === "ftyp") return "heic";
+  if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) return "gif";
+  return "unknown";
+}
+
 export function createTelegram({ token, kv, chat, shopping, transcribe = null, speak = null, photo = null, requests = null, log = console, fetchImpl = fetch, photoRetryMs = 2500 }) {
   const base = `https://api.telegram.org/bot${token}`;
   let me = null, running = false, lastError = null;
@@ -92,7 +102,15 @@ export function createTelegram({ token, kv, chat, shopping, transcribe = null, s
               data = null;
             }
             if (!data) throw new Error(`picture not ready (${r?.status || "no answer"})`);
-            await apiForm("sendPhoto", { chat_id: String(owner.id), caption: body, parse_mode: "HTML" }, { photo: { name: "camera.jpg", data, type: r.headers?.get?.("content-type") || "image/jpeg" } });
+            const kind = pictureKind(data);
+            try {
+              if (kind !== "jpeg" && kind !== "png") throw new Error(`not a JPEG or PNG (${kind})`);
+              await apiForm("sendPhoto", { chat_id: String(owner.id), caption: body, parse_mode: "HTML" }, { photo: { name: "camera." + (kind === "png" ? "png" : "jpg"), data, type: kind === "png" ? "image/png" : "image/jpeg" } });
+            } catch (e3) {
+              // Telegram couldn't process it as a photo: say what it was (for diagnosis) and send it as a file instead.
+              log.error?.("telegram photo", `${data.length} bytes, ${kind}, starts ${data.subarray(0, 12).toString("hex")}:`, e3.message);
+              await apiForm("sendDocument", { chat_id: String(owner.id), caption: body, parse_mode: "HTML" }, { document: { name: "camera." + (kind === "unknown" ? "bin" : kind === "jpeg" ? "jpg" : kind), data, type: r.headers?.get?.("content-type") || "application/octet-stream" } });
+            }
             return true;
           } catch (e2) { log.error?.("telegram photo", e.message, "| upload:", e2.message); }
         }

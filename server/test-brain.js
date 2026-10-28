@@ -164,6 +164,12 @@ assert.equal(matchQuick("show me the shop camera", "").args.screen, "");
   for (const w of ["show me the shop camera", "go back to the living room camera", "close the curtains", "turn off the lights"]) assert.ok(!CLOSE_CAMERA.test(w), w);
   const rc = await mk().chat({ session: "cc", text: "close the camera" }); assert.deepEqual(rc.ui, { closeCamera: true }); assert.equal(rc.model, "instant"); }
 
+// Groq's minute allowance: a request that won't fit isn't sent to Groq at all; Gemini answers straight away.
+{ const nGq = groqBodies.length, nGm2 = gemBodies.length;
+  const tiny = mk({ groqKey: "GQ", groqTpm: 50 });
+  const rt = await tiny.chat({ session: "tpm", text: "hi" });
+  assert.equal(groqBodies.length, nGq, "Groq not called"); assert.equal(gemBodies.length, nGm2 + 1); assert.ok(!/^groq/.test(rt.model)); }
+
 // Michelle: the set line instantly, unless he's taught Bernard how to say it; then the AI says it his way.
 const lrn = (rows) => ({ learned: async () => rows, promptBlock: async () => "", fromExchange: async () => {} });
 r = await mk({ learner: lrn([]) }).chat({ session: "m1", text: "what about Michelle" });
