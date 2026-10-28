@@ -26,7 +26,7 @@ if (process.env.LIVEKIT_LOCAL_EOT !== "on") {
 // run inline beside the main server it's localhost.
 const SERVER = process.env.BERNUD_SERVER_URL || process.env.BERNUD_LOCAL || `http://127.0.0.1:${process.env.PORT || 10000}`;
 const DASH_KEY = process.env.DASHBOARD_KEY || "";
-const VOICE_ID = process.env.BERNARD_VOICE_ID || "FSPps0MvpXbfUL4sNQRC";   // Bernard's voice, the same one his ElevenLabs agent uses
+const VOICE_ID = process.env.BERNARD_VOICE_ID || "mE0UMhd7qAZcmE9tsrOX";   // Bernard V2 (28 Oct; was FSPps0MvpXbfUL4sNQRC), the same voice as his ElevenLabs agent
 // Same model as his ElevenLabs agent: the voice was made for v4 and sounds like someone else on older models.
 const TTS_MODEL = process.env.LIVEKIT_TTS_MODEL || "eleven_v4_turbo";
 const STT_MODEL = process.env.LIVEKIT_STT_MODEL || "whisper-large-v3-turbo";

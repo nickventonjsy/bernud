@@ -2,7 +2,7 @@
 // that Tasker downloads and plays. Clips live in memory for 10 minutes under an unguessable id.
 import { randomBytes } from "node:crypto";
 
-export const BERNUD_VOICE = { voiceId: "FSPps0MvpXbfUL4sNQRC", stability: 0.7, similarity_boost: 0.8, speed: 0.95 };
+export const BERNUD_VOICE = { voiceId: process.env.BERNARD_VOICE_ID || "mE0UMhd7qAZcmE9tsrOX", stability: 0.7, similarity_boost: 0.8, speed: 0.95 };
 const MODELS = ["eleven_v4_turbo", "eleven_turbo_v2_5", "eleven_multilingual_v2"];
 
 export function createSpeech({ apiKey, publicUrl, voice = BERNUD_VOICE, fetchImpl = fetch, ttlMs = 10 * 60_000, now = () => Date.now() }) {
