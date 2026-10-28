@@ -178,7 +178,7 @@ export function createSmartThings({ kv, clientId, clientSecret, redirectUri, sec
 
   // Put the TV's web browser up (it opens on its home page, which Nicholas sets once to the camera page).
   // The TV is woken first; launching an app on a TV that's still waking can fail, so it's tried again.
-  async function openBrowser(tvName = "", { wait = (ms) => new Promise((r) => setTimeout(r, ms)), wakeMs = 6000 } = {}) {
+  async function openBrowser(tvName = "", { wait = (ms) => new Promise((r) => setTimeout(r, ms)), wakeMs = 6000, onlyIfOn = false } = {}) {
     const all = await devices();
     const tvs = all.filter(isTv);
     if (!tvs.length) throw new Error("No TVs found in SmartThings.");
@@ -186,6 +186,7 @@ export function createSmartThings({ kv, clientId, clientSecret, redirectUri, sec
     const label = (d) => (d.label || d.name || "").toLowerCase();
     const tv = (q && tvs.find((d) => label(d).includes(q) || label(d).replace(/\s+/g, "").includes(q.replace(/\s+/g, "")))) || tvs.find((d) => /s95|55/.test(label(d))) || tvs[0];
     const on = (await status(tv).catch(() => ({}))).power === "on";
+    if (!on && onlyIfOn) return { tv: tv.label || tv.name, skipped: true, reason: "tv off" };
     if (!on) { await api(`/v1/devices/${tv.deviceId}/commands`, { method: "POST", body: { commands: [cmd("switch", "on")] } }).catch(() => {}); await wait(wakeMs); }
     const launch = () => api(`/v1/devices/${tv.deviceId}/commands`, { method: "POST", body: { commands: [cmd("custom.launchapp", "launchApp", ["org.tizen.browser", "Internet"])] } });
     try { await launch(); } catch { await wait(4000); await launch(); }

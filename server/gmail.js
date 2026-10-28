@@ -195,6 +195,31 @@ export function createGmail({ kv, clientId, clientSecret, redirectUri, account, 
       for (const id of ids) { await request(`${GMAIL}/messages/${encodeURIComponent(id)}/${restore ? "untrash" : "trash"}`, { method: "POST" }); done.push(id); }
       return done;
     },
+    // Tidying: archive / unarchive / mark read or unread / add or remove a label. Never deletes.
+    async organise(ids, action, label = "") {
+      if (!(await hasScope(SCOPES.gmailModify))) throw Object.assign(new Error(`Tidying emails needs one more permission: reconnect ${account} in Bernard's Settings (Google accounts) and allow Gmail.`), { code: "needs_permission" });
+      const add = [], remove = [];
+      if (action === "archive") remove.push("INBOX");
+      else if (action === "unarchive") add.push("INBOX");
+      else if (action === "mark_read") remove.push("UNREAD");
+      else if (action === "mark_unread") add.push("UNREAD");
+      else if (action === "label" || action === "unlabel") {
+        const name = String(label || "").trim();
+        if (!name) throw new Error("Which label?");
+        const all = (await request(`${GMAIL}/labels`)).labels || [];
+        let l = all.find((x) => x.name.toLowerCase() === name.toLowerCase());
+        if (!l && action === "label") l = await request(`${GMAIL}/labels`, { method: "POST", body: { name, labelListVisibility: "labelShow", messageListVisibility: "show" } });
+        if (!l) throw new Error(`There's no label called ${name}.`);
+        (action === "label" ? add : remove).push(l.id);
+      } else throw new Error("Unknown tidy action: " + action);
+      await request(`${GMAIL}/messages/batchModify`, { method: "POST", body: { ids, addLabelIds: add, removeLabelIds: remove } });
+      return ids;
+    },
+    // Inbox emails from real people that are unread and probably want an answer (no promotions/social/updates/no-reply).
+    async needsReply(days = 14, max = 15) {
+      const r = await list(`in:inbox is:unread -category:promotions -category:social -category:updates -category:forums newer_than:${days}d -from:noreply -from:no-reply -from:donotreply -from:notifications`, max, 200);
+      return r.messages;
+    },
     async briefEmails(since) {
       const floor = Date.now() - 7 * 864e5;
       const after = Math.floor(Math.max(since ? new Date(since).getTime() : Date.now() - 864e5, floor) / 1000);

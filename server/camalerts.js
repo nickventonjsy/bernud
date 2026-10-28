@@ -49,7 +49,7 @@ export function parseTime(t) {
 const LABEL = { person: "Person detected", motion: "Motion", vehicle: "Vehicle detected", doorbell: "Doorbell", sound: "Sound detected", offline: "Camera offline", online: "Camera back online" };
 const hhmm = (d) => new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", hour: "2-digit", minute: "2-digit" }).format(d);
 
-export function createCamAlerts({ kv, imou, notify, publicUrl, hookSecret, now = () => new Date(), log = console }) {
+export function createCamAlerts({ kv, imou, notify, publicUrl, hookSecret, onPerson = null, now = () => new Date(), log = console }) {
   const lastSent = new Map();
   const seen = new Set();
   let lastPoll = null;
@@ -100,6 +100,8 @@ export function createCamAlerts({ kv, imou, notify, publicUrl, hookSecret, now =
     const text = kind === "offline" ? `${cam.name} went offline at ${hhmm(at)}.` : `${LABEL[kind] || "Alert"} at ${cam.name}, ${hhmm(at)}. Tap to watch live.`;
     await notify(text, { title: `${LABEL[kind] || "Camera alert"}: ${cam.name}`, tags: kind === "person" ? "rotating_light" : kind === "offline" ? "warning" : "video_camera", priority: kind === "person" ? 4 : 3, click: `https://bernud.onrender.com/camera.html?camera=${encodeURIComponent(cam.name)}`, attach: pic && /^https?:/.test(pic) ? pic : undefined })
       .catch((e) => log.error?.("camera alert notify", e.message));
+    // After hours, a person on camera can also pop up on the TV (only if it's already on; see onPerson in index.js).
+    if (kind === "person" && onPerson && isAfterHours(at, cfg.after_hours)) Promise.resolve().then(() => onPerson(cam)).catch((e) => log.error?.("camera tv popup", e.message));
     return { ok: true, logged: true, notified: true };
   }
 

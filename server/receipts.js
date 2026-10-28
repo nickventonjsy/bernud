@@ -81,6 +81,18 @@ export function createReceipts({ kv, vision, drive = null, now = () => new Date(
     return { month: ym, month_name: monthName(ym), total: Math.round(list.reduce((s, r) => s + r.total, 0) * 100) / 100, receipts: list.length, shops };
   }
 
+  // The last 7 days (ending today) against the 7 before, by shop.
+  async function week() {
+    const t = now().getTime(), all = await load();
+    const inRange = (r, a, b) => { const d = Date.parse(r.day + "T12:00:00Z"); return d > t - a * DAY && d <= t - b * DAY; };
+    const cur = all.filter((r) => inRange(r, 7, -1)), prev = all.filter((r) => inRange(r, 14, 7));
+    const sum = (l) => Math.round(l.reduce((s, r) => s + r.total, 0) * 100) / 100;
+    const by = {};
+    for (const r of cur) { const b = (by[r.shop] ||= { shop: r.shop, total: 0, visits: 0 }); b.total += r.total; b.visits++; }
+    const shops = Object.values(by).map((b) => ({ ...b, total: Math.round(b.total * 100) / 100 })).sort((a, b) => b.total - a.total);
+    return { total: sum(cur), receipts: cur.length, previous_total: sum(prev), shops, month: await summary({}) };
+  }
+
   // Things bought on two or more different days in the last 90 days, with how often, so Bernard can guess what's running low.
   async function usual({ days = 90, limit = 25 } = {}) {
     const t = now().getTime();
@@ -141,5 +153,5 @@ export function createReceipts({ kv, vision, drive = null, now = () => new Date(
   async function get(id) { return (await load()).find((r) => r.id === id) || null; }
   async function remove(id) { const list = await load(); const i = list.findIndex((r) => r.id === id); if (i < 0) return null; const [r] = list.splice(i, 1); await save(list); return r; }
 
-  return { ingest, handle, summary, usual, dash, get, remove };
+  return { ingest, handle, summary, usual, week, dash, get, remove };
 }

@@ -71,6 +71,7 @@ class PhoneCommands(private val ctx: Context) {
                     if (!WaNotifications.enabled(ctx)) start(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                     WaNotifications.read(ctx, arg, if (action == "tg_read") "telegram" else "whatsapp")
                 }
+                "wa_reply", "tg_reply" -> WaNotifications.reply(ctx, arg, if (action == "tg_reply") "telegram" else "whatsapp")
                 "come_back" -> { start(Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)); "Bernard is back on screen." }
                 else -> throw Fail("The phone app doesn't know '$action' yet.")
             }
