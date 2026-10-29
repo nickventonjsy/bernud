@@ -3,6 +3,7 @@
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const TZ = "Europe/London";
 const hhmm = (d) => new Intl.DateTimeFormat("en-GB", { timeZone: TZ, hour: "2-digit", minute: "2-digit" }).format(d);
+const whenLabel = (d, now = new Date()) => (londonDay(d) === londonDay(now) ? "today" : new Intl.DateTimeFormat("en-GB", { timeZone: TZ, weekday: "long", day: "numeric", month: "long" }).format(d)) + " at " + hhmm(d);
 const londonDay = (d = new Date()) => new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(d);
 
 // ESPN's public scoreboards (no key). Football first, then the big US sports and F1-free alternatives.
@@ -87,11 +88,11 @@ export function createJarvis({ kv, notify, sayOnPhone, pc, telegram, lights, dj,
     const hits = q ? all.filter((e) => matchTeam(e, q)) : all.filter((e) => e.state === "in");
     if (action === "follow") {
       const e = hits.find((x) => x.state === "in") || hits.find((x) => x.state === "pre");
-      if (!e) return { ok: false, error: "no_match", message: `I can't see a match today or right now for ${q || "that team"}.` };
+      if (!e) return { ok: false, error: "no_match", message: `I can't see an upcoming or live match for ${q || "that team"} in this round of fixtures.` };
       await kv.set("sports_follow", JSON.stringify({ id: e.id, sport: e.sport, league: e.league, last: `${e.home.score}-${e.away.score}`, state: e.state, name: e.name }));
-      return { ok: true, following: e.name, status: e.state === "in" ? `${line(e)}, ${e.detail}` : `kicks off ${hhmm(new Date(e.start))}`, note: "Goals and the final score will come to his Telegram." };
+      return { ok: true, following: e.name, status: e.state === "in" ? `${line(e)}, ${e.detail}` : `kicks off ${whenLabel(new Date(e.start), now())}`, note: "Goals and the final score will come to his Telegram." };
     }
-    return { ok: true, matches: hits.slice(0, 8).map((e) => ({ match: e.name, league: e.league, status: e.state === "pre" ? `starts ${hhmm(new Date(e.start))}` : `${line(e)} (${e.detail})` })), note: hits.length ? undefined : "No matches found for that today (football, rugby, NFL and NBA are covered)." };
+    return { ok: true, matches: hits.slice(0, 8).map((e) => ({ match: e.name, league: e.league, status: e.state === "pre" ? `starts ${whenLabel(new Date(e.start), now())}` : e.state === "post" ? `finished: ${line(e)}` : `${line(e)} (${e.detail})` })), note: hits.length ? undefined : (q ? "That team isn't in the current round of fixtures I can see (football, rugby, NFL, NBA). Try web_search for their next match." : "Nothing is being played right now.") };
   }
   async function sportsTick() {
     let f = null; try { f = JSON.parse((await kv.get("sports_follow")) || "null"); } catch {}

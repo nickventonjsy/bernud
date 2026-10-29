@@ -255,16 +255,16 @@ export function createBrain({ briefHandler = null, dayLog = null, learner = null
   // Watch a public YouTube video (Gemini reads it straight from the link) and answer about it. Videos take a while.
   async function video({ url, prompt, maxTokens = 700 }) {
     if (!geminiKey) throw Object.assign(new Error("Watching videos needs the Gemini key on the server."), { code: "not_set_up" });
-    let last = null;
-    for (const m of [...models.filter((x) => !cooling(x)), ...models.filter((x) => cooling(x))]) {
-      try {
-        const j = await gemini(m, { contents: [{ role: "user", parts: [{ file_data: { file_uri: url } }, { text: prompt }] }],
-          generationConfig: { maxOutputTokens: maxTokens + 1500, temperature: 0.3 } }, 120_000);
-        const t = (j.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("").trim();
-        if (t) return t;
-      } catch (e) { last = e; }
-    }
-    throw last || new Error("Couldn't watch that video.");
+    // Every model at once, first good answer wins (one slow model shouldn't keep him waiting).
+    const ask = async (m) => {
+      const j = await gemini(m, { contents: [{ role: "user", parts: [{ file_data: { file_uri: url } }, { text: prompt }] }],
+        generationConfig: { maxOutputTokens: maxTokens + 1500, temperature: 0.3 } }, 110_000);
+      const t = (j.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("").trim();
+      if (!t) throw new Error(`${m} gave no answer`);
+      return t;
+    };
+    try { return await Promise.any(models.map(ask)); }
+    catch (e) { throw e.errors?.[0] || new Error("Couldn't watch that video."); }
   }
 
   // ---------------- Gemini (hedged across models) ----------------
