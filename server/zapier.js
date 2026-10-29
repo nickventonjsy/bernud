@@ -1,7 +1,7 @@
 // Zapier for Bernard: talks to Nicholas's Zapier MCP server (Streamable HTTP) straight from this server, so Bernard can
 // use any app Nicholas switches on at mcp.zapier.com. The connection URL (with its token) lives only in the Render
 // environment variable ZAPIER_MCP_URL. Anything that sends, changes or deletes needs confirmed:true after a read-back.
-const WRITE = /(send|create|delete|remove|update|reply|archive|add|move|post|publish|draft|forward|label|star|cancel|invite|upload|write|set_|edit|approve|pay|transfer|run_)/i;
+const WRITE = /(enable|disable|manage|provision|send|create|delete|remove|update|reply|archive|add|move|post|publish|draft|forward|label|star|cancel|invite|upload|write|set_|edit|approve|pay|transfer|run_)/i;
 
 export function createZapier({ url = "", fetchImpl = fetch, log = console } = {}) {
   let session = null, nextId = 1, toolsCache = null;
