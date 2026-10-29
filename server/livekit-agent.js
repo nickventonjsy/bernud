@@ -39,11 +39,16 @@ const PAUSE_MS = Number(process.env.LIVEKIT_PAUSE_MS || 1400);
 // lessons were cut off by "Thank you."). "Stop" never ends a call (the practice partner uses it).
 export const BYE_RE = /^(?:ok(?:ay)?[ ,]*)?(?:(?:thanks?(?: you)?|cheers)[ ,]*(?:bernard|bernie|bernud)?[ ,]*)?(?:bye(?: bye)?|goodbye|good ?night|that'?s all|that is all|that'?s it(?: for now)?|nothing else|no(?:pe)?,? thanks?|no,? thank you|never ?mind|see you(?: later)?|speak (?:to you )?later)(?:[ ,]*(?:bernard|bernie|bernud|sir))?[.!, ]*$/i;
 export const SOFT_BYE_RE = /^(?:ok(?:ay)?[ ,]*)?(?:thanks?(?: you)?(?: very much)?|cheers|nothing|no(?:pe)?)(?:[ ,]*(?:bernard|bernie|bernud))?[.!, ]*$/i;
-export function isGoodbye(text, { lastReply = "", replies = 0 } = {}) {
+// Whisper writes these when it hears noise or Bernard's own voice coming back through the speaker.
+export const PHANTOM_RE = /^(?:thank you\.?|thanks\.?|thank you(?: very much)?(?: for watching)?[.!]?|thanks for watching[.!]?|you\.?|bye\.?|\.+|okay\.?)$/i;
+// "In a lesson": Bernard's last reply had Spanish/French/Polish/Portuguese in it, or asked something.
+const midActivity = (reply) => /[¿¡ñáéíóúãõçàèâêôłśżźćńęą]/i.test(reply) || /\?["”’)\s]*$/.test(String(reply).trim()) || /\?/.test(String(reply).slice(-120));
+export function isGoodbye(text, { lastReply = "", replies = 0, overlapped = false } = {}) {
   const t = String(text || "").trim();
-  if (BYE_RE.test(t)) return true;
-  return SOFT_BYE_RE.test(t) && replies <= 3 && !/\?\s*$/.test(String(lastReply).trim());
+  if (BYE_RE.test(t)) return !overlapped || !PHANTOM_RE.test(t);
+  return SOFT_BYE_RE.test(t) && !overlapped && replies <= 2 && !midActivity(lastReply);
 }
+
 const FAREWELLS = ["Very good, sir.", "Right you are, sir.", "Any time, sir.", "I'll be here, sir.", "Good night, sir."];
 const GREETINGS = ["Hello, sir.", "Sir.", "At your service, sir.", "Good to hear you, sir.", "Yes, sir?"];
 
@@ -88,7 +93,14 @@ export class BernardAgent extends voice.Agent {
     const last = [...chatCtx.items].reverse().find((i) => i.type === "message" && i.role === "user");
     const text = last ? (last.textContent ?? "") : "";
     if (!text.trim()) { say("brain: nothing to answer (empty transcript)"); return null; }
-    if (isGoodbye(text, { lastReply: this.lastReply, replies: this.replies || 0 })) {
+    // A "thank you" that started while Bernard was talking is almost always his own voice echoing back (or Whisper
+    // imagining words in noise): ignore it and carry on with what he was saying.
+    if (this.overlapped && PHANTOM_RE.test(text.trim())) {
+      say(`ignored "${text.trim()}" (heard while Bernard was speaking: echo)`);
+      const again = this.lastReply || "Sorry, sir, go on.";
+      return new ReadableStream({ start(c) { c.enqueue(again); c.close(); } });
+    }
+    if (isGoodbye(text, { lastReply: this.lastReply, replies: this.replies || 0, overlapped: this.overlapped })) {
       this.ending = true; say(`goodbye heard: "${text.trim()}"`);
       const bye = /night/i.test(text) ? "Good night, sir." : FAREWELLS[Math.floor(Math.random() * FAREWELLS.length)];
       return new ReadableStream({ start(c) { c.enqueue(bye); c.close(); } });
@@ -118,16 +130,21 @@ export default defineAgent({
       // Same voice and settings as his ElevenLabs agent (stability .7, similarity .8, a touch slower).
       tts: new elevenlabs.TTS({ voiceId: VOICE_ID, model: TTS_MODEL, apiKey: process.env.ELEVENLABS_API_KEY, language: "en", voiceSettings: { stability: 0.7, similarity_boost: 0.8, speed: 0.95, use_speaker_boost: true } }),
       turnHandling: { turnDetection: "vad", endpointing: { mode: "fixed", minDelay: PAUSE_MS, maxDelay: Math.max(PAUSE_MS + 1500, 3000), alpha: 0.9 } },
-      voiceOptions: { allowInterruptions: true, minInterruptionDuration: 600, minInterruptionWords: 2 },
+      voiceOptions: { allowInterruptions: true, minInterruptionDuration: 600, minInterruptionWords: 3 },
       userAwayTimeout: null,
     });
     const agent = new BernardAgent({ session: "lk-" + ctx.room.name });
     agent.room = ctx.room;
     let leaving = false;
     say(`call in room ${ctx.room.name}; keys: groq ${process.env.GROQ_API_KEY ? "set" : "MISSING"}, elevenlabs ${process.env.ELEVENLABS_API_KEY ? "set" : "MISSING"}, dashboard ${DASH_KEY ? "set" : "MISSING"}; brain at ${SERVER}`);
-    session.on("user_state_changed", (e) => say(`you: ${e.oldState} -> ${e.newState}`));
+    session.on("user_state_changed", (e) => {
+      say(`you: ${e.oldState} -> ${e.newState}`);
+      // Did he start talking while Bernard was speaking (or a moment after)? Used to spot echo.
+      if (e.newState === "speaking") agent.overlapped = agent.speaking || Date.now() - (agent.spokeUntil || 0) < 700;
+    });
     session.on("agent_state_changed", (e) => {
       say(`bernard: ${e.oldState} -> ${e.newState}`);
+      agent.speaking = e.newState === "speaking"; if (e.oldState === "speaking") agent.spokeUntil = Date.now();
       // After the farewell has been spoken, leave: closing the room ends the call on the dashboard and phone too.
       if (agent.ending && e.oldState === "speaking" && !leaving) {
         leaving = true;

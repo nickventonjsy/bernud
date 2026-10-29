@@ -39,6 +39,11 @@ assert.ok(isGoodbye("thanks Bernard", { replies: 2, lastReply: "Done." }));
 assert.ok(!isGoodbye("Thank you.", { replies: 1, lastReply: "¿Cómo estás, Sir?" }));
 assert.ok(!isGoodbye("Thank you.", { replies: 8, lastReply: "Excelente, Sir. Glad to hear it." }));
 assert.ok(!BYE_RE.test("Thank you."));
+// 15:45 on 29 Oct: "Thank you." heard 0.2s into Bernard's sentence (echo), with a lesson question pending.
+assert.ok(!isGoodbye("Thank you.", { replies: 3, lastReply: "Splendid, sir. Next phrase: “¿Qué te gusta comer?” – “What do you like to eat?” Try it.", overlapped: true }));
+assert.ok(!isGoodbye("Thank you.", { replies: 2, lastReply: "Splendid, sir. Next phrase: “¿Qué te gusta comer?”", overlapped: false }));
+assert.ok(!isGoodbye("Bye.", { replies: 5, lastReply: "x", overlapped: true }));
+assert.ok(isGoodbye("Okay, goodbye Bernard.", { replies: 5, lastReply: "x", overlapped: true }));
 let brainCalls = 0;
 const ag = new BernardAgent({ session: "lk-t", fetchImpl: async () => { brainCalls++; return { ok: true, json: async () => ({ reply: "x" }) }; } });
 const ctxOf = (t) => ({ items: [{ type: "message", role: "user", textContent: t }] });

@@ -745,7 +745,7 @@
 
   // ---- Version numbers (bottom of the screen) ----
   // DASH_VERSION goes up by one with every dashboard change (a git hook bumps it automatically).
-  const DASH_VERSION = 44;
+  const DASH_VERSION = 45;
   (async () => {
     const set = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
     set("dashVer", DASH_VERSION);
@@ -2055,7 +2055,8 @@
   // Bernard didn't just ask something (so a lesson or game isn't cut off by "thank you"). "Stop" never ends it.
   const BYE_RE = /^(?:ok(?:ay)?[ ,]*)?(?:(?:thanks?(?: you)?|cheers)[ ,]*(?:bernard|bernie|bernud)?[ ,]*)?(?:bye(?: bye)?|goodbye|good ?night|that'?s all|that is all|that'?s it(?: for now)?|nothing else|no(?:pe)?,? thanks?|no,? thank you|never ?mind|see you(?: later)?|speak (?:to you )?later)(?:[ ,]*(?:bernard|bernie|bernud|sir))?[.!, ]*$/i;
   const SOFT_BYE_RE = /^(?:ok(?:ay)?[ ,]*)?(?:thanks?(?: you)?(?: very much)?|cheers|nothing|no(?:pe)?)(?:[ ,]*(?:bernard|bernie|bernud))?[.!, ]*$/i;
-  const isGoodbye = (text, lastReply = "", replies = 0) => { const t = String(text || "").trim(); return BYE_RE.test(t) || (SOFT_BYE_RE.test(t) && replies <= 3 && !/\?\s*$/.test(String(lastReply).trim())); };
+  const midActivity = (r) => /[¿¡ñáéíóúãõçàèâêôłśżźćńęą]/i.test(r) || /\?/.test(String(r).slice(-120));
+  const isGoodbye = (text, lastReply = "", replies = 0) => { const t = String(text || "").trim(); return BYE_RE.test(t) || (SOFT_BYE_RE.test(t) && replies <= 2 && !midActivity(lastReply)); };
   const oneOf = (a) => a[Math.floor(Math.random() * a.length)];
 
   // Bernard waits for a proper pause before answering, so a short breath mid-sentence doesn't cut you off.
