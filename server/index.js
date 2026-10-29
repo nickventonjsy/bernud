@@ -103,6 +103,7 @@ function putTempFile(buf) {
 }
 const phoneAcks = [];
 // The Bernard Android app long-polls this queue (like the PC helper) and reports each result.
+const sendGate = devices.createSendGate();
 export const phone = devices.createPcQueue({ resultTimeoutMs: 12_000, timeoutMessage: "The phone didn't answer in time. The Bernard app may be closed, or the phone may have no signal." });
 const { createWeb } = await import("./web.js");
 export const web = createWeb({ apiKey: process.env.TAVILY_API_KEY || "" });
@@ -1511,6 +1512,11 @@ export async function handle(req, res) {
       const action = String(body.action || "").toLowerCase();
       if (!devices.PHONE_ACTIONS.includes(action)) return send(res, 200, { ok: false, error: "unknown_action", allowed: devices.PHONE_ACTIONS });
       if (!PHONE_TOPIC || !PHONE_SECRET) return send(res, 200, { ok: false, error: "not_connected", message: "Phone control isn't set up yet." });
+      // Messages and calls as Nicholas: read back and his yes first (enforced here, not just in the instructions).
+      const gate = sendGate.check(body);
+      if (!gate.go) return send(res, 200, gate.reply);
+      Object.assign(body, gate.body);
+      if (gate.sent_as) dayLog.add("event", "Sent " + gate.sent_as.slice(0, 100));
       let arg = [body.target, body.value].filter((x) => x !== undefined && x !== null && String(x) !== "").join(" ");
       try {
         if (["wa_message", "wa_send", "wa_reply", "tg_reply"].includes(action)) arg = devices.waMessageArg(body.target, body.value);

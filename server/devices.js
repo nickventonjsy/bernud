@@ -98,3 +98,40 @@ async function ntfyPublishOnce(topic, body, { title, click, tags, priority, atta
   if (!r.ok) throw new Error(`ntfy returned ${r.status}`);
   return true;
 }
+
+// Anything that sends a message or rings someone as Nicholas needs his clear yes first. The first call only returns a
+// read-back and a code; the send happens on a later call with that code (at least a few seconds later, so a person
+// has answered) and goes out exactly as read back.
+export const SEND_ACTIONS = ["wa_message", "wa_send", "wa_reply", "tg_reply", "wa_call", "wa_video"];
+export function createSendGate({ now = () => Date.now(), minGapMs = 3000, ttlMs = 5 * 60_000, rnd = Math.random } = {}) {
+  const pending = new Map();
+  const describe = ({ action, target, value }) => {
+    const who = cleanContactName(target) || "nobody";
+    if (action === "wa_call") return `WhatsApp call to ${who}`;
+    if (action === "wa_video") return `WhatsApp video call to ${who}`;
+    const app = action === "tg_reply" ? "Telegram" : "WhatsApp";
+    return `${app} ${action.endsWith("reply") ? "reply" : "message"} to ${who}: "${String(value ?? "").trim()}"`;
+  };
+  return {
+    check(body) {
+      for (const [k, v] of pending) if (now() - v.at > ttlMs) pending.delete(k);
+      const action = String(body.action || "").toLowerCase();
+      if (!SEND_ACTIONS.includes(action)) return { go: true, body };
+      const code = String(body.confirm_code || "").trim();
+      if (!code) {
+        const c = String(Math.floor(1000 + rnd() * 9000));
+        const p = { action, target: body.target, value: body.value, at: now() };
+        pending.set(c, p);
+        const read_back = describe(p);
+        return { go: false, reply: { ok: true, sent: false, confirm_needed: true, confirm_code: c, read_back,
+          message: `NOT SENT. Read this back to him exactly: ${read_back}. Then ask "Shall I send it?" and stop. Only after he clearly says yes, call phone_control again with the same action and confirm_code ${c}. If he changes the wording or the person, call again without a code to get a new read-back.` } };
+      }
+      const p = pending.get(code);
+      if (!p) return { go: false, reply: { ok: false, sent: false, error: "no_such_confirmation", message: "That confirmation has expired or doesn't exist. Nothing was sent. Call again without a code and read the new read-back to him." } };
+      if (p.action !== action) return { go: false, reply: { ok: false, sent: false, error: "mismatch", message: "That code was for a different action. Nothing was sent." } };
+      if (now() - p.at < minGapMs) return { go: false, reply: { ok: false, sent: false, error: "too_soon", message: `NOT SENT: you must read it back and wait for his yes first. Read back: ${describe(p)}. Shall I send it?` } };
+      pending.delete(code);
+      return { go: true, body: { ...body, target: p.target, value: p.value }, sent_as: describe(p) };
+    },
+  };
+}

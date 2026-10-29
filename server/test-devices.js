@@ -124,5 +124,29 @@ ok("phone message escapes separators");
   ok("scheduler: no duplicate runs, weekend skip, success and failure notifications");
 }
 
+
+// Messages and calls need a read-back and a later yes (29 Oct: a WhatsApp to Michelle went without asking).
+{
+  const { createSendGate } = await import("./devices.js");
+  let t = 1_000_000;
+  const g = createSendGate({ now: () => t, rnd: () => 0.5 });
+  let r = g.check({ action: "wa_message", target: "Michelle", value: "Do you need anything from the shop? 😘😘" });
+  assert.equal(r.go, false); assert.equal(r.reply.sent, false); assert.equal(r.reply.confirm_code, "5500");
+  assert.match(r.reply.read_back, /WhatsApp message to Michelle: "Do you need anything from the shop\? 😘😘"/);
+  // Straight back with the code in the same breath: refused.
+  r = g.check({ action: "wa_message", target: "Michelle", value: "x", confirm_code: "5500" });
+  assert.equal(r.go, false); assert.equal(r.reply.error, "too_soon");
+  // After he's answered: goes, exactly as read back (the wording can't be swapped at the last moment).
+  t += 6000;
+  r = g.check({ action: "wa_message", target: "Someone else", value: "different", confirm_code: "5500" });
+  assert.equal(r.go, true); assert.equal(r.body.target, "Michelle"); assert.equal(r.body.value, "Do you need anything from the shop? 😘😘");
+  // A code works once.
+  assert.equal(g.check({ action: "wa_message", confirm_code: "5500" }).reply.error, "no_such_confirmation");
+  // Calls too; other phone actions are untouched.
+  assert.equal(g.check({ action: "wa_call", target: "Mum" }).go, false);
+  assert.equal(g.check({ action: "torch", value: "on" }).go, true);
+  console.log("send gate ok");
+}
+
 console.log(`\n${n} device/scheduler tests passed`);
 process.exit(0);

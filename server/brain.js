@@ -40,6 +40,8 @@ let michelleRecent = [];
 // Only when he's talking ABOUT her ("what do you think of Michelle?"), never when he wants something done that
 // involves her (a WhatsApp, a reminder, her playlist, food for her): those go to the tools as normal.
 const MICHELLE_TASK = /\b(play|playlist|spotify|music|songs?|oldies|shuffle|put on|echo|alexa|speaker|send|message|whatsapp|text|telegram|tell her|ask her|call|ring|phone|video|remind|reminder|birthday|present|gift|buy|order|shop|shopping|cook|recipe|meal|dinner|eat|food|announce|email|calendar|book|remember|save|note|forget|reply|wa|tg)\b/i;
+// A clear yes to a read-back ("yes", "yeah send it", "go ahead", "do it"), and nothing that adds or changes the message.
+export const SAID_YES = /^(?:(?:yes|yeah|yep|yup|sure|ok(?:ay)?|correct|right|go on|please|definitely|absolutely|that'?s (?:right|it|fine|good|perfect)|perfect|lovely|great)[ ,.!]*)+(?:(?:send|do|go ahead with|ring|call)(?: it| that| them| her| him)?(?: now)?|go ahead|please|thanks?|thank you|bernard|bernud|sir|[ ,.!])*$|^(?:send it|go ahead|do it|send|yes send it|ring (?:her|him)|call (?:her|him))(?: please| now| then)?[ ,.!]*$/i;
 export function isAboutMichelle(text) {
   const t = String(text || "");
   return /\bmichelle\b/i.test(t) && !MICHELLE_TASK.test(t) && t.trim().split(/\s+/).length <= 12;
@@ -242,6 +244,8 @@ export function createBrain({ briefHandler = null, dayLog = null, learner = null
   }
   async function callTool(byName, name, args, used) {
     used.push(name);
+    if (name === "phone_control" && args?.confirm_code && !SAID_YES.test(String(used.said || "").trim()))
+      return { ok: false, sent: false, error: "no_yes", message: "NOT SENT: he hasn't said yes to the read-back. Read it back and ask \"Shall I send it?\", then wait for his answer." };
     const t = byName.get(name);
     try {
       const out = t ? await runTool(t, args || {}, used.via || "") : { error: "unknown tool" };
@@ -465,7 +469,7 @@ export function createBrain({ briefHandler = null, dayLog = null, learner = null
     for (const [k, s] of sessions) if (Date.now() - s.at > SESSION_MS) sessions.delete(k);
     const s = sessions.get(session) || { turns: [], groups: [], at: 0 };
     s.at = Date.now(); sessions.set(session, s);
-    const used = []; Object.defineProperty(used, "via", { value: via });  // hidden: not part of the returned tool list
+    const used = []; Object.defineProperty(used, "via", { value: via }); Object.defineProperty(used, "said", { value: text });  // hidden: not part of the returned tool list
     const t0 = Date.now();
     const remember = (reply, model, groups = s.groups) => {
       s.turns = [...s.turns, { user: text, reply }].slice(-6); s.groups = groups;

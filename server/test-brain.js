@@ -212,3 +212,7 @@ console.log("brain ok");
   assert.ok(!isAboutMichelle("Can you send a WhatsApp message to Michelle and say hello Michelle?"));
   assert.ok(pickGroups("Yeah, can you send that to her please?").includes("devices"));
   console.log("michelle + whatsapp routing ok"); }
+{ const { SAID_YES } = await import("./brain.js");
+  for (const y of ["Yes.", "yeah send it", "Yes please", "go ahead", "Send it.", "Yep, that's right.", "OK, send it now", "Do it"]) assert.ok(SAID_YES.test(y), y);
+  for (const n of ["Do you need anything from the shop? Kiss emoji, kiss emoji.", "No", "yes but change it to hello", "Can you send a message to Michelle on WhatsApp and say hi", "wait"]) assert.ok(!SAID_YES.test(n), n);
+  console.log("said-yes ok"); }
