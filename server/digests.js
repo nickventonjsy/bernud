@@ -4,12 +4,14 @@
 //   cameras  daily 08:00     who/what the cameras saw overnight
 //   payroll  payroll day (default the 25th) plus the Combined Employer Return / ITIS / Social Security deadline
 //            (15 days after the month ends, per gov.je), reminded on the 10th and on the 15th
+//   diary    daily 22:30     Bernud writes up the day from what was asked, saves it to memory (category diary) and sends it
+//   news_audio daily 07:30   a spoken news bulletin in Bernard's voice, sent to Telegram as audio
 //   bins     19:00 the evening before collection (Thursdays in St Brelade, so Wednesday evening), with that week's St Brelade recycling box
 // Settings live in kv "digests"; each can be switched off.
 import { londonNow, isDue } from "./scheduler.js";
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-export const DEFAULTS = { wrapup: true, wrapup_time: "17:30", spend: true, cameras: true, payroll: true, payroll_day: 25, bins: true, bin_day: 4 };
+export const DEFAULTS = { wrapup: true, wrapup_time: "17:30", spend: true, cameras: true, payroll: true, payroll_day: 25, bins: true, bin_day: 4, diary: true, news_audio: true, news_time: "07:30" };
 
 // St Brelade 2026 planner: blue (paper) every other week, red (plastic) and black (metals) alternating between.
 // Week starting Mon 2 Nov 2026 is blue, 9 Nov red, 16 Nov blue, 23 Nov black. The pattern is carried on after that.
@@ -33,7 +35,7 @@ export function workingDay(ym, day) {
 }
 const gbp = (n) => "£" + Number(n || 0).toFixed(2);
 
-export function createDigests({ kv, notify, needsReply, priorities, events, parcels, receipts, camEvents, now = () => new Date(), log = console }) {
+export function createDigests({ kv, notify, needsReply, priorities, events, parcels, receipts, camEvents, diary = null, newsAudio = null, now = () => new Date(), log = console }) {
   async function settings() { try { return { ...DEFAULTS, ...JSON.parse((await kv.get("digests")) || "{}") }; } catch { return { ...DEFAULTS }; } }
   async function ran() { try { return JSON.parse((await kv.get("digests_ran")) || "{}"); } catch { return {}; } }
 
@@ -91,6 +93,9 @@ export function createDigests({ kv, notify, needsReply, priorities, events, parc
     cameras: { when: () => ({ time: "08:00", days: "0-6" }), make: () => cameras() },
     payroll: { when: () => ({ time: "09:00", days: "1-5" }), make: (c, t) => payrollFor(t, c) },
     bins: { when: () => ({ time: "19:00", days: "0-6" }), make: (c, t) => binsFor(t, c) },
+    diary: { when: () => ({ time: "22:30", days: "0-6" }), make: async () => { const e = diary ? await diary() : null; return e ? { title: "📔 Today's diary", text: e.replace(/^Diary [\d-]+:\s*/, "") } : null; } },
+    // Sends itself (as audio), so nothing comes back to send as text.
+    news_audio: { when: (c) => ({ time: c.news_time, days: "0-6" }), make: async () => { if (newsAudio) await newsAudio(); return null; } },
   };
 
   async function tick() {
@@ -110,8 +115,9 @@ export function createDigests({ kv, notify, needsReply, priorities, events, parc
     const action = b.action || "status";
     if (action === "set") {
       const cur = JSON.parse((await kv.get("digests")) || "{}");
-      for (const k of ["wrapup", "spend", "cameras", "payroll", "bins"]) if (typeof b[k] === "boolean") cur[k] = b[k];
+      for (const k of ["wrapup", "spend", "cameras", "payroll", "bins", "diary", "news_audio"]) if (typeof b[k] === "boolean") cur[k] = b[k];
       if (/^\d{1,2}:\d{2}$/.test(String(b.wrapup_time || ""))) cur.wrapup_time = String(b.wrapup_time).padStart(5, "0");
+      if (/^\d{1,2}:\d{2}$/.test(String(b.news_time || ""))) cur.news_time = String(b.news_time).padStart(5, "0");
       if (Number(b.payroll_day) >= 1 && Number(b.payroll_day) <= 31) cur.payroll_day = Number(b.payroll_day);
       if (b.bin_day != null) {
         const i = typeof b.bin_day === "number" ? b.bin_day : DAYS.findIndex((d) => d.toLowerCase().startsWith(String(b.bin_day).toLowerCase().slice(0, 3)));
@@ -122,9 +128,10 @@ export function createDigests({ kv, notify, needsReply, priorities, events, parc
     }
     if (action === "run" || action === "preview") {
       const job = JOBS[b.which];
-      if (!job) return { ok: false, error: "Which one: wrapup, spend, cameras, payroll or bins?" };
+      if (b.which === "news_audio" && action === "preview") return { ok: true, which: b.which, message: "That one is audio only: use run to send it." };
+      if (!job) return { ok: false, error: "Which one: wrapup, spend, cameras, payroll, bins, diary or news_audio?" };
       const m = await job.make(await settings(), londonNow(now()));
-      if (!m) return { ok: true, which: b.which, message: "Nothing due today for that one." };
+      if (!m) return { ok: true, which: b.which, message: b.which === "news_audio" ? (action === "run" ? "The spoken news has been sent to his Telegram." : "That one is audio only: use run to send it.") : "Nothing due today for that one." };
       if (action === "run") await notify(m.text, { title: m.title, tags: "memo" });
       return { ok: true, which: b.which, sent: action === "run", ...m };
     }
@@ -132,6 +139,8 @@ export function createDigests({ kv, notify, needsReply, priorities, events, parc
     const next = c.bin_day != null ? recyclingFor(addDays(t.date, ((Number(c.bin_day) - t.dow + 7) % 7) || 7)) : null;
     return { ok: true, wrapup: c.wrapup ? `on, weekdays ${c.wrapup_time}` : "off", spend: c.spend ? "on, Sundays 18:00" : "off", cameras: c.cameras ? "on, daily 08:00" : "off",
       payroll: c.payroll ? `on, payroll day the ${c.payroll_day}th; deadline reminders on the 10th and 15th` : "off",
+      diary: c.diary ? "on, written 22:30 each night and sent to Telegram" : "off",
+      news_audio: c.news_audio ? `on, spoken news to Telegram daily ${c.news_time}` : "off",
       bins: c.bin_day == null ? "not set up (which day are the bins collected?)" : `${c.bins ? "on" : "off"}, collected ${DAYS[c.bin_day]}s, reminder 19:00 the night before; next recycling: ${next.box} (${next.what})` };
   }
 

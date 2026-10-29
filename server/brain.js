@@ -106,6 +106,13 @@ export const GROUPS = {
   brief: { tools: ["ccp_brief_context", "ccp_save_brief", "gmail_read"], re: /\bbrief\b/ },
   reminders: { tools: ["reminder", "send_to_phone", "price_alert"], re: /\b(remind|reminder|alert|notify|notification|send (?:it|that|me|this)|to my phone)\b/ },
   web: { tools: ["web_search", "web_read", "get_news"], re: /\b(search|look up|google|find|who|what|when|where|how|why|news|headlines?|open|hours|menu|restaurant|takeaway|website|food|order|book a table)\b/ },
+  announce: { tools: ["announce"], re: /\b(announce|announcement|intercom|tell (?:everyone|the house|michelle)|dinner'?s ready|shout up)\b/ },
+  party: { tools: ["party_mode", "spotify_dj"], re: /\b(party|disco|rave|celebrat\w*|let'?s get this party)\b/ },
+  sports: { tools: ["sports"], re: /\b(score|scores|match|game|kick-?off|goals?|football|premier league|champions league|rugby|nfl|nba|fixtures?|result|results|half-?time|full-?time|united|city|arsenal|chelsea|liverpool|spurs|everton|villa)\b/ },
+  video: { tools: ["video_summary"], re: /\b(youtube\.com|youtu\.be|summari[sz]e (?:this|the|that) video|what'?s (?:this|the|that) video)\b/ },
+  rewind: { tools: ["rewind", "diary"], re: /\b(what did (?:i|we|you) (?:say|ask|talk)|earlier|last (?:week|time)|the other day|rewind|remind me what|did i (?:ask|tell)|we (?:talked|spoke|discussed)|diary|journal)\b/ },
+  newsaudio: { tools: ["news_audio"], re: /\b(spoken news|news (?:audio|bulletin|podcast)|read (?:me )?the news|morning news)\b/ },
+  tvhome: { tools: ["tv_home_screen"], re: /\b(home ?screen|ambient|dashboard on the (?:tv|telly)|clock on the (?:tv|telly))\b/ },
   weather: { tools: ["get_weather"], re: /\b(weather|rain|raining|wind|windy|temperature|cold|warm|hot|sunny|umbrella|forecast|coat|degrees|snow|storm)\b/ },
 };
 const ALWAYS = ["recall", "remember", "forget"];
@@ -114,7 +121,7 @@ const DEFAULT_GROUPS = ["web", "weather", "calendar", "reminders"];
 const SECTION_TOOLS = [
   [/^Samsung TVs/, ["tv_control"]], [/^ZentraWire/, ["zentrawire"]], [/^Spotify/, ["spotify_control", "spotify_info", "spotify_dj", "spotify_play_on"]], [/^Meal ideas/, ["meal_ideas", "send_to_phone"]],
   [/^Calendar/, ["calendar"]], [/^Reminders/, ["reminder", "price_alert"]], [/^Photos/, []], [/^The web/, ["web_search"]],
-  [/^Ordering food/, "food"], [/^CCP email/, ["gmail_search", "gmail_draft", "gmail_delete", "gmail_organise"]], [/^Customer quotes/, ["ccp_search", "gmail_draft"]], [/^Round-ups/, ["roundups"]], [/^Parcels/, ["parcels"]], [/^Controlling his PC/, ["pc_control", "phone_control"]],
+  [/^Ordering food/, "food"], [/^CCP email/, ["gmail_search", "gmail_draft", "gmail_delete", "gmail_organise"]], [/^Customer quotes/, ["ccp_search", "gmail_draft"]], [/^Round-ups/, ["roundups"]], [/^Around the house/, ["announce", "party_mode", "tv_home_screen"]], [/^Sport/, ["sports"]], [/^Looking back/, ["rewind", "diary"]], [/^Parcels/, ["parcels"]], [/^Controlling his PC/, ["pc_control", "phone_control"]],
   [/^The CCP Brain/, ["ccp_search", "ccp_delete"]], [/^CCP morning brief/, ["ccp_brief_context"]], [/^CCP pricing/, ["ccp_search"]],
 ];
 const FOOD = /\b(food|order|takeaway|restaurant|menu|delivery|deliveroo|just eat|pizza|curry|chinese|indian|burger|kebab|book a table|dinner|lunch)\b/;
@@ -243,6 +250,21 @@ export function createBrain({ briefHandler = null, dayLog = null, learner = null
       contents: [{ role: "user", parts: [{ inline_data: { mime_type: image.mime || "image/jpeg", data: image.data } }, { text }] }],
       generationConfig: { maxOutputTokens: maxTokens + 2000, temperature: 0, thinkingConfig: { thinkingLevel: "low" }, ...(json ? { responseMimeType: "application/json" } : {}) } }, 10_000);
     return (res.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("").trim();
+  }
+
+  // Watch a public YouTube video (Gemini reads it straight from the link) and answer about it. Videos take a while.
+  async function video({ url, prompt, maxTokens = 700 }) {
+    if (!geminiKey) throw Object.assign(new Error("Watching videos needs the Gemini key on the server."), { code: "not_set_up" });
+    let last = null;
+    for (const m of [...models.filter((x) => !cooling(x)), ...models.filter((x) => cooling(x))]) {
+      try {
+        const j = await gemini(m, { contents: [{ role: "user", parts: [{ file_data: { file_uri: url } }, { text: prompt }] }],
+          generationConfig: { maxOutputTokens: maxTokens + 1500, temperature: 0.3 } }, 120_000);
+        const t = (j.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("").trim();
+        if (t) return t;
+      } catch (e) { last = e; }
+    }
+    throw last || new Error("Couldn't watch that video.");
   }
 
   // ---------------- Gemini (hedged across models) ----------------
@@ -535,7 +557,7 @@ export function createBrain({ briefHandler = null, dayLog = null, learner = null
   return {
     chat,
     complete,
-    vision,
+    vision, video,
     async prompt() { return (await config()).prompt; },
     selfTest,
     async status() { try { const c = await config(); return { ok: true, configured: !!(geminiKey || groqKey), gemini: !!geminiKey, groq: !!groqKey, cerebras: !!cerebrasKey, tools: c.tools.length, source: c.source }; } catch (e) { return { ok: false, configured: !!(geminiKey || groqKey), error: e.message }; } },

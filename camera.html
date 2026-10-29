@@ -32,6 +32,21 @@
   .picker button.on { border-color: var(--red); }
   .picker button:focus { outline: none; border-color: #fff; background: var(--red); }
   .picker .hint { flex-basis: 100%; text-align: center; color: var(--dim); font-size: 18px; }
+  /* Ambient screen (TV mode, asked for by voice): clock, weather, today, news and the cameras, refreshed every minute. */
+  .amb { position: absolute; inset: 0; display: grid; grid-template-columns: 1.15fr 1fr; grid-template-rows: auto 1fr auto; gap: 28px 48px; padding: 48px 64px; background: radial-gradient(ellipse at top left, #2a0c10, #0b0506 60%); color: #fff; }
+  .amb .clock { font-size: 150px; font-weight: 200; line-height: 1; letter-spacing: -.02em; }
+  .amb .date { font-size: 34px; color: var(--dim); margin-top: 8px; }
+  .amb .wx { text-align: right; align-self: start; }
+  .amb .wx .t { font-size: 96px; font-weight: 200; line-height: 1; }
+  .amb .wx .d { font-size: 28px; color: var(--dim); }
+  .amb h3 { margin: 0 0 12px; font-size: 20px; letter-spacing: .14em; color: var(--red); font-weight: 600; }
+  .amb ul { margin: 0; padding: 0; list-style: none; font-size: 28px; line-height: 1.45; }
+  .amb li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .amb .cams { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-content: start; }
+  .amb .cams figure { margin: 0; position: relative; }
+  .amb .cams img { width: 100%; aspect-ratio: 16/9; object-fit: cover; border-radius: 10px; background: #000; display: block; }
+  .amb .cams figcaption { position: absolute; left: 10px; bottom: 8px; font-size: 18px; background: rgba(0,0,0,.55); padding: 2px 10px; border-radius: 6px; }
+  .amb .news { grid-column: 1 / -1; font-size: 26px; color: var(--dim); border-top: 1px solid var(--line); padding-top: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 </style>
 </head>
 <body>
@@ -54,6 +69,13 @@
   <div class="msg" id="msg">Loading…</div>
   <div class="tag gone" id="tag"></div>
   <div class="picker gone hidden" id="picker" role="toolbar" aria-label="Cameras"></div>
+  <section class="amb hidden" id="amb" aria-label="Home screen">
+    <div><div class="clock" id="ambClock"></div><div class="date" id="ambDate"></div></div>
+    <div class="wx" id="ambWx"></div>
+    <div><h3>TODAY</h3><ul id="ambDay"></ul></div>
+    <div class="cams" id="ambCams"></div>
+    <div class="news" id="ambNews"></div>
+  </section>
 </main>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.13/hls.min.js"></script>
 <script>
@@ -183,12 +205,49 @@
   // TV mode: check every few seconds which camera Bernard was asked to show, and switch to it.
   let tvAt = 0, tagTimer = null;
   function tag(t) { const el = $("tag"); el.textContent = t; el.classList.remove("gone"); clearTimeout(tagTimer); tagTimer = setTimeout(() => el.classList.add("gone"), 5000); }
+  // Ambient screen: Bernard switches the TV to it ("put the home screen on the telly"); a camera request switches back.
+  const WX = { 0: "Clear", 1: "Mostly clear", 2: "Partly cloudy", 3: "Cloudy", 45: "Fog", 48: "Fog", 51: "Drizzle", 53: "Drizzle", 55: "Drizzle", 61: "Light rain", 63: "Rain", 65: "Heavy rain", 71: "Snow", 73: "Snow", 75: "Heavy snow", 80: "Showers", 81: "Showers", 82: "Heavy showers", 95: "Thunderstorms", 96: "Thunderstorms", 99: "Thunderstorms" };
+  const esc = (t) => String(t ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  let ambOn = false, ambTimer = null, newsAt = 0;
+  function clock() {
+    const d = new Date(), o = { timeZone: "Europe/London" };
+    $("ambClock").textContent = d.toLocaleTimeString("en-GB", { ...o, hour: "2-digit", minute: "2-digit" });
+    $("ambDate").textContent = d.toLocaleDateString("en-GB", { ...o, weekday: "long", day: "numeric", month: "long" });
+  }
+  let ambNews = [];
+  async function ambRefresh() {
+    try {
+      const j = await api("/ambient");
+      if (!j || !j.ok) return;
+      const w = j.weather;
+      $("ambWx").innerHTML = w ? `<div class="t">${esc(w.now)}°</div><div class="d">${esc(WX[w.code] || "")}</div><div class="d">High ${esc(w.high)}° · Low ${esc(w.low)}°${w.rain != null ? ` · Rain ${esc(w.rain)}%` : ""}</div>` : "";
+      const day = [...(j.events || []).map((e) => `${esc(e.when)} · ${esc(e.title)}`), ...(j.parcels || []).map((p) => `📦 ${esc(p)}`)];
+      $("ambDay").innerHTML = (day.length ? day : ["Nothing in the diary."]).slice(0, 6).map((l) => `<li>${l}</li>`).join("");
+      $("ambCams").innerHTML = (j.cameras || []).map((c) => `<figure><img src="${esc(c.url)}" alt=""><figcaption>${esc(c.camera)}</figcaption></figure>`).join("");
+      ambNews = j.news || [];
+    } catch {}
+  }
+  function rotateNews() { if (ambNews.length) $("ambNews").textContent = ambNews[newsAt++ % ambNews.length]; }
+  function ambient(on) {
+    if (on === ambOn) return;
+    ambOn = on;
+    $("amb").classList.toggle("hidden", !on);
+    clearInterval(ambTimer);
+    if (on) {
+      if (typeof stopVideo === "function") stopVideo();
+      hidePicker(); clock(); ambRefresh().then(rotateNews);
+      let n = 0;
+      ambTimer = setInterval(() => { clock(); if (++n % 8 === 0) rotateNews(); if (n % 60 === 0) ambRefresh(); }, 1000);
+    }
+  }
   async function followBernard() {
     try {
       const j = await api("/camera/tv");
       const want = j && j.camera;
       if (want && want.at > tvAt) {
         tvAt = want.at;
+        if (want.ambient) { ambient(true); return; }
+        ambient(false);
         const sel = $("cam"); const o = [...sel.options].find((x) => x.value === want.name) || [...sel.options].find((x) => x.value.toLowerCase().includes(String(want.name).toLowerCase()));
         if (o) { sel.value = o.value; store.set("bernud.lastCam", o.value); retries = 0; play(o.value); tag(o.value); }
       }
@@ -214,9 +273,10 @@
     clearTimeout(pickTimer); pickTimer = setTimeout(hidePicker, 8000);
   }
   function hidePicker() { $("picker").classList.add("gone"); if ($("picker").contains(document.activeElement)) document.activeElement.blur(); }
-  function pick(name) { const sel = $("cam"); sel.value = name; store.set("bernud.lastCam", name); retries = 0; play(name); tag(name); hidePicker(); }
+  function pick(name) { ambient(false); const sel = $("cam"); sel.value = name; store.set("bernud.lastCam", name); retries = 0; play(name); tag(name); hidePicker(); }
   if (tvMode) {
     document.addEventListener("keydown", (e) => {
+      if (ambOn) { if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter"].includes(e.key)) { e.preventDefault(); ambient(false); retries = 0; play($("cam").value); showPicker(); } return; }
       const box = $("picker"), btns = [...box.querySelectorAll("button")];
       const n = Number(e.key);
       if (n >= 1 && n <= btns.length) { e.preventDefault(); pick(btns[n - 1].dataset.cam); return; }
@@ -228,7 +288,7 @@
       else if (e.key === "Escape" || e.key === "Backspace" || e.keyCode === 10009) { e.preventDefault(); hidePicker(); return; }
       clearTimeout(pickTimer); pickTimer = setTimeout(hidePicker, 8000);
     });
-    document.addEventListener("mousemove", showPicker);   // the TV remote's pointer
+    document.addEventListener("mousemove", () => { if (!ambOn) showPicker(); });   // the TV remote's pointer
     start().then(() => { buildPicker(); showPicker(); }).then(() => { followBernard(); setInterval(followBernard, 4000); });
     // Imou's live links expire: start the picture afresh every 20 minutes so a long watch doesn't freeze.
     setInterval(() => { retries = 0; if ($("cam").value && !snapFor) play($("cam").value); }, 20 * 60 * 1000);

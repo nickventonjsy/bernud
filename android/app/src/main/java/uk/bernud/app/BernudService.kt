@@ -52,6 +52,7 @@ class BernudService : Service() {
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "bernud:listening").apply { setReferenceCounted(false); acquire() }
         if (getSharedPreferences("bernud", MODE_PRIVATE).getBoolean("wakeWord", true)) WakeWord.start(this)
         listener = CommandListener(this).also { it.start() }
+        HomeWifi.start(this)
         Bus.reloadCommands = { listener?.stop(); listener = CommandListener(this).also { it.start() } }
         Bus.phoneStatus = { listener?.status ?: "not running" }
         try { car = androidx.car.app.connection.CarConnection(this).also { it.type.observeForever(carObserver) } } catch (_: Exception) {}
@@ -76,6 +77,7 @@ class BernudService : Service() {
     override fun onDestroy() {
         try { car?.type?.removeObserver(carObserver) } catch (_: Exception) {}
         WakeWord.stop()
+        HomeWifi.stop(this)
         listener?.stop(); listener = null
         Bus.reloadCommands = null
         wakeLock?.let { if (it.isHeld) it.release() }

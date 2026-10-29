@@ -10,7 +10,7 @@ const ROUTES = [
   [/^\/calendar/, "calendar"], [/^\/gmail/, "email"], [/^\/ccp\/document/, "printing"], [/^\/ccp\/brief/, "morning brief"],
   [/^\/ccp/, "CCP documents"], [/^\/web/, "web search"], [/^\/device\/pc|^\/pc/, "PC"], [/^\/device\/phone|^\/phone/, "phone"],
   [/^\/camera/, "cameras"], [/^\/memory/, "memory"], [/^\/notify/, "sent to phone"], [/^\/routine\/goodnight/, null],
-  [/^\/priorities/, "priorities"], [/^\/receipts/, "receipts"], [/^\/claude/, "note for Claude"], [/^\/youtube/, "YouTube"], [/^\/orders|^\/reorder/, "order list"], [/^\/home/, "home"], [/^\/shopping/, "shopping list"], [/^\/wakeup/, "wake-up"], [/^\/firetv/, "Fire TV"], [/^\/system/, null],
+  [/^\/priorities/, "priorities"], [/^\/receipts/, "receipts"], [/^\/claude/, "note for Claude"], [/^\/youtube/, "YouTube"], [/^\/orders|^\/reorder/, "order list"], [/^\/home/, "home"], [/^\/shopping/, "shopping list"], [/^\/wakeup/, "wake-up"], [/^\/firetv/, "Fire TV"], [/^\/announce/, "announcement"], [/^\/party/, "party mode"], [/^\/sports/, "sport"], [/^\/video/, "video summary"], [/^\/rewind|^\/diary/, "looking back"], [/^\/tv\/ambient/, "TV home screen"], [/^\/system/, null],
 ];
 export const routeLabel = (path) => { const r = ROUTES.find(([re]) => re.test(path)); return r ? r[1] : undefined; };
 
@@ -65,5 +65,12 @@ export function createDayLog({ kv, now = () => new Date(), max = 300 } = {}) {
     const list = await load();
     return list.slice(-n).reverse().map((e) => ({ t: e.t, time: londonTime(new Date(e.t)), kind: e.k, text: e.x, via: e.v || "" }));
   }
-  return { add, today, week, recent, routeLabel };
+  // Entries from the last two days containing any of the words, for "what did I ask you about…".
+  async function search(words = []) {
+    const ws = words.map((w) => String(w).toLowerCase()).filter(Boolean);
+    if (!ws.length) return [];
+    return (await load()).filter((e) => ws.some((w) => e.x.toLowerCase().includes(w))).slice(-8)
+      .map((e) => ({ when: `${londonDay(new Date(e.t))} ${londonTime(new Date(e.t))}`, who: e.k === "asked" ? "Nicholas" : "log", said: e.x }));
+  }
+  return { add, today, week, recent, search, routeLabel };
 }

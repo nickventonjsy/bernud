@@ -239,9 +239,23 @@ export function createTelegram({ token, kv, chat, shopping, transcribe = null, s
     }
   }
 
+  // A plain message to every linked chat (Nicholas's and guests such as Michelle): house announcements.
+  async function broadcast(text) {
+    let n = 0;
+    for (const c of await getChats()) { try { await say(c.id, esc(text), { parse_mode: "HTML" }); n++; } catch (e) { log.error?.("telegram broadcast", e.message); } }
+    return n;
+  }
+  // An MP3 to Nicholas as a voice note (the morning news, say).
+  async function audio(mp3, caption = "") {
+    const owner = (await getChats()).find((c) => roleOf(c) === "owner");
+    if (!owner || !token) return false;
+    await apiForm("sendAudio", { chat_id: String(owner.id), caption: caption.slice(0, 1000), title: "Morning news", performer: "Bernud" }, { audio: { name: "news.mp3", data: mp3, type: "audio/mpeg" } }, 60_000);
+    return true;
+  }
+
   return {
     configured: Boolean(token),
-    alert, sendList,
+    alert, sendList, broadcast, audio,
     stop() { running = false; },
     async start() {
       if (!token || running) return;

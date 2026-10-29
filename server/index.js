@@ -343,6 +343,33 @@ async function learnFromVoice() {
 const PROMPT_FIXES = [
   ["- If he hasn't said otherwise, check recall once for food likes, dislikes or allergies, and never suggest anything he's said he can't or won't eat.\n- Suggest two or three ideas, one short sentence each, built mainly on what he named plus everyday cupboard basics. Say which extra ingredients each needs, and roughly how long it takes. Ask which he fancies.",
    "- Get the ideas from meal_ideas, every time (never make them up yourself): it rotates cuisines, leaves out what you've suggested in the last month, and respects the household's likes and dislikes. Pass what he has in and who it's for. Say the dish names with the one-line why, and ask which he fancies."],
+  // New sections, added once.
+  (base) => (base.includes("# Fun and games") ? base : base.replace("# Not wired up yet", `# Around the house: extras
+- Announcements: "announce dinner's ready", "tell everyone we're leaving in five" use announce. It speaks on his phone in your voice, on his PC if it's on, and goes to every Telegram chat (Michelle's included). The Echo speakers can't take announcements; say so only if he asks why.
+- Party mode: party_mode start or stop (lights cycle colours, and a party mix from his liked songs). Stopping puts the lights back to warm white.
+- The TV home screen: tv_home_screen puts a clock, weather, today's diary, parcels, headlines and camera stills on the Samsung TV. Asking for a camera switches back.
+- Arriving home: when his phone joins the home Wi-Fi after he's been out, you greet him on the phone and put the hall lights on if it's dark (home_arrival changes the settings). It needs the dashboard button "This is my home Wi-Fi" pressed once at home.
+
+# Sport
+- "What's the score?", "how are United getting on?": sports with the team. "Keep me posted on the match": sports follow, then goals and the final score go to his Telegram. Give the score and the minute plainly; no commentary unless he wants it.
+
+# Looking back
+- "What did I say about…", "what was that thing we talked about yesterday?": rewind with the key words. Quote what was said and when.
+- His day diary is written at half ten each night from what he asked you, and sent to Telegram. "Read me yesterday's diary" or "what did I do on Monday?" is diary read. Never invent entries.
+- The spoken news: news_audio sends a short news bulletin in your voice to his Telegram (automatically at half seven each morning). "Send me the news to listen to" is news_audio send.
+- YouTube: when he gives a YouTube link and asks what it's about, use video_summary (say you're watching it first; long videos take up to a minute). Give the gist in two or three sentences, then offer the key points.
+
+# Where things are
+- "I've put the passport in the top drawer", "the spare key's under the blue pot": save it with remember, category whereabouts, in his words with the place. "Where did I put the passport?": recall it and say where, with when he told you. If it's not saved, say so; never guess. If he moves something, replace the old note.
+
+# Fun and games
+- Adventure games: when he asks for a game or a story adventure, run a spoken text adventure. Set the scene in two or three vivid sentences, then offer two or three choices each turn. Keep track of what he's carrying, where he is and what's happened. Make it funny and a little perilous, end a chapter in about ten turns, and offer to carry on. Riddles, twenty questions, trivia quizzes and word games are fine too; keep score.
+- Language tutor: "teach me some Portuguese", "practise French with me": speak mostly in English with short phrases in the language (Portuguese, Polish, French or Spanish), have him repeat and use them, correct gently, and build up a little each turn. If he asks to practise properly, switch fully to that language, keep sentences short and simple, and switch back when he says so.
+- Practice partner: for a job interview, a difficult conversation, a sales call or a speech, play the other person realistically (a tough interviewer, an awkward customer), one question or reply at a time. When he says stop, give three short points: what went well, what to improve, and one better phrasing.
+
+` + "# Not wired up yet")),
+  (base) => (base.includes("- announce, party_mode") ? base : base.replace("- end_call: when he says goodbye", "- announce, party_mode, tv_home_screen, sports, rewind, diary, news_audio and video_summary: see \"Around the house: extras\", \"Sport\" and \"Looking back\".\n- end_call: when he says goodbye")),
+  (base) => (base.includes("spoken morning news at half seven") ? base : base.replace("and bin night on Wednesday at seven before Thursday's collection,", "the day's diary at half ten at night, the spoken morning news at half seven, and bin night on Wednesday at seven before Thursday's collection,")),
 ];
 let promptSyncTimer = null;
 function scheduleAgentPromptSync() { clearTimeout(promptSyncTimer); promptSyncTimer = setTimeout(() => syncAgentPrompt().catch((e) => console.error("prompt sync", e.message)), 3 * 60_000); promptSyncTimer.unref?.(); }
@@ -355,7 +382,7 @@ async function syncAgentPrompt() {
   if (!prompt) return false;
   let base = prompt.split(LEARN_HEADING)[0].trimEnd();
   // One-off wording updates to his instructions (applied once; harmless if already done).
-  for (const [from, to] of PROMPT_FIXES) base = base.replace(from, to);
+  for (const f of PROMPT_FIXES) base = typeof f === "function" ? f(base) : base.replace(f[0], f[1]);
   const next = base + (await learner.promptBlock());
   if (next === prompt) return true;
   const r = await fetch(`https://api.elevenlabs.io/v1/convai/agents/${agent}`, { method: "PATCH", headers: h, body: JSON.stringify({ conversation_config: { agent: { prompt: { prompt: next } } } }), signal: AbortSignal.timeout(15_000) });
@@ -431,8 +458,15 @@ async function eventsOn(day) {
   for (const a of [gmail, personalGoogle]) { try { if ((await a.connected()) && (await a.hasScope(SCOPES.calendar))) out.push(...(await a.events({ from, to }))); } catch {} }
   return out.sort((x, y) => String(x.start).localeCompare(String(y.start)));
 }
+// The "Jarvis" extras: announcements, party mode, live sports, YouTube summaries, rewind, diary, spoken news, the TV's ambient screen.
+const { createJarvis, sameNetwork } = await import("./jarvis.js");
+export const jarvis = createJarvis({ kv: db.kv, notify, sayOnPhone, pc, telegram, lights, dj, brain, speakMp3, headlines, dayLog, voiceRequests: voiceRequestsToday,
+  saveMemory: (text, category) => db.save(text, category), imou, parcels,
+  eventsToday: () => eventsOn(new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(new Date())),
+  elevenKey: process.env.ELEVENLABS_API_KEY || "", agentId: process.env.AGENT_ID || "agent_0501m5q6cc15eqcrnamk2e1w84xc" });
 export const digests = createDigests({ kv: db.kv, notify, needsReply: async () => ((await gmail.connected()) ? gmail.needsReply() : null), priorities: async () => priorities.list(await briefPrioritiesTop()),
-  events: eventsOn, parcels, receipts, camEvents: (a) => camAlerts.events(a) });
+  events: eventsOn, parcels, receipts, camEvents: (a) => camAlerts.events(a),
+  diary: () => jarvis.writeDiary(), newsAudio: () => jarvis.newsAudio() });
 async function briefPrioritiesTop() {
   try { const b = await ccp.latestBrief(); return { from: b?.created_at || null, items: b?.text ? briefTop3(b.text) : [] }; } catch { return { from: null, items: [] }; }
 }
@@ -667,6 +701,9 @@ function send(res, status, body, req) {
   res.end(JSON.stringify(body));
 }
 
+async function homeAddresses() { const v = (await db.kv.get("home_ip")) || ""; try { const j = JSON.parse(v); return Array.isArray(j) ? j : [String(j)]; } catch { return v ? [v] : []; } }
+// The caller's internet address (Render puts it first in x-forwarded-for).
+function clientIp(req) { return String(req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "").split(",")[0].trim().replace(/^::ffff:/, ""); }
 async function readJson(req, limit = 20000) {
   let raw = "";
   for await (const chunk of req) {
@@ -840,11 +877,19 @@ export async function handle(req, res) {
     catch { return { from: null, items: [] }; }
   }
   // Tick, untick, add or remove a priority from the dashboard.
+  // "This is my home Wi-Fi": remembers this browser's internet address as the house's, for the arrival greeting.
+  if (path === "/dash/home-here" && req.method === "POST") {
+    if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
+    const ip = clientIp(req);
+    if (!ip) return send(res, 200, { ok: false, message: "Couldn't see this connection's address." }, req);
+    await db.kv.set("home_ip", JSON.stringify([ip, ...(await homeAddresses()).filter((x) => !sameNetwork(x, ip))].slice(0, 4)));
+    return send(res, 200, { ok: true, message: "Saved. When your phone joins this Wi-Fi, Bernard will greet you." }, req);
+  }
   if (path === "/dash/digests" && req.method === "POST") {
     if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
     const b = await readJson(req);
     if (b.tv_popup !== undefined) await db.kv.set("camera_tv_popup", b.tv_popup ? "on" : "off");
-    const r = await digests.handle({ action: b.action === "set" ? "set" : "status", wrapup: b.wrapup, spend: b.spend, cameras: b.cameras, payroll: b.payroll, bins: b.bins });
+    const r = await digests.handle({ action: b.action === "set" ? "set" : "status", wrapup: b.wrapup, spend: b.spend, cameras: b.cameras, payroll: b.payroll, bins: b.bins, diary: b.diary, news_audio: b.news_audio });
     return send(res, 200, { ...r, tv_camera_popup: (await db.kv.get("camera_tv_popup")) === "off" ? "off" : "on" }, req);
   }
   if (path === "/dash/priorities" && req.method === "POST") {
@@ -977,6 +1022,11 @@ export async function handle(req, res) {
     let want = null; try { want = JSON.parse((await db.kv.get("tv_camera")) || "null"); } catch {}
     return send(res, 200, { ok: true, camera: want }, req);
   }
+  // The TV's ambient screen: clock, weather, today's diary, parcels, headlines and camera stills (cached for a minute).
+  if (path === "/ambient" && req.method === "GET") {
+    if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
+    try { return send(res, 200, await jarvis.ambient(), req); } catch (e) { return send(res, 200, { ok: false, error: String(e.message).slice(0, 200) }, req); }
+  }
   if (path === "/camera/snapshot" && req.method === "GET") {
     if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
     try { const cam = await imou.find(url.searchParams.get("camera") || ""); return send(res, 200, { ok: true, camera: cam, url: await imou.snapshot(cam) }, req); }
@@ -1074,7 +1124,19 @@ export async function handle(req, res) {
     const ev = String(url.searchParams.get("e") || "");
     if (ev === "arrive") { dayLog.add("event", "Arrived home", "phone"); return send(res, 200, await home.arrive()); }
     if (ev === "leave") { dayLog.add("event", "Left home", "phone"); return send(res, 200, await home.leave()); }
-    return send(res, 400, { error: "e must be arrive or leave" });
+    // The Bernard app reports joining / losing Wi-Fi; it's home if the phone's internet address matches the house's.
+    if (ev === "wifi") {
+      const homeIps = await homeAddresses(), ip = clientIp(req);
+      if (!homeIps.length) return send(res, 200, { ok: true, acted: false, reason: "home Wi-Fi not set (dashboard button)" });
+      if (!homeIps.some((h) => sameNetwork(ip, h))) return send(res, 200, { ok: true, acted: false, reason: "not the home Wi-Fi" });
+      dayLog.add("event", "Arrived home (Wi-Fi)", "phone"); return send(res, 200, await home.arrive());
+    }
+    if (ev === "wifi_lost") {
+      let st = {}; try { st = JSON.parse((await db.kv.get("home_state")) || "{}"); } catch {}
+      if (!st.home) return send(res, 200, { ok: true, acted: false });
+      dayLog.add("event", "Left home (Wi-Fi)", "phone"); return send(res, 200, await home.leave());
+    }
+    return send(res, 400, { error: "e must be arrive, leave, wifi or wifi_lost" });
   }
 
   if (!API_KEY || req.headers["x-bernud-key"] !== API_KEY) return send(res, 401, { error: "unauthorised" });
@@ -1168,6 +1230,33 @@ export async function handle(req, res) {
       const b = await readJson(req);
       try { const r = await zapier.handle(b); if (b.action === "run" && r.ok && !r.confirm_needed) dayLog.add("tool", "zapier " + String(b.tool || "").slice(0, 40)); return send(res, 200, r); }
       catch (e) { console.error("zapier", e.message); return send(res, 200, { ok: false, error: e.code || "zapier_error", message: String(e.message).slice(0, 300) }); }
+    }
+    // ---- the "Jarvis" extras ----
+    if (path === "/announce" && req.method === "POST") return send(res, 200, await jarvis.announce(await readJson(req)));
+    if (path === "/party" && req.method === "POST") { try { return send(res, 200, await jarvis.partyMode(await readJson(req))); } catch (e) { return send(res, 200, { ok: false, message: String(e.message).slice(0, 200) }); } }
+    if (path === "/sports" && req.method === "POST") { try { return send(res, 200, await jarvis.sports(await readJson(req))); } catch (e) { return send(res, 200, { ok: false, message: "Couldn't get the scores just now." }); } }
+    if (path === "/video/summary" && req.method === "POST") { try { return send(res, 200, await jarvis.youtube(await readJson(req))); } catch (e) { return send(res, 200, { ok: false, error: e.code || "error", message: "I couldn't watch that video: " + String(e.message).slice(0, 160) }); } }
+    if (path === "/rewind" && req.method === "POST") return send(res, 200, await jarvis.rewind(await readJson(req)));
+    if (path === "/diary" && req.method === "POST") {
+      const b = await readJson(req);
+      if (b.action === "write") { const e = await jarvis.writeDiary(); return send(res, 200, e ? { ok: true, entry: e } : { ok: false, message: "Nothing logged today to write about yet." }); }
+      const rows = (await db.all()).filter((r) => r.category === "diary");
+      const q = String(b.date || b.query || "").toLowerCase();
+      const hit = rows.filter((r) => !q || String(r.text).toLowerCase().includes(q)).sort((a, z) => String(z.created_at || "").localeCompare(String(a.created_at || ""))).slice(0, Number(b.limit) || 3);
+      return send(res, 200, { ok: true, entries: hit.map((r) => r.text), note: hit.length ? undefined : "No diary entries match. Entries are written at 22:30 each night." });
+    }
+    if (path === "/news/audio" && req.method === "POST") {
+      const b = await readJson(req);
+      if (Array.isArray(b.topics) && b.topics.length) { const t = b.topics.map(String).filter((x) => FEEDS[x]); if (t.length) await db.kv.set("news_audio_topics", JSON.stringify(t)); }
+      if (b.action === "topics") { let t = null; try { t = JSON.parse((await db.kv.get("news_audio_topics")) || "null"); } catch {} return send(res, 200, { ok: true, topics: t || ["uk", "jersey", "tech"], available: Object.keys(FEEDS) }); }
+      try { return send(res, 200, await jarvis.newsAudio()); } catch (e) { return send(res, 200, { ok: false, message: String(e.message).slice(0, 200) }); }
+    }
+    if (path === "/tv/ambient" && req.method === "POST") {
+      const b = await readJson(req);
+      await db.kv.set("tv_camera", JSON.stringify({ ambient: true, name: "Home screen", at: Date.now() }));
+      if (!(await smartthings.connected().catch(() => false))) return send(res, 200, { ok: false, error: "not_connected", message: "SmartThings isn't connected, so I can't put the browser up on the TV." });
+      try { const r = await smartthings.openBrowser(String(b.screen || "")); return send(res, 200, { ok: true, tv: r.tv, note: `The home screen (clock, weather, today, news and cameras) is on ${r.tv}${r.woke ? " (woke it first)" : ""} within a few seconds. Asking for a camera switches back.` }); }
+      catch (e) { return send(res, 200, { ok: false, message: String(e.message).slice(0, 200) }); }
     }
     if (path === "/meals/ideas" && req.method === "POST") { try { return send(res, 200, await meals.ideas(await readJson(req))); } catch (e) { return send(res, 200, { ok: false, error: "busy", message: "I couldn't come up with ideas just now. Ask me again in a moment." }); } }
     if (path === "/parcels" && req.method === "POST") { const b = await readJson(req); try { return send(res, 200, await parcels.list({ refresh: b.refresh === true })); } catch (e) { return send(res, 200, { ok: false, error: e.code === "busy" ? "The AI is busy, try again in a minute." : String(e.message).slice(0, 160) }); } }
@@ -1516,7 +1605,7 @@ export async function handle(req, res) {
 await db.init();
 if (ccp.configured() && process.env.NODE_ENV !== "test") ccp.startBackgroundIndex();
 if (process.env.NODE_ENV !== "test") { telegram.start(); weekly.start(); if (livekit.configured) { if (!livekit.start()) console.log("livekit: configured; the voice worker runs as its own service (LIVEKIT_WORKER=inline to run it here)"); } else console.log("livekit: not configured (LIVEKIT_URL/API_KEY/API_SECRET), LiveKit mode off"); }
-if (process.env.NODE_ENV !== "test" && NTFY_TOPIC) { scheduler.start(); reminders.start(); orders.start(); digests.start(); watchdog.start(); wakeup.start(); }
+if (process.env.NODE_ENV !== "test" && NTFY_TOPIC) { scheduler.start(); reminders.start(); orders.start(); digests.start(); jarvis.start(); watchdog.start(); wakeup.start(); }
 if (process.env.NODE_ENV !== "test") setTimeout(async () => { const s = await brain.status(); console.log("brain status", JSON.stringify(s)); if (s.ok && s.configured) console.log("brain selftest", JSON.stringify(await brain.selfTest()));
   if (imou.configured() && DASHBOARD_KEY) camAlerts.start();
   if (imou.configured()) { try { const c = await imou.cameras(true); console.log("imou cameras", JSON.stringify(c.map((x) => ({ name: x.name, online: x.online })))); } catch (e) { console.log("imou failed", e.code, e.message); } }

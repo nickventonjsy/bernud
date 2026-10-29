@@ -41,7 +41,7 @@ export function createLearner({ db, complete, log = console, enabled = true, max
   // (people first), so he knows it without having to look it up. Saved recipes are listed by name only.
   async function promptBlock() {
     const all = await db.all();
-    const isRecipe = (r) => /^recipes?$/.test(r.category || "");
+    const isRecipe = (r) => /^(recipes?|diary)$/.test(r.category || "");
     const facts = all.filter((r) => !isRecipe(r) && String(r.text).length <= 300);
     const order = (r) => (r.category === "people" ? 0 : r.category === "learned" ? 2 : 1);
     const rows = facts.sort((a, b) => order(a) - order(b)).slice(0, maxShown);

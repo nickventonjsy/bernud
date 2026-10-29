@@ -59,7 +59,7 @@ export function createHome({ kv, smartthings, sayOnPhone, todayEvents = async ()
     }
     let spoken = null;
     if (cfg.greet) {
-      const parts = [`${greeting(t)}, Nicholas. Welcome home.`];
+      const parts = [`${greeting(t)}, sir. Welcome home.`];
       if (done.length) parts.push(`I've put the ${done.length === 1 ? done[0] + " light" : done.slice(0, -1).join(", ") + " and " + done.at(-1) + " lights"} on.`);
       try {
         const ev = (await todayEvents()).filter((e) => new Date(e.start) > t).slice(0, 2);

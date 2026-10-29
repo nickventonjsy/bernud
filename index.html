@@ -700,7 +700,7 @@
     <div class="note" id="privNote"></div>
     <hr style="border:0;border-top:1px solid var(--line, #5a1a1f);margin:16px 0">
     <p><b style="color:var(--text)">Round-ups and reminders.</b> Sent to your Telegram: end-of-day wrap-up (weekdays), weekly spend (Sundays), overnight cameras (8am), payroll reminders, bin night, and the camera popping up on the TV when someone's seen after hours (only if the TV is already on).</p>
-    <div class="btnrow"><button class="btn" type="button" id="rdBtn">Show round-ups</button></div>
+    <div class="btnrow"><button class="btn" type="button" id="rdBtn">Show round-ups</button><button class="btn" type="button" id="homeHere" title="Press this on a device connected to your home Wi-Fi">This is my home Wi-Fi</button></div>
     <div id="rdList"></div>
     <div class="note" id="rdNote"></div>
     <hr style="border:0;border-top:1px solid var(--line, #5a1a1f);margin:16px 0">
@@ -745,7 +745,7 @@
 
   // ---- Version numbers (bottom of the screen) ----
   // DASH_VERSION goes up by one with every dashboard change (a git hook bumps it automatically).
-  const DASH_VERSION = 42;
+  const DASH_VERSION = 43;
   (async () => {
     const set = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
     set("dashVer", DASH_VERSION);
@@ -2817,7 +2817,7 @@
     try {
       const j = await (await fetch(`${SERVER}/dash/digests`, { method: "POST", headers: { "content-type": "application/json", "x-dashboard-key": pass }, body: JSON.stringify(post || { action: "status" }) })).json();
       const box = $("rdList"); box.innerHTML = ""; $("rdNote").textContent = "";
-      const rows = [["wrapup", "End-of-day wrap-up"], ["spend", "Weekly spend"], ["cameras", "Overnight cameras"], ["payroll", "Payroll"], ["bins", "Bin night"], ["tv_popup", "Camera on the TV"]];
+      const rows = [["wrapup", "End-of-day wrap-up"], ["spend", "Weekly spend"], ["cameras", "Overnight cameras"], ["payroll", "Payroll"], ["bins", "Bin night"], ["diary", "Nightly diary"], ["news_audio", "Spoken morning news"], ["tv_popup", "Camera on the TV"]];
       for (const [k, name] of rows) {
         const v = k === "tv_popup" ? j.tv_camera_popup : j[k]; const on = /^on/.test(String(v));
         const row = document.createElement("div"); row.className = "btnrow"; row.style.alignItems = "center";
@@ -2829,6 +2829,12 @@
     } catch { $("rdNote").textContent = "Couldn't reach Bernard's server."; }
   }
   $("rdBtn").addEventListener("click", () => rdShow());
+  // Arrival greeting: remember this connection's address as home, so the phone joining this Wi-Fi counts as arriving.
+  $("homeHere").addEventListener("click", async () => {
+    const pass = store.get("bernud.dashKey"); if (!pass) { $("rdNote").textContent = "Enter your passcode in the CCP brief first."; return; }
+    try { const j = await (await fetch(`${SERVER}/dash/home-here`, { method: "POST", headers: { "x-dashboard-key": pass } })).json(); $("rdNote").textContent = j.message || "Saved."; }
+    catch { $("rdNote").textContent = "Couldn't reach Bernard's server."; }
+  });
   // ---- Google accounts: status and connect links (behind the dashboard passcode) ----
   async function gShow(post) {
     const pass = store.get("bernud.dashKey"); if (!pass) { $("gNote").textContent = "Enter your passcode in the CCP brief first."; return; }

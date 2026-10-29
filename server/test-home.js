@@ -17,7 +17,7 @@ const h = createHome({ kv, smartthings: st, sayOnPhone: async (x) => said.push(x
 
 let r = await h.arrive(); // first ever arrival counts
 assert.equal(r.acted, true); assert.deepEqual(st.calls, ["hall", "front door"]);
-assert.match(said[0], /Good evening, Nicholas\. Welcome home\. I've put the hall and front door lights on\. Still on today: Call Kerr at 7:30\s?pm/);
+assert.match(said[0], /Good evening, sir\. Welcome home\. I've put the hall and front door lights on\. Still on today: Call Kerr at 7:30\s?pm/);
 t = new Date("2026-10-25T18:35:00Z"); await h.leave();
 t = new Date("2026-10-25T18:40:00Z"); r = await h.arrive(); // Wi-Fi blip
 assert.equal(r.acted, false);
