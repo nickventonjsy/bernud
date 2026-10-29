@@ -14,6 +14,25 @@ never suggest anything in the avoid list (or a near copy of it); respect every l
 const pick = (arr, n, rnd) => { const a = [...arr]; const out = []; while (out.length < n && a.length) out.push(a.splice(Math.floor(rnd() * a.length), 1)[0]); return out; };
 const FOOD = /\b(like|likes|love|loves|hate|hates|doesn'?t|don'?t|won'?t|allerg|vegetarian|vegan|spicy|fish|chips|meat|chicken|beef|pork|eat|eats|food|dish|meal|serves|for four|people)\b/i;
 
+const FALLBACK = [
+  { name: "Chicken fajitas", why: "Quick, smoky and done in 20 minutes", extra: "chicken, peppers, wraps", minutes: 20 },
+  { name: "Thai green curry", why: "Fragrant and creamy with rice", extra: "green curry paste, coconut milk, chicken", minutes: 30 },
+  { name: "Spaghetti carbonara", why: "Proper Roman comfort food", extra: "pancetta, eggs, parmesan", minutes: 20 },
+  { name: "Beef stir-fry with noodles", why: "Fast and fresh", extra: "steak strips, noodles, pak choi", minutes: 15 },
+  { name: "Chilli con carne", why: "Hearty and better the next day", extra: "beef mince, kidney beans, chopped tomatoes", minutes: 45 },
+  { name: "Lamb kofta with flatbreads", why: "Spiced and great with yoghurt", extra: "lamb mince, flatbreads, yoghurt", minutes: 25 },
+  { name: "Chicken katsu curry", why: "Crispy chicken with a mild curry sauce", extra: "chicken breast, panko, curry sauce", minutes: 35 },
+  { name: "Sausage and mash with onion gravy", why: "A pub classic", extra: "sausages, potatoes, onions", minutes: 35 },
+  { name: "Halloumi and vegetable traybake", why: "One tray, hardly any washing up", extra: "halloumi, peppers, courgette", minutes: 35 },
+  { name: "Pork gyoza with rice", why: "Little effort, big flavour", extra: "frozen gyoza, rice, soy", minutes: 15 },
+  { name: "Steak with peppercorn sauce", why: "A treat for one", extra: "sirloin, cream, peppercorns", minutes: 20 },
+  { name: "Chicken shawarma bowl", why: "Spiced chicken, rice and salad", extra: "chicken thighs, pittas, salad", minutes: 30 },
+  { name: "Mushroom risotto", why: "Slow-stirred and comforting", extra: "arborio rice, mushrooms, parmesan", minutes: 35 },
+  { name: "Salmon teriyaki", why: "Sticky, sweet and quick", extra: "salmon fillet, teriyaki sauce, rice", minutes: 20, fish: true },
+  { name: "Smash burgers", why: "Crispy-edged and quick", extra: "beef mince, brioche buns, cheese", minutes: 20 },
+  { name: "Prawn and chorizo paella", why: "Smoky Spanish one-pan", extra: "prawns, chorizo, paella rice", minutes: 40, fish: true },
+];
+
 export function parseIdeas(raw, n) {
   const m = String(raw || "").match(/\{[\s\S]*\}/);
   if (!m) return [];
@@ -42,8 +61,16 @@ export function createMeals({ kv, memories, complete, rnd = Math.random, now = (
       prefs.length ? `Household likes, dislikes and notes (must respect):\n- ${prefs.join("\n- ")}` : "",
       avoid.length ? `Avoid (suggested recently or already saved): ${avoid.join("; ")}.` : "",
     ].filter(Boolean).join("\n");
-    const list = parseIdeas(await complete({ system: SYSTEM, text, maxTokens: 700, temperature: 1.0, json: true, prefer: "gemini" }), n);
-    if (!list.length) return { ok: false, error: "no_ideas", message: "I couldn't come up with ideas just now. Ask me again in a moment." };
+    // The fast brain first (Gemini was timing out at busy times), with a hard time limit so Bernard is never left waiting.
+    let raw = "";
+    try { raw = await Promise.race([complete({ system: SYSTEM, text, maxTokens: 700, temperature: 1.0, json: true, prefer: "groq" }), new Promise((_, no) => setTimeout(() => no(new Error("slow")), 18_000))]); } catch {}
+    let list = parseIdeas(raw, n);
+    // If the AIs are busy, pick from a built-in list instead of coming back empty.
+    if (!list.length) {
+      const dislikes = prefs.join(" ").toLowerCase();
+      const pool = FALLBACK.filter((d) => !avoid.some((a) => a.toLowerCase() === d.name.toLowerCase()) && !(d.fish && /fish/.test(dislikes)));
+      list = pick(pool, n, rnd);
+    }
     await kv.set("meal_suggestions", JSON.stringify([...past, ...list.map((i) => ({ name: i.name, t: now() }))].slice(-80)));
     return { ok: true, ideas: list, note: "Give him the dish names (and the one-line why) only, unless he asks for more. These are fresh: different from what you've suggested in the last month." };
   }

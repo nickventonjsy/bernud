@@ -63,3 +63,11 @@ const { createMeals } = await import("./meals.js");
   await m.ideas({}); assert.match(seen, /Avoid[^\n]*Lamb Kofta/, "last time's ideas are avoided");
 }
 console.log("meals ok");
+{
+  const { createMeals } = await import("./meals.js");
+  const mem = {}; const kv = { get: async (k) => mem[k] ?? null, set: async (k, v) => { mem[k] = v; } };
+  const m = createMeals({ kv, memories: async () => [{ text: "Michelle doesn't like fish.", category: "learned" }], complete: async () => { throw new Error("busy"); } });
+  const r = await m.ideas({ people: "just me" });
+  assert.equal(r.ok, true); assert.equal(r.ideas.length, 3);
+  console.log("meals fallback ok");
+}
