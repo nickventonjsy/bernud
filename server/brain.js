@@ -37,6 +37,13 @@ export const MICHELLE = [
   "Michelle's laugh is contagious, her smile is dazzling, and her judgement, sir, is mostly excellent.",
 ];
 let michelleRecent = [];
+// Only when he's talking ABOUT her ("what do you think of Michelle?"), never when he wants something done that
+// involves her (a WhatsApp, a reminder, her playlist, food for her): those go to the tools as normal.
+const MICHELLE_TASK = /\b(play|playlist|spotify|music|songs?|oldies|shuffle|put on|echo|alexa|speaker|send|message|whatsapp|text|telegram|tell her|ask her|call|ring|phone|video|remind|reminder|birthday|present|gift|buy|order|shop|shopping|cook|recipe|meal|dinner|eat|food|announce|email|calendar|book|remember|save|note|forget|reply|wa|tg)\b/i;
+export function isAboutMichelle(text) {
+  const t = String(text || "");
+  return /\bmichelle\b/i.test(t) && !MICHELLE_TASK.test(t) && t.trim().split(/\s+/).length <= 12;
+}
 export function michelleLine(rand = Math.random) {
   const pool = MICHELLE.filter((l) => !michelleRecent.includes(l));
   const line = pool[Math.floor(rand() * pool.length)];
@@ -95,7 +102,7 @@ export const GROUPS = {
   wakeup: { tools: ["wakeup"], re: /\b(wake|wake-?up|alarm|morning routine)\b/ },
   system: { tools: ["system_check"], re: /\b(working|status|system|broken|watchdog|health)\b/ },
   meals: { tools: ["meal_ideas", "send_to_phone"], re: /\b(cook|cooking|recipes?|meals?|dinner|lunch|breakfast|supper|tea tonight|eat|hungry|ingredients|fridge|cupboard|make with|bake|baking)\b/ },
-  devices: { tools: ["pc_control", "phone_control"], re: /\b(pc|computer|laptop|desktop|phone|mobile|torch|flash|ring|whatsapps?|telegrams?|call|ring|texts?|messages?|brightness|earpiece|ear ?speaker|loud ?speaker|speaker ?phone|do not disturb|dnd|open|app|lock|shut ?down|restart|sleep|volume|script|powershell|window|type)\b/ },
+  devices: { tools: ["pc_control", "phone_control"], re: /\b(send (?:it|that|this|her|him|them|a message)|message (?:her|him)|pc|computer|laptop|desktop|phone|mobile|torch|flash|ring|whatsapps?|telegrams?|call|ring|texts?|messages?|brightness|earpiece|ear ?speaker|loud ?speaker|speaker ?phone|do not disturb|dnd|open|app|lock|shut ?down|restart|sleep|volume|script|powershell|window|type)\b/ },
   markets: { tools: ["zentrawire", "get_crypto_prices", "price_alert"], re: /\b(crypto|bitcoin|btc|eth|ethereum|coins?|xrp|ripple|solana|doge|market|markets|watchlist|zentrawire|signals?|stocks?|shares|nvidia|tesla|moving|movers)\b/ },
   email: { tools: ["gmail_search", "gmail_read", "gmail_draft", "gmail_delete", "gmail_organise"], re: /\b(e-?mails?|mail|inbox|gmail|drafts?|reply|replies|wrote|sent|supplier|invoice|spam|junk|archive|label|tidy|mark (?:as )?(?:read|unread)|quote|quotation)\b/ },
   zapier: { tools: ["zapier"], re: /\b(zapier|notion|trello|sheets?|spreadsheet|todoist|facebook|instagram|shopify|xero|quickbooks|slack|outlook|dropbox|onedrive)\b/ },
@@ -479,7 +486,7 @@ export function createBrain({ briefHandler = null, dayLog = null, learner = null
       return { ok: true, reply, tools: [], model: "instant", ms: Date.now() - t0 };
     }
     // Michelle: always the same verdict, in slightly different words (not when he just wants her playlist).
-    const aboutMichelle = /\bmichelle\b/i.test(text) && !/\b(play|playlist|spotify|music|songs?|oldies|shuffle|put on|echo|alexa|speaker)\b/i.test(text);
+    const aboutMichelle = isAboutMichelle(text);
     // If he's taught Bernard how to put it, the AI says it his way (below); otherwise one of the set lines, instantly.
     if (aboutMichelle) {
       const reply = michelleLine();

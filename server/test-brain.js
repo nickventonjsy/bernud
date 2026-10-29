@@ -206,3 +206,9 @@ for (const t of ["give me my daily brief", "Morning brief please", "CCP brief", 
 }
 assert.notEqual((await bb.chat({ session: "b2", text: "what was in the brief about the supplier" })).model, "brief");
 console.log("brain ok");
+
+{ const { isAboutMichelle, pickGroups } = await import("./brain.js");
+  assert.ok(isAboutMichelle("What do you think of Michelle?"));
+  assert.ok(!isAboutMichelle("Can you send a WhatsApp message to Michelle and say hello Michelle?"));
+  assert.ok(pickGroups("Yeah, can you send that to her please?").includes("devices"));
+  console.log("michelle + whatsapp routing ok"); }
