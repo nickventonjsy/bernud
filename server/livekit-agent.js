@@ -33,8 +33,17 @@ const STT_MODEL = process.env.LIVEKIT_STT_MODEL || "whisper-large-v3-turbo";
 // How long a pause counts as "finished speaking". Nicholas thinks mid-sentence, so err long.
 const PAUSE_MS = Number(process.env.LIVEKIT_PAUSE_MS || 1400);
 
-// "Goodbye" ends the call: he says a short farewell and leaves the room (the dashboard uses the same words).
-export const BYE_RE = /^(?:ok(?:ay)?[ ,]*)?(?:bye|goodbye|good night|goodnight|that'?s all|that is all|that'?s it|nothing|no(?:pe)?(?:,? thanks?| thank you)?|thanks?(?: you)?(?: bernard| bernie| bernud)?|cheers|stop|cancel|never ?mind)[.!, ]*$/i;
+// "Goodbye" ends the call: he says a short farewell and leaves the room (the dashboard uses the same rule).
+// Clear farewells always end it. A bare "thanks" / "cheers" / "nothing" only ends a short call where Bernard didn't
+// just ask him something: in a lesson, game or long chat, "thank you" is part of the conversation (29 Oct: two Spanish
+// lessons were cut off by "Thank you."). "Stop" never ends a call (the practice partner uses it).
+export const BYE_RE = /^(?:ok(?:ay)?[ ,]*)?(?:(?:thanks?(?: you)?|cheers)[ ,]*(?:bernard|bernie|bernud)?[ ,]*)?(?:bye(?: bye)?|goodbye|good ?night|that'?s all|that is all|that'?s it(?: for now)?|nothing else|no(?:pe)?,? thanks?|no,? thank you|never ?mind|see you(?: later)?|speak (?:to you )?later)(?:[ ,]*(?:bernard|bernie|bernud|sir))?[.!, ]*$/i;
+export const SOFT_BYE_RE = /^(?:ok(?:ay)?[ ,]*)?(?:thanks?(?: you)?(?: very much)?|cheers|nothing|no(?:pe)?)(?:[ ,]*(?:bernard|bernie|bernud))?[.!, ]*$/i;
+export function isGoodbye(text, { lastReply = "", replies = 0 } = {}) {
+  const t = String(text || "").trim();
+  if (BYE_RE.test(t)) return true;
+  return SOFT_BYE_RE.test(t) && replies <= 3 && !/\?\s*$/.test(String(lastReply).trim());
+}
 const FAREWELLS = ["Very good, sir.", "Right you are, sir.", "Any time, sir.", "I'll be here, sir.", "Good night, sir."];
 const GREETINGS = ["Hello, sir.", "Sir.", "At your service, sir.", "Good to hear you, sir.", "Yes, sir?"];
 
@@ -79,7 +88,7 @@ export class BernardAgent extends voice.Agent {
     const last = [...chatCtx.items].reverse().find((i) => i.type === "message" && i.role === "user");
     const text = last ? (last.textContent ?? "") : "";
     if (!text.trim()) { say("brain: nothing to answer (empty transcript)"); return null; }
-    if (BYE_RE.test(text.trim())) {
+    if (isGoodbye(text, { lastReply: this.lastReply, replies: this.replies || 0 })) {
       this.ending = true; say(`goodbye heard: "${text.trim()}"`);
       const bye = /night/i.test(text) ? "Good night, sir." : FAREWELLS[Math.floor(Math.random() * FAREWELLS.length)];
       return new ReadableStream({ start(c) { c.enqueue(bye); c.close(); } });
@@ -92,6 +101,7 @@ export class BernardAgent extends voice.Agent {
       if (a.ui && this.room) this.room.localParticipant.sendText(JSON.stringify(a.ui), { topic: "bernud.ui" }).then(() => say("screen: " + Object.keys(a.ui).join(","))).catch((e) => say("screen send failed: " + String(e.message || e).slice(0, 100)));
     }
     catch (e) { reply = "I'm afraid my brain didn't answer: " + String(e.message || e).slice(0, 80) + "."; say("brain error: " + String(e.message || e).slice(0, 200)); }
+    this.replies = (this.replies || 0) + 1; this.lastReply = reply;
     return new ReadableStream({ start(c) { c.enqueue(reply); c.close(); } });
   }
 }

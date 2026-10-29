@@ -30,9 +30,15 @@ const { BrainLLM } = await import("./livekit-agent.js");
 const { llm } = await import("@livekit/agents");
 const b = new BrainLLM(); assert.ok(b instanceof llm.LLM); assert.equal(b.label(), "bernard.brain"); assert.throws(() => b.chat(), /llmNode answers instead/);
 // "Goodbye" gets a farewell without asking the brain, and marks the call to end.
-const { BYE_RE, BernardAgent } = await import("./livekit-agent.js");
-for (const w of ["Goodbye.", "ok bye", "That's all", "thanks Bernard", "Good night!"]) assert.ok(BYE_RE.test(w), w);
-for (const w of ["say goodbye to Michelle", "what's the weather", "thanks for that, what time is it"]) assert.ok(!BYE_RE.test(w), w);
+const { BYE_RE, isGoodbye, BernardAgent } = await import("./livekit-agent.js");
+for (const w of ["Goodbye.", "ok bye", "That's all", "thanks, bye", "Thank you, that's all", "Good night!", "no thanks", "See you later, Bernard."]) assert.ok(isGoodbye(w, { replies: 20, lastReply: "Shall we?" }), w);
+for (const w of ["say goodbye to Michelle", "what's the weather", "thanks for that, what time is it", "stop", "cancel"]) assert.ok(!isGoodbye(w), w);
+// A bare "thank you" ends a quick call, but not a lesson or game, and not straight after a question.
+assert.ok(isGoodbye("Thank you.", { replies: 1, lastReply: "The lights are on, sir." }));
+assert.ok(isGoodbye("thanks Bernard", { replies: 2, lastReply: "Done." }));
+assert.ok(!isGoodbye("Thank you.", { replies: 1, lastReply: "¿Cómo estás, Sir?" }));
+assert.ok(!isGoodbye("Thank you.", { replies: 8, lastReply: "Excelente, Sir. Glad to hear it." }));
+assert.ok(!BYE_RE.test("Thank you."));
 let brainCalls = 0;
 const ag = new BernardAgent({ session: "lk-t", fetchImpl: async () => { brainCalls++; return { ok: true, json: async () => ({ reply: "x" }) }; } });
 const ctxOf = (t) => ({ items: [{ type: "message", role: "user", textContent: t }] });

@@ -745,7 +745,7 @@
 
   // ---- Version numbers (bottom of the screen) ----
   // DASH_VERSION goes up by one with every dashboard change (a git hook bumps it automatically).
-  const DASH_VERSION = 43;
+  const DASH_VERSION = 44;
   (async () => {
     const set = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
     set("dashVer", DASH_VERSION);
@@ -1935,7 +1935,7 @@
   }
 
   // ---- LiveKit mode: Bernard's own voice through LiveKit (worker on the server), about half the ElevenLabs credits ----
-  let lkRoom = null, lkActive = false, lkAudio = null, lkSpeaking = false, lkTimer = null, lkBye = false, lkStateSeen = false;
+  let lkRoom = null, lkActive = false, lkAudio = null, lkSpeaking = false, lkTimer = null, lkBye = false, lkStateSeen = false, lkReplies = 0;
   // A call nobody speaks in is ended after a few quiet minutes, so a forgotten tab doesn't keep the line open.
   const LK_QUIET_MS = 4 * 60 * 1000;
   function lkPoke() { clearTimeout(lkTimer); lkTimer = setTimeout(() => { if (lkActive) lkCleanup("Ended after a few quiet minutes."); }, LK_QUIET_MS); }
@@ -1943,7 +1943,7 @@
     if (lkActive) { if (firstText) lkSend(firstText); return; }
     const pass = store.get("bernud.dashKey");
     if (!pass) return setMode("idle", "LiveKit mode needs your passcode: enter it in the CCP brief first.");
-    lkActive = true; busy = true; lkBye = false; lkStateSeen = false;
+    lkActive = true; busy = true; lkBye = false; lkStateSeen = false; lkReplies = 0;
     appCall("conversationStarted");
     await stopWakeWord();
     setMode("connecting", "One moment.");
@@ -1979,9 +1979,9 @@
         let text = ""; for await (const chunk of reader) { text += chunk; if (!mine) caption(text); }
         text = text.trim(); if (!text) return;
         lkPoke();
-        if (mine && BYE_RE.test(text)) lkBye = true;
+        if (mine && isGoodbye(text, lastAgentLine, lkReplies)) lkBye = true;
         if (mine) { captionDone(); $("subline").textContent = "You: " + (text.length > 140 ? text.slice(0, 137) + "…" : text); logLine("You", text); setEmotion("curious", 2); }
-        else { lastAgentLine = text; caption(text); captionDone(); reactTo(text); logLine("Bernard", text); }
+        else { lastAgentLine = text; lkReplies++; caption(text); captionDone(); reactTo(text); logLine("Bernard", text); }
       });
       // Screen actions from Bernard (open a camera, the brief), the same as in the other modes.
       room.registerTextStreamHandler("bernud.ui", async (reader) => {
@@ -2051,7 +2051,11 @@
   const useFree = () => engine() === "free" || (engine() === "auto" && Boolean(creditInfo && creditInfo.ok && creditInfo.saving));
   let freeActive = false, freeSession = "", freeRec = null, freeLast = "";
   const freeCb = {};
-  const BYE_RE = /^(?:ok(?:ay)?[ ,]*)?(?:bye|goodbye|good night|goodnight|that'?s all|that is all|that'?s it|nothing|no(?:pe)?(?:,? thanks?| thank you)?|thanks?(?: you)?(?: bernard| bernie| bernud)?|cheers|stop|cancel|never ?mind)[.!, ]*$/i;
+  // Same rule as the phone's voice worker: clear farewells end the call; a bare "thanks" only ends a short call where
+  // Bernard didn't just ask something (so a lesson or game isn't cut off by "thank you"). "Stop" never ends it.
+  const BYE_RE = /^(?:ok(?:ay)?[ ,]*)?(?:(?:thanks?(?: you)?|cheers)[ ,]*(?:bernard|bernie|bernud)?[ ,]*)?(?:bye(?: bye)?|goodbye|good ?night|that'?s all|that is all|that'?s it(?: for now)?|nothing else|no(?:pe)?,? thanks?|no,? thank you|never ?mind|see you(?: later)?|speak (?:to you )?later)(?:[ ,]*(?:bernard|bernie|bernud|sir))?[.!, ]*$/i;
+  const SOFT_BYE_RE = /^(?:ok(?:ay)?[ ,]*)?(?:thanks?(?: you)?(?: very much)?|cheers|nothing|no(?:pe)?)(?:[ ,]*(?:bernard|bernie|bernud))?[.!, ]*$/i;
+  const isGoodbye = (text, lastReply = "", replies = 0) => { const t = String(text || "").trim(); return BYE_RE.test(t) || (SOFT_BYE_RE.test(t) && replies <= 3 && !/\?\s*$/.test(String(lastReply).trim())); };
   const oneOf = (a) => a[Math.floor(Math.random() * a.length)];
 
   // Bernard waits for a proper pause before answering, so a short breath mid-sentence doesn't cut you off.
@@ -2228,7 +2232,7 @@
         if (!freeActive) return;
         if (heard === null) { $("subline").textContent = "Speech recognition isn't available here. Type instead, or switch to ElevenLabs in Settings."; return; }
         if (!heard) return;
-        if (BYE_RE.test(heard)) { $("subline").textContent = "You: " + heard; await freeSpeak(oneOf(["Very good, sir.", "Right you are.", "Any time.", "I'll be here."])); return; }
+        if (isGoodbye(heard, freeLast, i)) { $("subline").textContent = "You: " + heard; await freeSpeak(oneOf(["Very good, sir.", "Right you are.", "Any time.", "I'll be here."])); return; }
         if (await freeTurn(heard)) return;
       }
     } finally { if (freeActive) freeEnd(); }
