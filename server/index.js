@@ -340,6 +340,10 @@ async function learnFromVoice() {
   if (newest !== since) await db.kv.set("learn_voice_since", String(newest));
   if (learntAny) scheduleAgentPromptSync();
 }
+const PROMPT_FIXES = [
+  ["- If he hasn't said otherwise, check recall once for food likes, dislikes or allergies, and never suggest anything he's said he can't or won't eat.\n- Suggest two or three ideas, one short sentence each, built mainly on what he named plus everyday cupboard basics. Say which extra ingredients each needs, and roughly how long it takes. Ask which he fancies.",
+   "- Get the ideas from meal_ideas, every time (never make them up yourself): it rotates cuisines, leaves out what you've suggested in the last month, and respects the household's likes and dislikes. Pass what he has in and who it's for. Say the dish names with the one-line why, and ask which he fancies."],
+];
 let promptSyncTimer = null;
 function scheduleAgentPromptSync() { clearTimeout(promptSyncTimer); promptSyncTimer = setTimeout(() => syncAgentPrompt().catch((e) => console.error("prompt sync", e.message)), 3 * 60_000); promptSyncTimer.unref?.(); }
 async function syncAgentPrompt() {
@@ -349,7 +353,9 @@ async function syncAgentPrompt() {
   const cur = await (await fetch(`https://api.elevenlabs.io/v1/convai/agents/${agent}`, { headers: h, signal: AbortSignal.timeout(10_000) })).json();
   const prompt = cur?.conversation_config?.agent?.prompt?.prompt;
   if (!prompt) return false;
-  const base = prompt.split(LEARN_HEADING)[0].trimEnd();
+  let base = prompt.split(LEARN_HEADING)[0].trimEnd();
+  // One-off wording updates to his instructions (applied once; harmless if already done).
+  for (const [from, to] of PROMPT_FIXES) base = base.replace(from, to);
   const next = base + (await learner.promptBlock());
   if (next === prompt) return true;
   const r = await fetch(`https://api.elevenlabs.io/v1/convai/agents/${agent}`, { method: "PATCH", headers: h, body: JSON.stringify({ conversation_config: { agent: { prompt: { prompt: next } } } }), signal: AbortSignal.timeout(15_000) });
