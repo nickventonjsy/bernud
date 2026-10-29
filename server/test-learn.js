@@ -18,7 +18,7 @@ assert.equal(learnt, 1); assert.match(calls.at(-1), /Known already:\n- The loung
 answer = '{"learn": ["Nicholas\'s passcode is 123456"]}';
 assert.deepEqual(await L.fromExchange({ user: "my passcode is 123456 remember it", reply: "ok" }), []);
 // Prompt block + forget
-assert.match(await L.promptBlock(), /# What you've learnt about Nicholas[\s\S]*- The lounge lamp/);
+assert.match(await L.promptBlock(), /# What you know about Nicholas and his people[\s\S]*- The lounge lamp/);
 const gone = await L.forgetLast(); assert.match(gone.text, /lounge lamp/); assert.equal(await L.promptBlock(), "");
 // Transcript pairing
 answer = '{"learn": ["Michelle\'s birthday is 14 March"]}';

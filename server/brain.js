@@ -94,7 +94,7 @@ export const GROUPS = {
   firetv: { tools: ["firetv"], re: /\b(fire ?(tv|stick)|firestick|netflix|iplayer|prime video|disney|plex|itvx)\b/ },
   wakeup: { tools: ["wakeup"], re: /\b(wake|wake-?up|alarm|morning routine)\b/ },
   system: { tools: ["system_check"], re: /\b(working|status|system|broken|watchdog|health)\b/ },
-  meals: { tools: ["send_to_phone"], re: /\b(cook|cooking|recipes?|meals?|dinner|lunch|breakfast|supper|tea tonight|eat|hungry|ingredients|fridge|cupboard|make with|bake|baking)\b/ },
+  meals: { tools: ["meal_ideas", "send_to_phone"], re: /\b(cook|cooking|recipes?|meals?|dinner|lunch|breakfast|supper|tea tonight|eat|hungry|ingredients|fridge|cupboard|make with|bake|baking)\b/ },
   devices: { tools: ["pc_control", "phone_control"], re: /\b(pc|computer|laptop|desktop|phone|mobile|torch|flash|ring|whatsapps?|telegrams?|call|ring|texts?|messages?|brightness|earpiece|ear ?speaker|loud ?speaker|speaker ?phone|do not disturb|dnd|open|app|lock|shut ?down|restart|sleep|volume|script|powershell|window|type)\b/ },
   markets: { tools: ["zentrawire", "get_crypto_prices", "price_alert"], re: /\b(crypto|bitcoin|btc|eth|ethereum|coins?|xrp|ripple|solana|doge|market|markets|watchlist|zentrawire|signals?|stocks?|shares|nvidia|tesla|moving|movers)\b/ },
   email: { tools: ["gmail_search", "gmail_read", "gmail_draft", "gmail_delete", "gmail_organise"], re: /\b(e-?mails?|mail|inbox|gmail|drafts?|reply|replies|wrote|sent|supplier|invoice|spam|junk|archive|label|tidy|mark (?:as )?(?:read|unread)|quote|quotation)\b/ },
@@ -111,7 +111,7 @@ const ALWAYS = ["recall", "remember", "forget"];
 const DEFAULT_GROUPS = ["web", "weather", "calendar", "reminders"];
 // Which prompt sections go with which tools. Sections not listed here (identity, speaking, safety…) are always sent.
 const SECTION_TOOLS = [
-  [/^Samsung TVs/, ["tv_control"]], [/^ZentraWire/, ["zentrawire"]], [/^Spotify/, ["spotify_control", "spotify_info", "spotify_dj", "spotify_play_on"]], [/^Meal ideas/, "meals"],
+  [/^Samsung TVs/, ["tv_control"]], [/^ZentraWire/, ["zentrawire"]], [/^Spotify/, ["spotify_control", "spotify_info", "spotify_dj", "spotify_play_on"]], [/^Meal ideas/, ["meal_ideas", "send_to_phone"]],
   [/^Calendar/, ["calendar"]], [/^Reminders/, ["reminder", "price_alert"]], [/^Photos/, []], [/^The web/, ["web_search"]],
   [/^Ordering food/, "food"], [/^CCP email/, ["gmail_search", "gmail_draft", "gmail_delete", "gmail_organise"]], [/^Customer quotes/, ["ccp_search", "gmail_draft"]], [/^Round-ups/, ["roundups"]], [/^Parcels/, ["parcels"]], [/^Controlling his PC/, ["pc_control", "phone_control"]],
   [/^The CCP Brain/, ["ccp_search", "ccp_delete"]], [/^CCP morning brief/, ["ccp_brief_context"]], [/^CCP pricing/, ["ccp_search"]],

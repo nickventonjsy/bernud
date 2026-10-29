@@ -51,3 +51,15 @@ assert.deepEqual(r.checked, ["ccp"]); assert.deepEqual(r.not_connected, ["person
 await p.list(); assert.equal(calls, 1, "cached");
 assert.deepEqual(await p.lines(), ["Gun from Amazon: out for delivery, due 2026-11-02"]);
 console.log("digests + parcels ok");
+// Meal ideas: different cuisines, avoid list, preferences passed through.
+const { createMeals } = await import("./meals.js");
+{
+  const mem = {}; const kv = { get: async (k) => mem[k] ?? null, set: async (k, v) => { mem[k] = v; } };
+  let seen = "";
+  const m = createMeals({ kv, memories: async () => [{ text: "Michelle doesn't like fish.", category: "learned" }, { text: "Recipe: Chicken Jambalaya (suggested 28 October 2026). Serves four.", category: "recipe" }, { text: "Oakley is Michelle's son.", category: "people" }],
+    complete: async ({ text }) => { seen = text; return '{"ideas":[{"name":"Lamb Kofta","why":"x","extra":"lamb mince","minutes":30},{"name":"Pad Thai","why":"y"},{"name":"Chilli","why":"z"}]}'; } });
+  let r = await m.ideas({ ingredients: "chicken" });
+  assert.equal(r.ideas.length, 3); assert.match(seen, /doesn't like fish/); assert.match(seen, /Avoid[^\n]*Chicken Jambalaya/); assert.doesNotMatch(seen, /Oakley is/);
+  await m.ideas({}); assert.match(seen, /Avoid[^\n]*Lamb Kofta/, "last time's ideas are avoided");
+}
+console.log("meals ok");

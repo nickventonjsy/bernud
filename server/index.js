@@ -320,7 +320,7 @@ async function voiceWeek() {
 }
 // Self-learning, part 2: learn from ElevenLabs voice conversations too, and keep what he's learnt in his
 // ElevenLabs instructions (the server updates the agent's prompt itself, a few minutes after something new is learnt).
-const LEARN_HEADING = "\n\n# What you've learnt about Nicholas";
+const LEARN_HEADING = /\n\n# What you(?:'ve learnt about Nicholas| know about Nicholas and his people)/;
 async function learnFromVoice() {
   const key = process.env.ELEVENLABS_API_KEY || "", agent = process.env.AGENT_ID || "agent_0501m5q6cc15eqcrnamk2e1w84xc";
   if (!key) return;
@@ -358,6 +358,7 @@ async function syncAgentPrompt() {
   return true;
 }
 learner.onLearned = scheduleAgentPromptSync;
+if (process.env.NODE_ENV !== "test" && process.env.ELEVENLABS_API_KEY) setTimeout(() => syncAgentPrompt().catch((e) => console.error("prompt sync", e.message)), 20_000);
 if (process.env.NODE_ENV !== "test" && process.env.ELEVENLABS_API_KEY) { const t = setInterval(() => learnFromVoice().catch(() => {}), 3 * 60_000); t.unref?.(); setTimeout(() => learnFromVoice().catch(() => {}), 60_000); }
 
 export const weekly = createWeekly({ kv: db.kv, dayLog, notify, credits: creditsStatus, voiceWeek, complete: (a) => brain.complete(a),
@@ -411,6 +412,8 @@ export const watchdog = createWatchdog({ kv: db.kv, notify, checks: [
   { name: "Work laptop", alert: false, run: async () => ({ ok: workPc.online(), detail: workPc.online() ? "" : "off or not signed in" }) },
 ] });
 export const youtube = createYouTube({ web, pc, notify, smartthings, zw: { url: (process.env.ZW_URL || "https://zentrawire.onrender.com").replace(/\/+$/, ""), key: process.env.ZW_ASSISTANT_KEY || "" } });
+const { createMeals } = await import("./meals.js");
+export const meals = createMeals({ kv: db.kv, memories: () => db.all(), complete: (o) => brain.complete(o) });
 const { createParcels } = await import("./parcels.js");
 export const parcels = createParcels({ inboxes: { ccp: gmail, personal: personalGoogle }, complete: (o) => brain.complete(o) });
 // Scheduled round-ups on Telegram: end-of-day wrap-up, weekly spend, overnight cameras, payroll and bin reminders.
@@ -1077,13 +1080,17 @@ export async function handle(req, res) {
       const text = String(body.text || "").trim().slice(0, /^recipes?$/.test(category) ? 4000 : 1000);
       if (!text) return send(res, 400, { error: "text is required" });
       const row = await db.save(text, category);
+      scheduleAgentPromptSync();   // so it's in his instructions for the next conversation too
       return send(res, 200, { saved: true, memory: present(row) });
     }
 
     if (req.method === "GET" && path === "/memory/search") {
       const q = url.searchParams.get("query") || url.searchParams.get("q") || "";
       const rows = await db.all();
-      const found = rank(rows, q, 8).map(present);
+      // "Everything I've told you": all of it (recipes by name only); otherwise the best matches.
+      const everything = !String(q).replace(/["'\s]/g, "") || /\b(everything|all|anything)\b/i.test(q);
+      const short = (m) => (/^recipes?$/.test(m.category) ? { ...m, text: String(m.text).split(/\.\s/)[0] + " (full recipe saved)" } : m);
+      const found = (everything ? rows.slice(0, 60) : rank(rows, q, 10)).map(present).map(short);
       return send(res, 200, { query: q, count: found.length, total_memories: rows.length, memories: found,
         note: found.length ? undefined : (rows.length ? "Nothing saved matches that." : "No memories saved yet.") });
     }
@@ -1149,6 +1156,7 @@ export async function handle(req, res) {
     }
     if (path === "/claude/requests" && req.method === "POST") { const b = await readJson(req); return send(res, 200, await claudeRequests.handle({ ...b, via: b.action === "add" ? String(req.headers["x-bernud-via"] || "voice").slice(0, 12) : "" })); }
     if (path === "/receipts" && req.method === "POST") return send(res, 200, await receipts.handle(await readJson(req)));
+    if (path === "/meals/ideas" && req.method === "POST") { try { return send(res, 200, await meals.ideas(await readJson(req))); } catch (e) { return send(res, 200, { ok: false, error: "busy", message: "I couldn't come up with ideas just now. Ask me again in a moment." }); } }
     if (path === "/parcels" && req.method === "POST") { const b = await readJson(req); try { return send(res, 200, await parcels.list({ refresh: b.refresh === true })); } catch (e) { return send(res, 200, { ok: false, error: e.code === "busy" ? "The AI is busy, try again in a minute." : String(e.message).slice(0, 160) }); } }
     if (path === "/digests" && req.method === "POST") { const b = await readJson(req); if (b.tv_popup !== undefined) await db.kv.set("camera_tv_popup", b.tv_popup ? "on" : "off"); return send(res, 200, { ...(await digests.handle(b)), tv_camera_popup: (await db.kv.get("camera_tv_popup")) === "off" ? "off" : "on (after-hours person alerts, only when the TV is already on)" }); }
     if (path === "/priorities" && req.method === "POST") { const b = await readJson(req); return send(res, 200, await priorities.handle({ ...b, brief: await briefPriorities() })); }

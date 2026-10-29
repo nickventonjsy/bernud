@@ -29,7 +29,7 @@ export function parseLearn(raw) {
 // Things that should never be learnt however they're phrased.
 const BLOCK = /\b(password|passcode|pin\b|card number|account number|sort code|iban|api key|token|secret)\b|\b\d{6,}\b/i;
 
-export function createLearner({ db, complete, log = console, enabled = true, maxShown = 40 }) {
+export function createLearner({ db, complete, log = console, enabled = true, maxShown = 70 }) {
   let busy = 0;
 
   async function learned() {
@@ -37,11 +37,19 @@ export function createLearner({ db, complete, log = console, enabled = true, max
     return rows.slice(0, 200);
   }
 
-  // The block that goes into Bernard's instructions.
+  // The block that goes into Bernard's instructions: everything he's been told to remember or has picked up
+  // (people first), so he knows it without having to look it up. Saved recipes are listed by name only.
   async function promptBlock() {
-    const rows = (await learned()).slice(0, maxShown);
-    if (!rows.length) return "";
-    return "\n\n# What you've learnt about Nicholas\nThings he has told you before. Use them without being asked, and correct them if he tells you otherwise.\n" + rows.map((r) => "- " + r.text).join("\n");
+    const all = await db.all();
+    const isRecipe = (r) => /^recipes?$/.test(r.category || "");
+    const facts = all.filter((r) => !isRecipe(r) && String(r.text).length <= 300);
+    const order = (r) => (r.category === "people" ? 0 : r.category === "learned" ? 2 : 1);
+    const rows = facts.sort((a, b) => order(a) - order(b)).slice(0, maxShown);
+    const recipes = all.filter(isRecipe).map((r) => (String(r.text).match(/^Recipe:\s*([^.(\n]+)/i) || [])[1]).filter(Boolean).slice(0, 30);
+    if (!rows.length && !recipes.length) return "";
+    return "\n\n# What you know about Nicholas and his people\nThings he has told you to remember or that you've picked up. You know these already: use them without being asked and without calling recall, and correct them if he tells you otherwise.\n"
+      + rows.map((r) => "- " + r.text).join("\n")
+      + (recipes.length ? `\n- Recipes saved in his memory (use recall for the full recipe): ${recipes.join("; ")}.` : "");
   }
 
   async function save(text, { source = "learned" } = {}) {
