@@ -1,0 +1,12 @@
+import assert from "node:assert/strict";
+import { createZapier } from "./zapier.js";
+const calls=[];
+const z=createZapier({url:"https://x/mcp",fetchImpl:async(u,o)=>{const b=JSON.parse(o.body);calls.push(b.method);const h={get:(k)=>k==="mcp-session-id"?"s1":k==="content-type"?"text/event-stream":null};
+ let res={};
+ if(b.method==="tools/list")res={tools:[{name:"gmail_find_email",description:"Find",inputSchema:{properties:{query:{}},required:["query"]}},{name:"gmail_send_email",description:"Send",inputSchema:{properties:{to:{}}}}]};
+ if(b.method==="tools/call")res={content:[{type:"text",text:"ok "+b.params.name}]};
+ return {ok:true,status:200,headers:h,text:async()=>`event: message\ndata: ${JSON.stringify({jsonrpc:"2.0",id:b.id,result:res})}\n\n`};}});
+let r=await z.handle({action:"list"}); assert.equal(r.count,2); assert.equal(r.tools[1].changes_something,true);
+r=await z.handle({action:"run",tool:"gmail_send_email",args:{to:"a"}}); assert.equal(r.confirm_needed,true);
+r=await z.handle({action:"run",tool:"gmail_find_email",args:'{"query":"x"}'}); assert.equal(r.result,"ok gmail_find_email");
+console.log("zapier ok", calls.join(","));

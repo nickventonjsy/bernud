@@ -418,6 +418,8 @@ export const watchdog = createWatchdog({ kv: db.kv, notify, checks: [
   { name: "Work laptop", alert: false, run: async () => ({ ok: workPc.online(), detail: workPc.online() ? "" : "off or not signed in" }) },
 ] });
 export const youtube = createYouTube({ web, pc, notify, smartthings, zw: { url: (process.env.ZW_URL || "https://zentrawire.onrender.com").replace(/\/+$/, ""), key: process.env.ZW_ASSISTANT_KEY || "" } });
+const { createZapier } = await import("./zapier.js");
+export const zapier = createZapier({ url: (process.env.ZAPIER_MCP_URL || "").trim() });
 const { createMeals } = await import("./meals.js");
 export const meals = createMeals({ kv: db.kv, memories: () => db.all(), complete: (o) => brain.complete(o) });
 const { createParcels } = await import("./parcels.js");
@@ -1162,6 +1164,11 @@ export async function handle(req, res) {
     }
     if (path === "/claude/requests" && req.method === "POST") { const b = await readJson(req); return send(res, 200, await claudeRequests.handle({ ...b, via: b.action === "add" ? String(req.headers["x-bernud-via"] || "voice").slice(0, 12) : "" })); }
     if (path === "/receipts" && req.method === "POST") return send(res, 200, await receipts.handle(await readJson(req)));
+    if (path === "/zapier" && req.method === "POST") {
+      const b = await readJson(req);
+      try { const r = await zapier.handle(b); if (b.action === "run" && r.ok && !r.confirm_needed) dayLog.add("tool", "zapier " + String(b.tool || "").slice(0, 40)); return send(res, 200, r); }
+      catch (e) { console.error("zapier", e.message); return send(res, 200, { ok: false, error: e.code || "zapier_error", message: String(e.message).slice(0, 300) }); }
+    }
     if (path === "/meals/ideas" && req.method === "POST") { try { return send(res, 200, await meals.ideas(await readJson(req))); } catch (e) { return send(res, 200, { ok: false, error: "busy", message: "I couldn't come up with ideas just now. Ask me again in a moment." }); } }
     if (path === "/parcels" && req.method === "POST") { const b = await readJson(req); try { return send(res, 200, await parcels.list({ refresh: b.refresh === true })); } catch (e) { return send(res, 200, { ok: false, error: e.code === "busy" ? "The AI is busy, try again in a minute." : String(e.message).slice(0, 160) }); } }
     if (path === "/digests" && req.method === "POST") { const b = await readJson(req); if (b.tv_popup !== undefined) await db.kv.set("camera_tv_popup", b.tv_popup ? "on" : "off"); return send(res, 200, { ...(await digests.handle(b)), tv_camera_popup: (await db.kv.get("camera_tv_popup")) === "off" ? "off" : "on (after-hours person alerts, only when the TV is already on)" }); }
