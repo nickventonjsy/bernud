@@ -132,5 +132,52 @@ assert.equal(newsRuns, 1);
   assert.equal((await j2.sleepTimer({ action: "list" })).timers.length, 0);
   console.log("home reminders + sleep timer ok");
 }
+
+// Countdowns, life log, focus mode, away check.
+{
+  const kv3 = mem(); let t = Date.parse("2026-12-18T09:00:00Z"); const sent = [], spoken = [], acts = []; const power = { "Lounge lamp": "on", "Hall": "off", "55 TV": "on" };
+  const j3 = createJarvis({ kv: kv3, now: () => new Date(t), notify: async (x, o) => { sent.push(o.title + "|" + x); return true; }, sayOnPhone: async (x) => spoken.push(x),
+    pc: { online: () => false }, telegram: {}, brain: {}, speakMp3: async () => null, headlines: async () => [], dayLog: { add() {} }, voiceRequests: async () => [], saveMemory: async () => {}, imou: {}, eventsToday: async () => [], parcels: {},
+    dj: { mix: async ({ mood }) => { acts.push("mix " + mood); return { ok: true, playing_on: "PC" }; } }, pauseMusic: async () => acts.push("paused"),
+    lights: { list: async () => [{ name: "Lounge lamp", type: "light" }, { name: "Hall", type: "light" }, { name: "55 TV", type: "tv" }],
+      control: async (a) => { if (a.action === "status") return { ok: true, device: { power: power[a.device] } }; acts.push(`${a.device} ${a.action}${a.value ? " " + a.value : ""}`); if (a.action === "off") power[a.device] = "off"; return { ok: true }; } } });
+  // Countdowns
+  let r = await j3.countdown({ name: "Christmas" });
+  assert.equal(r.days, 7); assert.equal(r.says, "in 7 days");
+  r = await j3.countdown({ action: "add", name: "Tenerife holiday", date: "2026-12-19" });
+  assert.equal(r.says, "tomorrow");
+  assert.equal((await j3.countdown({ name: "holiday" })).name, "Tenerife holiday");
+  assert.equal((await j3.countdown({ action: "add", name: "x", date: "2026-01-01" })).ok, false);
+  await j3.countdown({ action: "add", name: "Mum's birthday", date: "1960-03-02", yearly: true });
+  assert.equal((await j3.countdown({ name: "mum's birthday" })).date, "2027-03-02");
+  await j3.countdownTick(); await j3.countdownTick();   // once a day only
+  assert.equal(sent.filter((x) => x.startsWith("⏳")).length, 1); assert.match(sent[0], /Tenerife holiday is tomorrow/);
+  // Life log
+  await j3.lifeLog({ action: "log", thing: "changed the car oil", when: "2026-09-01" });
+  r = await j3.lifeLog({ action: "last", thing: "oil change on the car" });
+  assert.equal(r.found, true); assert.equal(r.date, "2026-09-01"); assert.match(r.when, /months? ago|weeks ago/);
+  await j3.lifeLog({ action: "log", thing: "gym" }); await j3.lifeLog({ action: "log", thing: "gym", when: "2026-12-15" });
+  assert.equal((await j3.lifeLog({ action: "count", thing: "went to the gym", days: 7 })).times, 2);
+  assert.equal((await j3.lifeLog({ action: "last", thing: "dentist" })).found, false);
+  assert.equal((await j3.lifeLog({})).things.length, 2);
+  // Focus mode
+  r = await j3.focus({ minutes: 25 });
+  assert.equal(r.ok, true); assert.deepEqual(acts.slice(0, 2), ["all white cool", "mix focus: deep work, steady and calm, few vocals"]);
+  assert.equal((await j3.focus({ action: "status" })).minutes_left, 25);
+  t += 26 * 60_000; await j3.focusTick();
+  assert.match(spoken.at(-1), /Time's up, sir\. That's 25 minutes of focus/); assert.ok(acts.includes("paused"));
+  assert.equal((await j3.focus({ action: "status" })).running, false);
+  assert.equal((await j3.lifeLog({ action: "count", thing: "focus session", days: 1 })).times, 1);
+  // Away check: tells him what's on; then auto-off switches it off.
+  await kv3.set("home_state", JSON.stringify({ home: false }));
+  await j3.leftHome(); await j3.awayTick(); assert.ok(!sent.some((x) => x.startsWith("🔌")));   // not yet
+  t += 11 * 60_000; await j3.awayTick();
+  assert.match(sent.at(-1), /🔌 Away check\|Still on at home: Lounge lamp, 55 TV/);
+  await j3.awayCheck({ action: "auto_on" }); await j3.leftHome(); t += 11 * 60_000; await j3.awayTick();
+  assert.match(sent.at(-1), /switched them off/); assert.equal(power["55 TV"], "off");
+  await kv3.set("home_state", JSON.stringify({ home: true })); power.Hall = "on"; await j3.leftHome(); t += 11 * 60_000; const n = sent.length; await j3.awayTick();
+  assert.equal(sent.length, n);   // he came back, no check
+  console.log("countdowns + life log + focus + away check ok");
+}
 console.log("jarvis tests passed");
 process.exit(0);

@@ -126,6 +126,10 @@ export const GROUPS = {
   tvhome: { tools: ["tv_home_screen"], re: /\b(home ?screen|ambient|dashboard on the (?:tv|telly)|clock on the (?:tv|telly))\b/ },
   homerem: { tools: ["home_reminders", "reminder"], re: /\b(when i (?:get|come|arrive) (?:home|in|back)|when i'?m (?:home|back)|get home|once i'?m home)\b/ },
   sleeptimer: { tools: ["sleep_timer"], re: /\b(sleep timer|(?:off|stop|pause) in (?:an? |\d+|half|one|two|three|ten|twenty|thirty|forty|fifteen|forty-five)|in (?:an? hour|\d+ minutes?|half an hour)|cancel (?:the )?timer)\b/ },
+  countdown: { tools: ["countdown"], re: /\b(how (?:many|long) (?:days |sleeps |weeks )?(?:until|till|til|to go)|countdown|days (?:until|till|left)|sleeps (?:until|till))\b/ },
+  lifelog: { tools: ["life_log"], re: /\b(log (?:that|it|this)|log (?:i|my)|when did i (?:last|previously)|last time i|how many times (?:have|did) i|how often (?:have|do|did) i|what have i logged|undo (?:that|the) log)\b/ },
+  focus: { tools: ["focus_mode", "spotify_dj"], re: /\b(focus(?: mode| session| time)?|concentrat\w*|pomodoro|deep work|(?:time|minutes) left on (?:my|the) focus)\b/ },
+  awaycheck: { tools: ["away_check", "lights", "tv_control"], re: /\b(did i leave (?:anything|something|the \w+) on|(?:is )?anything (?:left )?on at home|left (?:anything|something|the \w+) on|away check|turn (?:things|stuff|everything) off (?:automatically )?when i leave)\b/ },
   weather: { tools: ["get_weather"], re: /\b(weather|rain|raining|wind|windy|temperature|cold|warm|hot|sunny|umbrella|forecast|coat|degrees|snow|storm)\b/ },
 };
 const ALWAYS = ["recall", "remember", "forget"];

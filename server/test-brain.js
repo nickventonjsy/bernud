@@ -221,3 +221,10 @@ console.log("brain ok");
   assert.ok(BRIEF_ASK.test("Can you give me my CCP morning brief, please?"));
   assert.ok(!BRIEF_ASK.test("Can you send the brief to Kerr"));
   console.log("brief phrasing ok"); }
+
+// New tools are reachable in phone voice mode.
+{ const has = (t, g) => assert.ok(pickGroups(t).includes(g), `${t} -> ${pickGroups(t)}`);
+  has("how many days until Christmas", "countdown"); has("log that I changed the car oil", "lifelog");
+  has("when did I last cut the grass", "lifelog"); has("focus mode for 45 minutes", "focus");
+  has("did I leave anything on", "awaycheck"); assert.ok(!pickGroups("turn the lights off").includes("awaycheck"));
+  console.log("new tool groups ok"); }

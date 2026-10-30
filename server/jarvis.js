@@ -252,7 +252,166 @@ export function createJarvis({ kv, notify, sayOnPhone, pc, telegram, lights, dj,
     }
   }
 
+  // ---------- countdowns: "how many days until my holiday?" ----------
+  const londonDay = (d) => new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(d);   // YYYY-MM-DD
+  const dayNum = (ymd) => Math.round(Date.parse(ymd + "T12:00:00Z") / 864e5);
+  const BUILT_IN = { christmas: "12-25", "christmas day": "12-25", "christmas eve": "12-24", "new year": "01-01", "new year's day": "01-01", "new year's eve": "12-31", halloween: "10-31", "bonfire night": "11-05", "valentine's day": "02-14", "liberation day": "05-09" };
+  function nextDate(c, today) {
+    if (!c.yearly) return c.date;
+    const md = c.date.slice(5), y = Number(today.slice(0, 4));
+    return `${y}-${md}` >= today ? `${y}-${md}` : `${y + 1}-${md}`;
+  }
+  async function countdown({ action = "list", name = "", date = "", yearly = false } = {}) {
+    let list = await loadJ("countdowns", []);
+    const today = londonDay(now());
+    const view = (c) => { const d = nextDate(c, today), n = dayNum(d) - dayNum(today); return { name: c.name, date: d, days: n, weeks: n >= 14 ? Math.floor(n / 7) : undefined, says: n === 0 ? "today" : n === 1 ? "tomorrow" : `in ${n} days` }; };
+    const key = String(name).toLowerCase().trim();
+    if (action === "add") {
+      if (!key) return { ok: false, error: "What's the countdown called?" };
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date))) return { ok: false, error: "Give the date as YYYY-MM-DD." };
+      if (date < today && !yearly) return { ok: false, error: "That date has already passed." };
+      list = [...list.filter((c) => c.name.toLowerCase() !== key), { name: String(name).trim().slice(0, 60), date, yearly: Boolean(yearly) }];
+      await kv.set("countdowns", JSON.stringify(list.slice(-30)));
+      return { ok: true, ...view(list.at(-1)) };
+    }
+    if (action === "remove") {
+      const keep = list.filter((c) => !c.name.toLowerCase().includes(key));
+      await kv.set("countdowns", JSON.stringify(keep));
+      return { ok: true, removed: list.length - keep.length };
+    }
+    // "how long until X": a saved one, else a built-in date like Christmas.
+    if (key) {
+      const hit = list.find((c) => c.name.toLowerCase() === key) || list.find((c) => c.name.toLowerCase().includes(key) || key.includes(c.name.toLowerCase()));
+      if (hit) return { ok: true, ...view(hit) };
+      const b = Object.keys(BUILT_IN).find((k) => key === k || key.replace(/^the /, "") === k);
+      if (b) return { ok: true, ...view({ name: b.replace(/\b\w/g, (m) => m.toUpperCase()), date: "2000-" + BUILT_IN[b], yearly: true }) };
+      return { ok: false, error: `No countdown called "${name}". Ask him for the date and add it.`, saved: list.map((c) => c.name) };
+    }
+    return { ok: true, countdowns: list.map(view).sort((a, b) => a.days - b.days), note: list.length ? undefined : "No countdowns saved yet." };
+  }
+  // Once a day after 8am: a nudge for anything a week away or tomorrow; one-off countdowns are tidied once passed.
+  async function countdownTick() {
+    const t = now(), today = londonDay(t);
+    if (Number(new Intl.DateTimeFormat("en-GB", { timeZone: TZ, hour: "numeric", hour12: false }).format(t)) % 24 < 8) return;
+    if ((await kv.get("countdown_checked")) === today) return;
+    await kv.set("countdown_checked", today);
+    const list = await loadJ("countdowns", []);
+    const keep = list.filter((c) => c.yearly || c.date >= today);
+    if (keep.length !== list.length) await kv.set("countdowns", JSON.stringify(keep));
+    for (const c of keep) {
+      const n = dayNum(nextDate(c, today)) - dayNum(today);
+      if (n === 7 || n === 1 || n === 0) await notify(n === 0 ? `It's ${c.name} today.` : `${c.name} is ${n === 1 ? "tomorrow" : "a week today"}.`, { title: "⏳ Countdown" }).catch(() => {});
+    }
+  }
+
+  // ---------- life log: "log that I changed the oil" / "when did I last…" ----------
+  const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\b(the|a|an|my|i|did|last|time|that|of|to|went|go|was|have|had)\b/g, " ").replace(/\s+/g, " ").trim();
+  const sameThing = (a, b) => { const x = norm(a), y = norm(b); if (!x || !y) return false; if (x.includes(y) || y.includes(x)) return true; const xs = x.split(" ").filter((w) => w.length > 2); return xs.length > 0 && xs.filter((w) => y.split(" ").some((v) => v.startsWith(w.slice(0, 4)))).length >= Math.ceil(xs.length / 2); };
+  const ago = (ms) => { const d = Math.floor(ms / 864e5); return d === 0 ? "today" : d === 1 ? "yesterday" : d < 14 ? `${d} days ago` : d < 60 ? `${Math.round(d / 7)} weeks ago` : `${Math.round(d / 30)} months ago`; };
+  async function lifeLog({ action = "list", thing = "", note = "", days = 30, when = "" } = {}) {
+    let list = await loadJ("life_log", []);
+    const t = now();
+    if (action === "log") {
+      thing = String(thing).trim().slice(0, 80);
+      if (!thing) return { ok: false, error: "What should I log?" };
+      const at = /^\d{4}-\d{2}-\d{2}/.test(String(when)) ? new Date(when).toISOString() : t.toISOString();
+      list.push({ thing, note: String(note || "").slice(0, 200), at });
+      await kv.set("life_log", JSON.stringify(list.slice(-1500)));
+      const before = list.filter((e) => sameThing(e.thing, thing) && e.at < at).at(-1);
+      return { ok: true, logged: thing, previous: before ? ago(Date.parse(at) - Date.parse(before.at)) + " before that" : "first time logged" };
+    }
+    if (action === "last") {
+      const hit = list.filter((e) => sameThing(e.thing, thing)).sort((a, b) => a.at.localeCompare(b.at)).at(-1);
+      if (!hit) return { ok: true, found: false, note: `Nothing logged for "${thing}". It only knows what he's told it to log.` };
+      return { ok: true, found: true, thing: hit.thing, when: ago(t - new Date(hit.at)), date: londonDay(new Date(hit.at)), note: hit.note || undefined };
+    }
+    if (action === "count") {
+      const since = t.getTime() - Math.min(Math.max(Number(days) || 30, 1), 3650) * 864e5;
+      const hits = list.filter((e) => sameThing(e.thing, thing) && Date.parse(e.at) >= since);
+      return { ok: true, thing, times: hits.length, days: Number(days) || 30, dates: hits.slice(-10).map((e) => londonDay(new Date(e.at))) };
+    }
+    if (action === "undo") { const gone = list.pop(); await kv.set("life_log", JSON.stringify(list)); return { ok: true, removed: gone?.thing || null }; }
+    const counts = {};
+    for (const e of list) { const k = e.thing.toLowerCase(); counts[k] = { thing: e.thing, times: (counts[k]?.times || 0) + 1, last: e.at }; }
+    return { ok: true, things: Object.values(counts).sort((a, b) => b.last.localeCompare(a.last)).slice(0, 25).map((c) => ({ thing: c.thing, times: c.times, last: ago(t - new Date(c.last)) })) };
+  }
+
+  // ---------- focus mode: bright cool light, focus music, a break call when time's up ----------
+  async function focus({ action = "start", minutes = 25, music = true, light = true } = {}) {
+    const cur = await loadJ("focus_session", null);
+    const t = now().getTime();
+    if (action === "status") return cur ? { ok: true, running: true, minutes_left: Math.max(0, Math.ceil((cur.due - t) / 60_000)), ends: hhmm(new Date(cur.due)) } : { ok: true, running: false };
+    if (action === "stop") {
+      if (!cur) return { ok: true, running: false };
+      await kv.set("focus_session", "null");
+      const done = Math.round((t - cur.started) / 60_000);
+      if (done >= 5) await lifeLog({ action: "log", thing: "focus session", note: `${done} minutes (stopped early)` });
+      return { ok: true, stopped: true, minutes_done: done };
+    }
+    const m = Math.min(Math.max(Number(minutes) || 25, 5), 180);
+    const s = { started: t, due: t + m * 60_000, minutes: m };
+    await kv.set("focus_session", JSON.stringify(s));
+    const did = [];
+    if (light) { try { const r = await lights.control({ device: "all", action: "white", value: "cool" }); if (r?.ok !== false) did.push("lights to cool white"); } catch (e) { log.error?.("focus lights", e.message); } }
+    if (music && dj?.mix) { try { const r = await dj.mix({ mood: "focus: deep work, steady and calm, few vocals" }); if (r?.ok) did.push(`focus music on ${r.playing_on || "Spotify"}`); } catch (e) { log.error?.("focus music", e.message); } }
+    return { ok: true, minutes: m, ends: hhmm(new Date(s.due)), done: did, note: "He gets a spoken break call on the phone and a notification when it ends." };
+  }
+  async function focusTick() {
+    const cur = await loadJ("focus_session", null);
+    if (!cur || cur.due > now().getTime()) return;
+    await kv.set("focus_session", "null");
+    await lifeLog({ action: "log", thing: "focus session", note: `${cur.minutes} minutes` });
+    const n = (await lifeLog({ action: "count", thing: "focus session", days: 1 })).times;
+    const line = `Time's up, sir. That's ${cur.minutes} minutes of focus${n > 1 ? `, and ${n} sessions today` : ""}. Take a short break.`;
+    await pauseMusic().catch(() => {});
+    try { await sayOnPhone(line); } catch {}
+    await notify(line, { title: "🎯 Focus done" }).catch(() => {});
+  }
+
+  // ---------- away check: did he leave lights or a TV on? ----------
+  const AWAY = { enabled: true, auto_off: false, after_minutes: 10 };
+  async function awayCheck({ action = "status" } = {}) {
+    const cfg = { ...AWAY, ...(await loadJ("away_check", {})) };
+    if (action === "on" || action === "off") cfg.enabled = action === "on";
+    if (action === "auto_on" || action === "auto_off") cfg.auto_off = action === "auto_on";
+    if (action !== "status" && action !== "check_now") await kv.set("away_check", JSON.stringify(cfg));
+    if (action === "check_now") return { ok: true, ...(await whatsOn()) };
+    return { ok: true, enabled: cfg.enabled, auto_off: cfg.auto_off, after_minutes: cfg.after_minutes,
+      note: cfg.enabled ? `About ${cfg.after_minutes} minutes after he leaves home, it checks the lights and TVs and ${cfg.auto_off ? "switches off anything left on, then tells him" : "tells him what's still on"}.` : "Away check is off." };
+  }
+  async function whatsOn() {
+    const devs = (await lights.list?.().catch(() => [])) || [];
+    const on = [], unknown = [];
+    for (const d of devs.filter((x) => x.name && !x.error && (x.type === "light" || x.type === "tv")).slice(0, 20)) {
+      try { const r = await lights.control({ device: d.name, action: "status" }); const p = r?.device?.power ?? r?.power ?? r?.status?.power; if (p === "on") on.push(d.name); else if (p == null) unknown.push(d.name); }
+      catch { unknown.push(d.name); }
+    }
+    return { on, checked: devs.length, unknown: unknown.length ? unknown : undefined };
+  }
+  async function leftHome() {
+    const cfg = { ...AWAY, ...(await loadJ("away_check", {})) };
+    if (cfg.enabled) await kv.set("away_check_due", String(now().getTime() + cfg.after_minutes * 60_000));
+  }
+  async function awayTick() {
+    const due = Number(await kv.get("away_check_due")) || 0;
+    if (!due || due > now().getTime()) return;
+    await kv.set("away_check_due", "0");
+    const st = await loadJ("home_state", {});
+    if (st.home) return;   // came back already
+    const cfg = { ...AWAY, ...(await loadJ("away_check", {})) };
+    const { on } = await whatsOn();
+    if (!on.length) return;
+    if (cfg.auto_off) {
+      const off = [];
+      for (const name of on) { try { await lights.control({ device: name, action: "off" }); off.push(name); } catch {} }
+      await notify(`You left ${off.join(", ")} on, so I've switched ${off.length === 1 ? "it" : "them"} off.`, { title: "🔌 Away check" }).catch(() => {});
+    } else {
+      await notify(`Still on at home: ${on.join(", ")}. Ask me to turn ${on.length === 1 ? "it" : "them"} off.`, { title: "🔌 Away check" }).catch(() => {});
+    }
+    dayLog?.add("event", `Away check: ${on.length} left on`);
+  }
+
   let timer = null;
-  return { homeReminders, arrivedHome, sleepTimer, sleepTick, announce, partyMode, sports, sportsTick, youtube, rewind, writeDiary, newsAudio, ambient,
-    start() { if (timer) return; timer = setInterval(() => { sportsTick().catch(() => {}); sleepTick().catch(() => {}); }, 30_000); timer.unref?.(); } };
+  return { countdown, countdownTick, lifeLog, focus, focusTick, awayCheck, leftHome, awayTick, homeReminders, arrivedHome, sleepTimer, sleepTick, announce, partyMode, sports, sportsTick, youtube, rewind, writeDiary, newsAudio, ambient,
+    start() { if (timer) return; timer = setInterval(() => { sportsTick().catch(() => {}); sleepTick().catch(() => {}); focusTick().catch(() => {}); awayTick().catch(() => {}); countdownTick().catch(() => {}); }, 30_000); timer.unref?.(); } };
 }

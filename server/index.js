@@ -375,8 +375,9 @@ const PROMPT_FIXES = [
 - Practice partner: for a job interview, a difficult conversation, a sales call or a speech, play the other person realistically (a tough interviewer, an awkward customer), one question or reply at a time. When he says stop, give three short points: what went well, what to improve, and one better phrasing.
 
 ` + "# Not wired up yet")),
-  (base) => (base.includes("- announce, party_mode") ? base : base.replace("- end_call: when he says goodbye", "- announce, party_mode, tv_home_screen, home_reminders, sleep_timer, sports, rewind, diary, news_audio and video_summary: see \"Around the house: extras\", \"Sport\" and \"Looking back\".\n- end_call: when he says goodbye")),
+  (base) => (base.includes("- announce, party_mode") ? base : base.replace("- end_call: when he says goodbye", "- announce, party_mode, tv_home_screen, home_reminders, sleep_timer, countdown, life_log, focus_mode, away_check, sports, rewind, diary, news_audio and video_summary: see \"Around the house: extras\", \"Sport\" and \"Looking back\".\n- end_call: when he says goodbye")),
   (base) => (base.includes("When he says it didn't work") ? base : base.replace("- Receipts, always.", "- When he says it didn't work, believe him. Never repeat that something worked once he's told you it hasn't: you can't see his screens or hear his speakers. Say what the tool did report (\"the TV accepted the command\"), say what's probably wrong, and give the fix or the next thing to try.\n- Receipts, always.")),
+  (base) => (base.includes("focus_mode") ? base : base.replace("- Arriving home: when his phone joins", "- Countdowns: \"how many days until Christmas / my holiday?\" use countdown (Christmas, New Year, Halloween, Bonfire Night and Liberation Day are built in); \"start a countdown to…\" adds one. He's nudged a week before and the day before.\n- Life log: \"log that I changed the oil\", \"when did I last cut the grass?\", \"how many times have I been to the gym this month?\" use life_log. It only knows what he's logged; if nothing's there, say so and offer to log it now.\n- Focus mode: \"focus mode for 45 minutes\" / \"I need to concentrate\" use focus_mode: cool white lights and a calm mix, then a spoken break call when time's up. Say when it ends, briefly.\n- Away check: about ten minutes after he leaves, lights and TVs left on are flagged on his phone (or switched off if he's turned auto-off on). \"Did I leave anything on?\" is away_check check_now; offer to switch off what's on.\n- Arriving home: when his phone joins")),
   (base) => (base.includes("sleep_timer") ? base : base.replace("- Arriving home: when his phone joins", "- Reminders for when he gets home: \"remind me to put the bins out when I get in\" uses home_reminders add (not reminder). They go off the next time he arrives home.\n- Sleep timer: \"turn the music off in half an hour\", \"TV off in an hour\", \"everything off in an hour\" use sleep_timer. Say the clock time it'll happen.\n- Arriving home: when his phone joins")),
   (base) => (base.includes("spoken morning news at half seven") ? base : base.replace("and bin night on Wednesday at seven before Thursday's collection,", "the day's diary at half ten at night, the spoken morning news at half seven, and bin night on Wednesday at seven before Thursday's collection,")),
 ];
@@ -1157,7 +1158,7 @@ export async function handle(req, res) {
     if (!PHONE_SECRET || req.headers["x-phone-key"] !== PHONE_SECRET) return send(res, 401, { error: "unauthorised" });
     const ev = String(url.searchParams.get("e") || "");
     if (ev === "arrive") { dayLog.add("event", "Arrived home", "phone"); const r = await home.arrive(); if (r.acted) r.home_reminders = await jarvis.arrivedHome().catch(() => []); return send(res, 200, r); }
-    if (ev === "leave") { dayLog.add("event", "Left home", "phone"); return send(res, 200, await home.leave()); }
+    if (ev === "leave") { dayLog.add("event", "Left home", "phone"); const r = await home.leave(); await jarvis.leftHome().catch(() => {}); return send(res, 200, r); }
     // The Bernard app reports joining / losing Wi-Fi; it's home if the phone's internet address matches the house's.
     if (ev === "wifi") {
       const homeIps = await homeAddresses(), ip = clientIp(req);
@@ -1168,7 +1169,7 @@ export async function handle(req, res) {
     if (ev === "wifi_lost") {
       let st = {}; try { st = JSON.parse((await db.kv.get("home_state")) || "{}"); } catch {}
       if (!st.home) return send(res, 200, { ok: true, acted: false });
-      dayLog.add("event", "Left home (Wi-Fi)", "phone"); return send(res, 200, await home.leave());
+      dayLog.add("event", "Left home (Wi-Fi)", "phone"); const r = await home.leave(); await jarvis.leftHome().catch(() => {}); return send(res, 200, r);
     }
     return send(res, 400, { error: "e must be arrive, leave, wifi or wifi_lost" });
   }
@@ -1267,6 +1268,10 @@ export async function handle(req, res) {
     }
     // ---- the "Jarvis" extras ----
     if (path === "/home/reminders" && req.method === "POST") return send(res, 200, await jarvis.homeReminders(await readJson(req)));
+    if (path === "/countdown" && req.method === "POST") return send(res, 200, await jarvis.countdown(await readJson(req)));
+    if (path === "/life-log" && req.method === "POST") return send(res, 200, await jarvis.lifeLog(await readJson(req)));
+    if (path === "/focus" && req.method === "POST") return send(res, 200, await jarvis.focus(await readJson(req)));
+    if (path === "/away-check" && req.method === "POST") return send(res, 200, await jarvis.awayCheck(await readJson(req)));
     if (path === "/sleep-timer" && req.method === "POST") return send(res, 200, await jarvis.sleepTimer(await readJson(req)));
     if (path === "/announce" && req.method === "POST") return send(res, 200, await jarvis.announce(await readJson(req)));
     if (path === "/party" && req.method === "POST") { try { return send(res, 200, await jarvis.partyMode(await readJson(req))); } catch (e) { return send(res, 200, { ok: false, message: String(e.message).slice(0, 200) }); } }
