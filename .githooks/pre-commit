@@ -1,0 +1,10 @@
+#!/bin/sh
+# Bump the dashboard version number whenever a dashboard file changes (unless it was bumped by hand).
+files=$(git diff --cached --name-only | grep -E '^(index\.html|camera\.html|facemesh\.js|sw\.js|manifest\.webmanifest|[^/]+\.(webp|png|svg))$')
+[ -z "$files" ] && exit 0
+git diff --cached -U0 index.html | grep -q '^+.*const DASH_VERSION' && exit 0
+n=$(grep -oE 'const DASH_VERSION = [0-9]+' index.html | grep -oE '[0-9]+$')
+[ -z "$n" ] && exit 0
+sed -i "s/const DASH_VERSION = $n;/const DASH_VERSION = $((n+1));/" index.html
+git add index.html
+echo "dashboard version -> v$((n+1))"
