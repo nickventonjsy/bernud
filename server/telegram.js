@@ -7,8 +7,20 @@ const chunks = (t, n = 3900) => { const out = []; t = String(t || ""); while (t.
 
 // transcribe(buffer, mime) -> text; speak(text) -> { mp3: Buffer } or null. Both optional.
 // photo({ data: Buffer, mime, note }) -> { ok, message } handles a photo (a receipt). Optional.
+// Imou/Dahua camera pictures can come wrapped in their "DHAV" container: the JPEG sits inside it. Pull it out.
+// Returns null if there's no JPEG inside (an encrypted picture: "image encryption" is on in the Imou app).
+export function unwrapPicture(b) {
+  if (!b || b.length < 100) return null;
+  if (b[0] === 0xff && b[1] === 0xd8) return b;
+  const start = b.indexOf(Buffer.from([0xff, 0xd8, 0xff]));
+  if (start < 0) return null;
+  const end = b.lastIndexOf(Buffer.from([0xff, 0xd9]));
+  const jpg = b.subarray(start, end > start ? end + 2 : b.length);
+  return jpg.length > 1000 ? jpg : null;
+}
 // What a downloaded picture really is, from its first bytes.
 export function pictureKind(b) {
+  if (b.subarray(0, 4).toString() === "DHAV") return "dhav";
   if (b[0] === 0xff && b[1] === 0xd8) return "jpeg";
   if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return "png";
   if (b.subarray(0, 4).toString() === "RIFF" && b.subarray(8, 12).toString() === "WEBP") return "webp";
@@ -98,11 +110,12 @@ export function createTelegram({ token, kv, chat, shopping, transcribe = null, s
             for (let i = 0; i < 4; i++) {
               if (i) await new Promise((ok) => setTimeout(ok, photoRetryMs));
               r = await fetchImpl(photo, { signal: AbortSignal.timeout(15_000) }).catch(() => null);
-              const type = r?.headers?.get?.("content-type") || "image/jpeg";
-              if (r?.ok && /^image\//.test(type)) { data = Buffer.from(await r.arrayBuffer()); if (data.length > 1000) break; }
+              // Imou serves some pictures as application/octet-stream (DHAV-wrapped): judge by the bytes, not the type.
+              if (r?.ok) { data = Buffer.from(await r.arrayBuffer()); if (data.length > 1000) break; }
               data = null;
             }
             if (!data) throw new Error(`picture not ready (${r?.status || "no answer"})`);
+            if (pictureKind(data) !== "jpeg" && pictureKind(data) !== "png") { const jpg = unwrapPicture(data); if (jpg) data = jpg; }
             const kind = pictureKind(data);
             try {
               if (kind !== "jpeg" && kind !== "png") throw new Error(`not a JPEG or PNG (${kind})`);
@@ -110,6 +123,8 @@ export function createTelegram({ token, kv, chat, shopping, transcribe = null, s
             } catch (e3) {
               // Telegram couldn't process it as a photo: say what it was (for diagnosis) and send it as a file instead.
               log.error?.("telegram photo", `${data.length} bytes, ${kind}, starts ${data.subarray(0, 12).toString("hex")}:`, e3.message);
+              // A DHAV picture with no JPEG inside is encrypted by the camera: a file he can't open is no use.
+              if (kind === "dhav") { await say(owner.id, body + "\n<i>No picture: this camera encrypts its pictures. Turn off image encryption for it in the Imou app to get photos here.</i>", { parse_mode: "HTML" }); return true; }
               await apiForm("sendDocument", { chat_id: String(owner.id), caption: body, parse_mode: "HTML" }, { document: { name: "camera." + (kind === "unknown" ? "bin" : kind === "jpeg" ? "jpg" : kind), data, type: r.headers?.get?.("content-type") || "application/octet-stream" } });
             }
             return true;

@@ -82,4 +82,17 @@ assert.equal(up.length, 1); assert.equal(up[0].get("photo").size, 3000); assert.
     return fetchImpl(url, o); } });
   assert.equal(await tg5.alert("Motion", { title: "Camera", photo: "https://cam:8443/q.jpg" }), true);
   assert.deepEqual(docs, ["sendDocument"]); }
+
+// Imou "DHAV"-wrapped camera pictures: the JPEG inside is pulled out; an encrypted one (no JPEG inside) gives null.
+{
+  const { unwrapPicture, pictureKind } = await import("./telegram.js");
+  const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(2000, 7), Buffer.from([0xff, 0xd9])]);
+  const wrapped = Buffer.concat([Buffer.from("DHAV"), Buffer.from([0xfb, 0, 0, 0]), Buffer.alloc(40), jpeg, Buffer.from("dhav"), Buffer.alloc(8)]);
+  assert.equal(pictureKind(wrapped), "dhav");
+  const out = unwrapPicture(wrapped);
+  assert.equal(pictureKind(out), "jpeg"); assert.equal(out.length, jpeg.length);
+  assert.equal(unwrapPicture(Buffer.concat([Buffer.from("DHAV"), Buffer.alloc(3000, 9)])), null);
+  console.log("camera picture unwrap ok");
+}
+
 console.log("telegram tests passed"); process.exit(0);

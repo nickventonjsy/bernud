@@ -151,6 +151,7 @@ export function createJarvis({ kv, notify, sayOnPhone, pc, telegram, lights, dj,
       text: `Date: ${londonDay(now())}\nWhat he asked or did today:\n- ${asked.join("\n- ")}` });
     const entry = `Diary ${londonDay(now())}: ${String(text).trim()}`;
     await saveMemory(entry.slice(0, 2000), "diary");
+    log.log?.(`diary written (${entry.length} chars)`);
     return entry;
   }
 
@@ -165,8 +166,9 @@ export function createJarvis({ kv, notify, sayOnPhone, pc, telegram, lights, dj,
       system: "You are Bernud, a dry-witted English butler, reading Nicholas a short morning news bulletin aloud. Write it as one flowing spoken script under 1,000 characters: a one-line greeting, the stories that matter most grouped by topic, plainly told, then a one-line sign-off. Only use the headlines given. No lists, symbols or URLs.",
       text: items.join("\n") });
     const audio = await speakMp3(script);
-    if (!audio?.mp3) return { ok: false, message: "Couldn't make the audio.", script };
-    const sent = await telegram.audio(audio.mp3, "🎙 Your morning news from Bernud").catch(() => false);
+    if (!audio?.mp3) { log.error?.("news audio: no audio made"); return { ok: false, message: "Couldn't make the audio.", script }; }
+    const sent = await telegram.audio(audio.mp3, "🎙 Your morning news from Bernud").catch((e) => { log.error?.("news audio send", e.message); return false; });
+    log.log?.(`news audio: ${sent ? "sent" : "NOT sent"} (${script.length} chars, ${audio.voice} voice)`);
     return { ok: Boolean(sent), sent, chars: script.length, voice: audio.voice };
   }
 
