@@ -700,7 +700,7 @@
     <div class="note" id="privNote"></div>
     <hr style="border:0;border-top:1px solid var(--line, #5a1a1f);margin:16px 0">
     <p><b style="color:var(--text)">Round-ups and reminders.</b> Sent to your Telegram: end-of-day wrap-up (weekdays), weekly spend (Sundays), overnight cameras (8am), payroll reminders, bin night, and the camera popping up on the TV when someone's seen after hours (only if the TV is already on).</p>
-    <div class="btnrow"><button class="btn" type="button" id="rdBtn">Show round-ups</button><button class="btn" type="button" id="homeHere" title="Press this on a device connected to your home Wi-Fi">This is my home Wi-Fi</button></div>
+    <div class="btnrow"><button class="btn" type="button" id="rdBtn">Show round-ups</button><button class="btn" type="button" id="homeHere" title="Press this on a device connected to your home Wi-Fi">This is my home Wi-Fi</button><button class="btn" type="button" id="tvLink" title="The address to set as the TV browser's home page">TV home page address</button></div>
     <div id="rdList"></div>
     <div class="note" id="rdNote"></div>
     <hr style="border:0;border-top:1px solid var(--line, #5a1a1f);margin:16px 0">
@@ -745,7 +745,7 @@
 
   // ---- Version numbers (bottom of the screen) ----
   // DASH_VERSION goes up by one with every dashboard change (a git hook bumps it automatically).
-  const DASH_VERSION = 47;
+  const DASH_VERSION = 48;
   (async () => {
     const set = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
     set("dashVer", DASH_VERSION);
@@ -2849,6 +2849,17 @@
     } catch { $("rdNote").textContent = "Couldn't reach Bernard's server."; }
   }
   $("rdBtn").addEventListener("click", () => rdShow());
+  // The address for the TV browser's home page (camera view and Bernard's home screen, no passcode to type on the TV).
+  $("tvLink").addEventListener("click", async () => {
+    const pass = store.get("bernud.dashKey"); if (!pass) { $("rdNote").textContent = "Enter your passcode in the CCP brief first."; return; }
+    try {
+      const j = await (await fetch(`${SERVER}/dash/tv-link`, { headers: { "x-dashboard-key": pass } })).json();
+      $("rdNote").innerHTML = "";
+      const t = document.createElement("div"); t.textContent = "On the TV: Internet → Settings → General → Set Homepage → Custom, then type:"; 
+      const u = document.createElement("div"); u.textContent = j.url.replace(/^https:\/\//, ""); u.style.cssText = "font:600 15px ui-monospace,monospace;word-break:break-all;margin-top:6px;user-select:all";
+      $("rdNote").append(t, u);
+    } catch { $("rdNote").textContent = "Couldn't reach Bernard's server."; }
+  });
   // Arrival greeting: remember this connection's address as home, so the phone joining this Wi-Fi counts as arriving.
   $("homeHere").addEventListener("click", async () => {
     const pass = store.get("bernud.dashKey"); if (!pass) { $("rdNote").textContent = "Enter your passcode in the CCP brief first."; return; }

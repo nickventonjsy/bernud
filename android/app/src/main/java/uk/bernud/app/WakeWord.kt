@@ -18,7 +18,9 @@ import org.vosk.android.StorageService
 object WakeWord : RecognitionListener {
     private const val TAG = "BernudWake"
     private val GRAMMAR = """["hey bernard", "hey bernie", "hey barnard", "hey bernhard", "okay bernard", "bernard", "hey", "hello", "okay", "hey there", "[unk]"]"""
-    private val TRIGGER = Regex("\\b(bernard|bernie|barnard|bernhard)\\b")
+    // Only "hey Bernard" / "okay Bernard": the name on its own came up too often in ordinary conversation
+    // (30 Oct: woke during chats with people). Plain "bernard" stays in the grammar as a decoy that doesn't trigger.
+    private val TRIGGER = Regex("\\b(hey|okay) (bernard|bernie|barnard|bernhard)\\b")
     private val main = Handler(Looper.getMainLooper())
 
     private var model: Model? = null
@@ -129,7 +131,8 @@ object WakeWord : RecognitionListener {
     private fun heard(json: String?, key: String) {
         val text = try { JSONObject(json ?: "{}").optString(key) } catch (_: Exception) { "" }
         if (text.isNotBlank() && key == "text") { heardCount++; lastHeard = text.take(40) }
-        if (!TRIGGER.containsMatchIn(text)) return
+        // Act on the recogniser's settled result only: its mid-word guesses are where most false wakes came from.
+        if (key != "text" || !TRIGGER.containsMatchIn(text)) return
         main.post {
             if (inConversation || service == null) return@post
             release()

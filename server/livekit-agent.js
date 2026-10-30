@@ -43,12 +43,27 @@ export const SOFT_BYE_RE = /^(?:ok(?:ay)?[ ,]*)?(?:thanks?(?: you)?(?: very much
 export const PHANTOM_RE = /^(?:thank you\.?|thanks\.?|thank you(?: very much)?(?: for watching)?[.!]?|thanks for watching[.!]?|you\.?|bye\.?|\.+|okay\.?)$/i;
 // "In a lesson": Bernard's last reply had Spanish/French/Polish/Portuguese in it, or asked something.
 const midActivity = (reply) => /[¿¡ñáéíóúãõçàèâêôłśżźćńęą]/i.test(reply) || /\?["”’)\s]*$/.test(String(reply).trim()) || /\?/.test(String(reply).slice(-120));
+// Bits of words the mic picks up between sentences ("To", "And", "Well,", "Uh"): never worth an answer.
+export const FRAGMENT_RE = /^(?:to|and|well|uh+|um+|er+m?|hmm+|mm+(?:-?hmm)?|so|the|a|an|but|oh|ah|and then|i|it|is)[.,!?…\s]*$/i;
+// What to do with a short transcript before it reaches the brain: "ignore" (no reply), "echo" (repeat last reply) or "".
+export function screenTranscript(text, { overlapped = false, replies = 0, lastPhantomAt = 0, now = Date.now() } = {}) {
+  const t = String(text || "").trim();
+  if (!t || FRAGMENT_RE.test(t)) return "ignore";
+  if (PHANTOM_RE.test(t)) {
+    if (overlapped) return "echo";
+    if (replies === 0) return "ignore";                       // before he's answered anything: noise, not a goodbye
+    if (now - lastPhantomAt < 60_000) return "ignore";        // "Thank you." again and again: answer it once
+  }
+  return "";
+}
 export function isGoodbye(text, { lastReply = "", replies = 0, overlapped = false } = {}) {
   const t = String(text || "").trim();
   if (BYE_RE.test(t)) return !overlapped || !PHANTOM_RE.test(t);
   return SOFT_BYE_RE.test(t) && !overlapped && replies <= 2 && !midActivity(lastReply);
 }
 
+const HOLD_MS = Number(process.env.LIVEKIT_HOLD_MS || 3000);
+const HOLDING = ["One moment, sir.", "Bear with me, sir.", "Just a moment, sir.", "Let me look, sir."];
 const FAREWELLS = ["Very good, sir.", "Right you are, sir.", "Any time, sir.", "I'll be here, sir.", "Good night, sir."];
 const GREETINGS = ["Hello, sir.", "Sir.", "At your service, sir.", "Good to hear you, sir.", "Yes, sir?"];
 
@@ -93,19 +108,27 @@ export class BernardAgent extends voice.Agent {
     const last = [...chatCtx.items].reverse().find((i) => i.type === "message" && i.role === "user");
     const text = last ? (last.textContent ?? "") : "";
     if (!text.trim()) { say("brain: nothing to answer (empty transcript)"); return null; }
-    // A "thank you" that started while Bernard was talking is almost always his own voice echoing back (or Whisper
-    // imagining words in noise): ignore it and carry on with what he was saying.
-    if (this.overlapped && PHANTOM_RE.test(text.trim())) {
+    // Echo, noise and fragments: a "thank you" that started while Bernard was talking is his own voice coming back
+    // (carry on with what he was saying); stray bits of words and repeated phantom "thank you"s get no answer.
+    const screened = screenTranscript(text, { overlapped: this.overlapped, replies: this.replies || 0, lastPhantomAt: this.lastPhantomAt || 0 });
+    if (PHANTOM_RE.test(text.trim()) && !BYE_RE.test(text.trim())) this.lastPhantomAt = Date.now();
+    if (screened === "echo") {
       say(`ignored "${text.trim()}" (heard while Bernard was speaking: echo)`);
       const again = this.lastReply || "Sorry, sir, go on.";
       return new ReadableStream({ start(c) { c.enqueue(again); c.close(); } });
     }
+    if (screened === "ignore") { say(`ignored "${text.trim()}" (noise or repeat)`); return null; }
     if (isGoodbye(text, { lastReply: this.lastReply, replies: this.replies || 0, overlapped: this.overlapped })) {
       this.ending = true; say(`goodbye heard: "${text.trim()}"`);
       const bye = /night/i.test(text) ? "Good night, sir." : FAREWELLS[Math.floor(Math.random() * FAREWELLS.length)];
       return new ReadableStream({ start(c) { c.enqueue(bye); c.close(); } });
     }
     let reply; const t0 = Date.now();
+    // Slow answers (the morning brief, a web search): say so instead of sitting in silence.
+    const self = this;
+    let holding = null;
+    const waitLine = new Promise((r) => { holding = setTimeout(() => r(HOLDING[Math.floor(Math.random() * HOLDING.length)]), HOLD_MS); });
+    const answer = (async () => {
     try {
       const a = await askBrain({ session: this.session_id, text, fetchImpl: this.fetchImpl });
       reply = speakable(a.reply); say(`brain: ${Date.now() - t0}ms -> "${reply.slice(0, 80)}"`);
@@ -115,8 +138,16 @@ export class BernardAgent extends voice.Agent {
       if (a.ui && this.room) this.room.localParticipant.sendText(JSON.stringify(a.ui), { topic: "bernud.ui" }).then(() => say("screen: " + Object.keys(a.ui).join(","))).catch((e) => say("screen send failed: " + String(e.message || e).slice(0, 100)));
     }
     catch (e) { reply = "I'm afraid my brain didn't answer: " + String(e.message || e).slice(0, 80) + "."; say("brain error: " + String(e.message || e).slice(0, 200)); }
-    this.replies = (this.replies || 0) + 1; this.lastReply = reply;
-    return new ReadableStream({ start(c) { c.enqueue(reply); c.close(); } });
+    clearTimeout(holding);
+    self.replies = (self.replies || 0) + 1; self.lastReply = reply;
+    return reply;
+    })();
+    return new ReadableStream({ async start(c) {
+      const first = await Promise.race([answer, waitLine.then((w) => ({ wait: w }))]);
+      if (first && first.wait) { say("holding line: " + first.wait); c.enqueue(first.wait + " "); c.enqueue(await answer); }
+      else c.enqueue(first);
+      c.close();
+    } });
   }
 }
 

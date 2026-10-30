@@ -59,3 +59,16 @@ assert.equal(await read(await ag3.llmNode(ctxOf("show me the shop camera"))), "H
 await new Promise((r) => setTimeout(r, 10));
 assert.deepEqual(sentUi, [[{ camera: { name: "Cory's Shop" } }, "bernud.ui"]]);
 console.log("livekit ok");
+{
+  const { screenTranscript } = await import("./livekit-agent.js");
+  // 30 Oct: a call ended at once on a phantom first "Thank you."; fragments and repeated thanks got answers.
+  assert.equal(screenTranscript("Thank you.", { replies: 0 }), "ignore");
+  assert.equal(screenTranscript("To", { replies: 4 }), "ignore");
+  assert.equal(screenTranscript("Well,", { replies: 4 }), "ignore");
+  assert.equal(screenTranscript("Thank you.", { replies: 4, overlapped: true }), "echo");
+  assert.equal(screenTranscript("Thank you.", { replies: 4, lastPhantomAt: Date.now() - 5000 }), "ignore");
+  assert.equal(screenTranscript("Thank you.", { replies: 4, lastPhantomAt: 0 }), "");
+  assert.equal(screenTranscript("Can you play Spotify on my phone please?", { replies: 4 }), "");
+  assert.equal(screenTranscript("No", { replies: 4 }), "");
+  console.log("transcript screening ok");
+}

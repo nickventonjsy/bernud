@@ -192,6 +192,10 @@ const { createHmac } = await import("node:crypto");
 const relaySig = (exp) => createHmac("sha256", "relay:" + DASHBOARD_KEY).update(String(exp)).digest("hex").slice(0, 32);
 const relayUrl = (u, exp) => `${PUBLIC_URL}/camera/relay?e=${exp}&s=${relaySig(exp)}&u=${encodeURIComponent(u)}`;
 const { createCamAlerts } = await import("./camalerts.js");
+// The TV's own key: the TV browser's home page carries it (?tvk=...), so nobody has to type the dashboard passcode
+// with the remote. It only opens the camera and home-screen pages, nothing else.
+const TV_KEY = DASHBOARD_KEY ? createHmac("sha256", "tv:" + DASHBOARD_KEY).update("tv-page").digest("hex").slice(0, 24) : "";
+const tvOrDashboard = (req) => Boolean(DASHBOARD_KEY) && (req.headers["x-dashboard-key"] === DASHBOARD_KEY || (TV_KEY && req.headers["x-tv-key"] === TV_KEY));
 // After-hours person alert: if the lounge TV is already on, put that camera up on it (never switches the TV on). Off with kv camera_tv_popup = "off".
 async function cameraTvPopup(cam) {
   if ((await db.kv.get("camera_tv_popup")) === "off") return;
@@ -372,6 +376,7 @@ const PROMPT_FIXES = [
 
 ` + "# Not wired up yet")),
   (base) => (base.includes("- announce, party_mode") ? base : base.replace("- end_call: when he says goodbye", "- announce, party_mode, tv_home_screen, sports, rewind, diary, news_audio and video_summary: see \"Around the house: extras\", \"Sport\" and \"Looking back\".\n- end_call: when he says goodbye")),
+  (base) => (base.includes("When he says it didn't work") ? base : base.replace("- Receipts, always.", "- When he says it didn't work, believe him. Never repeat that something worked once he's told you it hasn't: you can't see his screens or hear his speakers. Say what the tool did report (\"the TV accepted the command\"), say what's probably wrong, and give the fix or the next thing to try.\n- Receipts, always.")),
   (base) => (base.includes("spoken morning news at half seven") ? base : base.replace("and bin night on Wednesday at seven before Thursday's collection,", "the day's diary at half ten at night, the spoken morning news at half seven, and bin night on Wednesday at seven before Thursday's collection,")),
 ];
 let promptSyncTimer = null;
@@ -751,7 +756,7 @@ export async function handle(req, res) {
   if (req.method === "OPTIONS") {
     const origin = req.headers.origin;
     const ok = origin && (PUBLIC_ORIGINS.has(origin) || /^http:\/\/localhost(:\d+)?$/.test(origin));
-    res.writeHead(204, ok ? { "access-control-allow-origin": origin, "access-control-allow-headers": "x-dashboard-key, x-bernud-via, content-type", "access-control-allow-methods": "GET, POST", "access-control-max-age": "600", vary: "origin" } : {});
+    res.writeHead(204, ok ? { "access-control-allow-origin": origin, "access-control-allow-headers": "x-dashboard-key, x-tv-key, x-bernud-via, content-type", "access-control-allow-methods": "GET, POST", "access-control-max-age": "600", vary: "origin" } : {});
     return res.end();
   }
 
@@ -881,6 +886,11 @@ export async function handle(req, res) {
   }
   // Tick, untick, add or remove a priority from the dashboard.
   // "This is my home Wi-Fi": remembers this browser's internet address as the house's, for the arrival greeting.
+  // The address to set as the TV browser's home page (camera view and Bernard's home screen, no passcode needed there).
+  if (path === "/dash/tv-link" && req.method === "GET") {
+    if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
+    return send(res, 200, { ok: true, url: `https://bernud.onrender.com/camera.html?tv=1&tvk=${TV_KEY}` }, req);
+  }
   if (path === "/dash/home-here" && req.method === "POST") {
     if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
     const ip = clientIp(req);
@@ -1003,35 +1013,35 @@ export async function handle(req, res) {
   }
   // ---- Imou cameras (dashboard passcode) ----
   if (path === "/camera/list" && req.method === "GET") {
-    if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
+    if (!tvOrDashboard(req)) return send(res, 401, { error: "unauthorised" }, req);
     try { return send(res, 200, { ok: true, cameras: await imou.cameras(url.searchParams.get("refresh") === "1") }, req); }
     catch (e) { return send(res, 200, { ok: false, code: e.code, error: String(e.message).slice(0, 200) }, req); }
   }
   if (path === "/camera/stream" && req.method === "GET") {
-    if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
+    if (!tvOrDashboard(req)) return send(res, 401, { error: "unauthorised" }, req);
     try { return send(res, 200, { ok: true, ...(await cameraShow(url.searchParams.get("camera") || "", url.searchParams.get("quality") || "HD")) }, req); }
     catch (e) { return send(res, 200, { ok: false, code: e.code, error: String(e.message).slice(0, 200) }, req); }
   }
   // The camera page reports when live video won't play (which player, which error), for diagnosing the TV.
   if (path === "/camera/diag" && req.method === "POST") {
-    if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
+    if (!tvOrDashboard(req)) return send(res, 401, { error: "unauthorised" }, req);
     const b = await readJson(req);
     console.log("camera diag", JSON.stringify({ stage: String(b.stage || "").slice(0, 40), detail: String(b.detail || "").slice(0, 300), tv: !!b.tv, hls: !!b.hls, native: String(b.native || "").slice(0, 20), ua: String(b.ua || "").slice(0, 160) }));
     return send(res, 200, { ok: true }, req);
   }
   // The camera the TV should be showing (asked for by voice); the TV-mode camera page checks it every few seconds.
   if (path === "/camera/tv" && req.method === "GET") {
-    if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
+    if (!tvOrDashboard(req)) return send(res, 401, { error: "unauthorised" }, req);
     let want = null; try { want = JSON.parse((await db.kv.get("tv_camera")) || "null"); } catch {}
     return send(res, 200, { ok: true, camera: want }, req);
   }
   // The TV's ambient screen: clock, weather, today's diary, parcels, headlines and camera stills (cached for a minute).
   if (path === "/ambient" && req.method === "GET") {
-    if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
+    if (!tvOrDashboard(req)) return send(res, 401, { error: "unauthorised" }, req);
     try { return send(res, 200, await jarvis.ambient(), req); } catch (e) { return send(res, 200, { ok: false, error: String(e.message).slice(0, 200) }, req); }
   }
   if (path === "/camera/snapshot" && req.method === "GET") {
-    if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
+    if (!tvOrDashboard(req)) return send(res, 401, { error: "unauthorised" }, req);
     try { const cam = await imou.find(url.searchParams.get("camera") || ""); return send(res, 200, { ok: true, camera: cam, url: await imou.snapshot(cam) }, req); }
     catch (e) { return send(res, 200, { ok: false, code: e.code, error: String(e.message).slice(0, 200) }, req); }
   }
@@ -1258,7 +1268,7 @@ export async function handle(req, res) {
       const b = await readJson(req);
       await db.kv.set("tv_camera", JSON.stringify({ ambient: true, name: "Home screen", at: Date.now() }));
       if (!(await smartthings.connected().catch(() => false))) return send(res, 200, { ok: false, error: "not_connected", message: "SmartThings isn't connected, so I can't put the browser up on the TV." });
-      try { const r = await smartthings.openBrowser(String(b.screen || "")); return send(res, 200, { ok: true, tv: r.tv, note: `The home screen (clock, weather, today, news and cameras) is on ${r.tv}${r.woke ? " (woke it first)" : ""} within a few seconds. Asking for a camera switches back.` }); }
+      try { const r = await smartthings.openBrowser(String(b.screen || "")); return send(res, 200, { ok: true, tv: r.tv, browser_opened: true, note: `What you KNOW: the web browser has been opened on ${r.tv}${r.woke ? " (woken first)" : ""}. You can't see the screen. Say "I've opened the browser on the TV; the home screen should appear in a few seconds." If he says it isn't showing, or the browser shows another page, don't claim it's on: the TV browser's home page isn't set to Bernard's page yet. Tell him: on the TV, Internet, Settings, General, Set Homepage, Custom, and type the address from his dashboard's "TV home page address" button (Round-ups panel). Then it will work every time.` }); }
       catch (e) { return send(res, 200, { ok: false, message: String(e.message).slice(0, 200) }); }
     }
     if (path === "/meals/ideas" && req.method === "POST") { try { return send(res, 200, await meals.ideas(await readJson(req))); } catch (e) { return send(res, 200, { ok: false, error: "busy", message: "I couldn't come up with ideas just now. Ask me again in a moment." }); } }
@@ -1343,7 +1353,7 @@ export async function handle(req, res) {
           if (!(await smartthings.connected().catch(() => false))) return send(res, 200, { ok: false, error: "not_connected", message: "SmartThings isn't connected, so I can't put the browser up on the TV." });
           const r = await smartthings.openBrowser(String(b.screen || ""));
           return send(res, 200, { ok: true, camera: cam.name, online: cam.online, tv: r.tv,
-            note: `Opened the web browser on ${r.tv}${r.woke ? " (woke it up first)" : ""}; its home page shows ${cam.name} full screen within a few seconds. If the TV shows a different page instead, its browser home page needs setting to bernud.onrender.com/camera.html?tv=1 (one-off).` + (cam.online === false ? ` ${cam.name} looks offline right now.` : "") });
+            note: `Opened the web browser on ${r.tv}${r.woke ? " (woke it up first)" : ""}; if its home page is set to Bernard's page, it shows ${cam.name} full screen within a few seconds (you can't see the screen, so don't claim it's showing). If the TV shows a different page instead, its browser home page needs setting (one-off): on the TV, Internet, Settings, General, Set Homepage, Custom, and type the address from the "TV home page address" button on his dashboard (Round-ups panel).` + (cam.online === false ? ` ${cam.name} looks offline right now.` : "") });
         }
         return send(res, 200, { ok: true, show_camera: { id: cam.id, name: cam.name, screen: "here" }, camera: cam.name, online: cam.online,
           note: `Now call show_camera with camera "${cam.name}": that is what opens it on his screen.${cam.guessed ? ` (No camera matched that name exactly, so it's ${cam.name}.)` : ""}` });

@@ -92,10 +92,13 @@
   let hls = null, retries = 0, playId = 0;
   const msg = (t) => { $("msg").textContent = t || ""; };
 
+  // On the TV the home page address carries its own key (?tvk=...), so nothing has to be typed with the remote.
+  const TVK = params.get("tvk") || "";
+  const authHeaders = () => (TVK ? { "x-tv-key": TVK } : { "x-dashboard-key": store.get("bernud.dashKey") || "" });
   async function api(path) {
     const pass = store.get("bernud.dashKey");
-    if (!pass) { showPass(); throw new Error("passcode"); }
-    const r = await fetch(SERVER + path, { headers: { "x-dashboard-key": pass } });
+    if (!pass && !TVK) { showPass(); throw new Error("passcode"); }
+    const r = await fetch(SERVER + path, { headers: authHeaders() });
     if (r.status === 401) { showPass("That passcode wasn't accepted."); throw new Error("passcode"); }
     return r.json();
   }
@@ -109,8 +112,8 @@
 
   // Tell the server what went wrong (it logs it), so a TV that won't play can be diagnosed.
   function diag(stage, detail) {
-    const pass = store.get("bernud.dashKey"); if (!pass) return;
-    fetch(SERVER + "/camera/diag", { method: "POST", headers: { "x-dashboard-key": pass, "content-type": "application/json" }, body: JSON.stringify({ stage, detail: String(detail || "").slice(0, 300), tv: tvMode, ua: navigator.userAgent.slice(0, 160), hls: !!(window.Hls && Hls.isSupported()), native: $("video").canPlayType("application/vnd.apple.mpegurl") }) }).catch(() => {});
+    if (!store.get("bernud.dashKey") && !TVK) return;
+    fetch(SERVER + "/camera/diag", { method: "POST", headers: { ...authHeaders(), "content-type": "application/json" }, body: JSON.stringify({ stage, detail: String(detail || "").slice(0, 300), tv: tvMode, ua: navigator.userAgent.slice(0, 160), hls: !!(window.Hls && Hls.isSupported()), native: $("video").canPlayType("application/vnd.apple.mpegurl") }) }).catch(() => {});
   }
 
   // When live video won't play here, keep the picture moving with a fresh snapshot every few seconds.
