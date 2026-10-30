@@ -749,7 +749,24 @@ async function emailForBrief(since) {
   catch (e) { console.error("gmail brief", e.message); return { connected: true, error: "gmail_error", note: "Gmail is connected but couldn't be read for this brief: " + String(e.message).slice(0, 160) }; }
 }
 
+// Guessing keys: after 10 DIFFERENT wrong keys from one address in 10 minutes, that address is turned away for
+// 15 minutes, so the dashboard passcode can't be brute-forced. A device stuck on one old key (the TV, the phone) never
+// trips it, because it keeps sending the same value. Logged if it ever happens.
+const keyFails = new Map();
+export function keyGuard(ip, now = Date.now()) { const f = keyFails.get(ip); return Boolean(f && f.blockedUntil > now); }
+export function keyFailed(ip, key, now = Date.now()) {
+  if (!key) return;
+  let f = keyFails.get(ip);
+  if (!f || (now - f.first > 10 * 60_000 && f.blockedUntil < now)) f = { first: now, tried: new Set(), blockedUntil: 0 };
+  f.tried.add(createHmac("sha256", "kf").update(String(key)).digest("hex").slice(0, 16));
+  if (f.tried.size >= 10 && f.blockedUntil < now) { f.blockedUntil = now + 15 * 60_000; console.log(`security: ${ip} blocked for 15 minutes after ${f.tried.size} different wrong keys`); }
+  keyFails.set(ip, f);
+  if (keyFails.size > 5000) keyFails.clear();
+}
 export async function handle(req, res) {
+  const ip = clientIp(req) || "unknown";
+  if (keyGuard(ip)) { res.writeHead(429, { "content-type": "application/json", "retry-after": "900" }); return res.end('{"error":"too many wrong keys, try again later"}'); }
+  res.on("finish", () => { if (res.statusCode === 401) { const h = req.headers; keyFailed(ip, h["x-dashboard-key"] || h["x-bernud-key"] || h["x-phone-key"] || h["x-tv-key"] || h["x-device-key"] || ""); } });
   const url = new URL(req.url, "http://x");
   const path = url.pathname.replace(/\/+$/, "") || "/";
 

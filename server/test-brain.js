@@ -216,3 +216,8 @@ console.log("brain ok");
   for (const y of ["Yes.", "yeah send it", "Yes please", "go ahead", "Send it.", "Yep, that's right.", "OK, send it now", "Do it"]) assert.ok(SAID_YES.test(y), y);
   for (const n of ["Do you need anything from the shop? Kiss emoji, kiss emoji.", "No", "yes but change it to hello", "Can you send a message to Michelle on WhatsApp and say hi", "wait"]) assert.ok(!SAID_YES.test(n), n);
   console.log("said-yes ok"); }
+{ const { BRIEF_ASK } = await import("./brain.js");
+  // 30 Oct: this phrasing missed the instant path and took 19.5 seconds.
+  assert.ok(BRIEF_ASK.test("Can you give me my CCP morning brief, please?"));
+  assert.ok(!BRIEF_ASK.test("Can you send the brief to Kerr"));
+  console.log("brief phrasing ok"); }

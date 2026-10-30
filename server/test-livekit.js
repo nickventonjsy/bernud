@@ -70,5 +70,7 @@ console.log("livekit ok");
   assert.equal(screenTranscript("Thank you.", { replies: 4, lastPhantomAt: 0 }), "");
   assert.equal(screenTranscript("Can you play Spotify on my phone please?", { replies: 4 }), "");
   assert.equal(screenTranscript("No", { replies: 4 }), "");
+  assert.equal(screenTranscript("Michelle, Oakley, Shakira and Vega in St Brelade, Jersey.", { replies: 2, hint: "Bernard, Michelle, Oakley, Shakira and Vega in St Brelade, Jersey. Cory Car Paints." }), "ignore");
+  assert.equal(screenTranscript("Tell me about Michelle.", { replies: 2, hint: "Bernard, Michelle, Oakley." }), "");
   console.log("transcript screening ok");
 }

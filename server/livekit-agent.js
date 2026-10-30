@@ -46,9 +46,12 @@ const midActivity = (reply) => /[¿¡ñáéíóúãõçàèâêôłśżźćńę�
 // Bits of words the mic picks up between sentences ("To", "And", "Well,", "Uh"): never worth an answer.
 export const FRAGMENT_RE = /^(?:to|and|well|uh+|um+|er+m?|hmm+|mm+(?:-?hmm)?|so|the|a|an|but|oh|ah|and then|i|it|is)[.,!?…\s]*$/i;
 // What to do with a short transcript before it reaches the brain: "ignore" (no reply), "echo" (repeat last reply) or "".
-export function screenTranscript(text, { overlapped = false, replies = 0, lastPhantomAt = 0, now = Date.now() } = {}) {
+const norm = (x) => String(x || "").toLowerCase().replace(/[^a-z ]/g, " ").replace(/\s+/g, " ").trim();
+export function screenTranscript(text, { overlapped = false, replies = 0, lastPhantomAt = 0, now = Date.now(), hint = "" } = {}) {
   const t = String(text || "").trim();
   if (!t || FRAGMENT_RE.test(t)) return "ignore";
+  // Whisper repeating its own hint list back on a silent line.
+  if (hint && norm(t).length > 8 && norm(hint).includes(norm(t))) return "ignore";
   if (PHANTOM_RE.test(t)) {
     if (overlapped) return "echo";
     if (replies === 0) return "ignore";                       // before he's answered anything: noise, not a goodbye
@@ -62,6 +65,7 @@ export function isGoodbye(text, { lastReply = "", replies = 0, overlapped = fals
   return SOFT_BYE_RE.test(t) && !overlapped && replies <= 2 && !midActivity(lastReply);
 }
 
+const STT_HINT = process.env.LIVEKIT_STT_HINT || "Bernard, Michelle, Oakley, Shakira and Vega in St Brelade, Jersey. Cory Car Paints, ZentraWire, Spotify, Telegram, WhatsApp.";
 const HOLD_MS = Number(process.env.LIVEKIT_HOLD_MS || 3000);
 const HOLDING = ["One moment, sir.", "Bear with me, sir.", "Just a moment, sir.", "Let me look, sir."];
 const FAREWELLS = ["Very good, sir.", "Right you are, sir.", "Any time, sir.", "I'll be here, sir.", "Good night, sir."];
@@ -110,7 +114,7 @@ export class BernardAgent extends voice.Agent {
     if (!text.trim()) { say("brain: nothing to answer (empty transcript)"); return null; }
     // Echo, noise and fragments: a "thank you" that started while Bernard was talking is his own voice coming back
     // (carry on with what he was saying); stray bits of words and repeated phantom "thank you"s get no answer.
-    const screened = screenTranscript(text, { overlapped: this.overlapped, replies: this.replies || 0, lastPhantomAt: this.lastPhantomAt || 0 });
+    const screened = screenTranscript(text, { overlapped: this.overlapped, replies: this.replies || 0, lastPhantomAt: this.lastPhantomAt || 0, hint: STT_HINT });
     if (PHANTOM_RE.test(text.trim()) && !BYE_RE.test(text.trim())) this.lastPhantomAt = Date.now();
     if (screened === "echo") {
       say(`ignored "${text.trim()}" (heard while Bernard was speaking: echo)`);
@@ -159,7 +163,8 @@ export default defineAgent({
     const session = new voice.AgentSession({
       vad: ctx.proc.userData.vad,
       llm: new BrainLLM(),
-      stt: openai.STT.withGroq({ model: STT_MODEL, apiKey: process.env.GROQ_API_KEY, language: "en" }),
+      // A short hint of the names he uses, so Whisper spells them right ("Bernud", "Oakley", "St Brelade"…).
+      stt: openai.STT.withGroq({ model: STT_MODEL, apiKey: process.env.GROQ_API_KEY, language: "en", prompt: STT_HINT }),
       // Same voice and settings as his ElevenLabs agent (stability .7, similarity .8, a touch slower).
       tts: new elevenlabs.TTS({ voiceId: VOICE_ID, model: TTS_MODEL, apiKey: process.env.ELEVENLABS_API_KEY, language: "en", voiceSettings: { stability: 0.7, similarity_boost: 0.8, speed: 0.95, use_speaker_boost: true } }),
       turnHandling: { turnDetection: "vad", endpointing: { mode: "fixed", minDelay: PAUSE_MS, maxDelay: Math.max(PAUSE_MS + 1500, 3000), alpha: 0.9 } },

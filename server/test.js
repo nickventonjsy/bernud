@@ -49,4 +49,15 @@ assert.ok(items[0].published.startsWith("2026-10-24"));
 assert.deepEqual(tokens("What's Kerr's flight?"), ["what", "kerr", "flight"].filter((w) => w !== "what"));
 
 srv.close();
+// Key guessing: 10 different wrong keys from one address blocks it; one stale key repeated never does.
+{
+  const { keyGuard, keyFailed } = await import("./index.js");
+  const t = 1_000_000;
+  for (let i = 0; i < 50; i++) keyFailed("10.0.0.1", "old-tv-key", t + i * 4000);
+  assert.equal(keyGuard("10.0.0.1", t + 200_000), false);
+  for (let i = 0; i < 10; i++) keyFailed("10.0.0.2", "guess" + i, t + i);
+  assert.equal(keyGuard("10.0.0.2", t + 100), true);
+  assert.equal(keyGuard("10.0.0.2", t + 16 * 60_000), false);
+  console.log("key guessing guard ok");
+}
 console.log("all tests passed");

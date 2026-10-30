@@ -42,6 +42,8 @@ let michelleRecent = [];
 const MICHELLE_TASK = /\b(play|playlist|spotify|music|songs?|oldies|shuffle|put on|echo|alexa|speaker|send|message|whatsapp|text|telegram|tell her|ask her|call|ring|phone|video|remind|reminder|birthday|present|gift|buy|order|shop|shopping|cook|recipe|meal|dinner|eat|food|announce|email|calendar|book|remember|save|note|forget|reply|wa|tg)\b/i;
 // A clear yes to a read-back ("yes", "yeah send it", "go ahead", "do it"), and nothing that adds or changes the message.
 export const SAID_YES = /^(?:(?:yes|yeah|yep|yup|sure|ok(?:ay)?|correct|right|go on|please|definitely|absolutely|that'?s (?:right|it|fine|good|perfect)|perfect|lovely|great)[ ,.!]*)+(?:(?:send|do|go ahead with|ring|call)(?: it| that| them| her| him)?(?: now)?|go ahead|please|thanks?|thank you|bernard|bernud|sir|[ ,.!])*$|^(?:send it|go ahead|do it|send|yes send it|ring (?:her|him)|call (?:her|him))(?: please| now| then)?[ ,.!]*$/i;
+// "Can you give me my CCP morning brief, please?" and friends: the instant path (today's prepared brief), not a rebuild.
+export const BRIEF_ASK = /^(?:(?:hey |ok |okay )?(?:bernard|bernud|bernie)[, ]*)?(?:please[, ]*)?(?:(?:can|could|would|will) you (?:please )?|(?:can|could|may) i (?:please )?)?(?:(?:have|get|give me|read me|get me|show me|tell me|what'?s in|let'?s have|let'?s hear|do|run|prepare|i'?d like|go through|hear)\s+)?(?:a |an |my |the |today'?s |this morning'?s )?(?:(?:new|fresh|latest|updated)\s+)?(?:ccp |c c p |cory'?s |cory car paints |daily |morning |work )*(?:brief|briefing)(?:,?\s+(?:please|again|for today|now|thanks|thank you|bernard|sir))*[.!?]*$/i;
 export function isAboutMichelle(text) {
   const t = String(text || "");
   return /\bmichelle\b/i.test(t) && !MICHELLE_TASK.test(t) && t.trim().split(/\s+/).length <= 12;
@@ -506,7 +508,7 @@ export function createBrain({ briefHandler = null, dayLog = null, learner = null
       return { ok: true, reply, tools: [], ui: { closeCamera: true }, model: "instant", ms: Date.now() - t0 };
     }
     // 0. "My brief": read the saved CCP brief, or have one prepared (too big a job for the free AIs).
-    if (briefHandler && /^(?:(?:hey |ok |okay )?(?:bernard|bernud|bernie)[, ]*)?(?:(?:can i (?:have|get)|give me|read me|get me|show me|what'?s in|let'?s have|do|run|prepare|i'?d like|please)\s+)?(?:a |an |my |the |today'?s )?(?:(?:new|fresh|latest|updated)\s+)?(?:ccp |cory'?s |daily |morning |work )*(?:brief|briefing)(?:\s+(?:please|again|for today|now))*[.!?]*$/i.test(text.trim())) {
+    if (briefHandler && BRIEF_ASK.test(text.trim())) {
       const r = await briefHandler(text);
       remember(r.reply, "brief", ["brief"]);
       return { ok: true, reply: r.reply, tools: ["brief"], ui: r.ui, model: "brief", ms: Date.now() - t0 };
