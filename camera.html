@@ -148,6 +148,9 @@
     const other = q === "HD" ? "SD" : "HD";
     const list = [];
     for (const qq of [q, other]) { if (native && (tvMode || !hlsOk)) list.push([qq, "native"]); if (hlsOk) list.push([qq, "hls"]); if (native && !tvMode && hlsOk) list.push([qq, "native"]); }
+    // What played last time on this screen goes first (the TV can't play the cameras' HD format, so it learns SD).
+    const won = store.get("bernud.camWorks");
+    if (won && tvMode) { const i = list.findIndex(([a, b]) => `${a} ${b}` === won); if (i > 0) list.unshift(...list.splice(i, 1)); }
     return list;
   }
   async function play(name, q = quality, step = 0) {
@@ -167,7 +170,7 @@
     let done = false;
     const giveUp = (why) => { if (id !== playId || done) return; done = true; clearTimeout(watchdog); diag(`${qq} ${how} failed`, why); play(name, q, step + 1); };
     const watchdog = setTimeout(() => { if (v.paused || v.readyState < 2) giveUp("no picture after 15s"); }, 15000);
-    v.onplaying = () => { if (id !== playId) return; done = true; clearTimeout(watchdog); msg(""); retries = 0; if (tvMode) tag(name + (qq === "SD" ? " · SD" : "")); };
+    v.onplaying = () => { if (id !== playId) return; done = true; clearTimeout(watchdog); msg(""); retries = 0; store.set("bernud.camWorks", `${qq} ${how}`); if (tvMode) tag(name + (qq === "SD" ? " · SD" : "")); };
     if (how === "native") {
       v.onerror = () => giveUp("native player error " + (v.error && v.error.code));
       v.src = j.url; v.play().catch(() => {});
