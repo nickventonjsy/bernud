@@ -130,6 +130,9 @@ export const GROUPS = {
   lifelog: { tools: ["life_log"], re: /\b(log (?:that|it|this)|log (?:i|my)|when did i (?:last|previously)|last time i|how many times (?:have|did) i|how often (?:have|do|did) i|what have i logged|undo (?:that|the) log)\b/ },
   focus: { tools: ["focus_mode", "spotify_dj"], re: /\b(focus(?: mode| session| time)?|concentrat\w*|pomodoro|deep work|(?:time|minutes) left on (?:my|the) focus)\b/ },
   awaycheck: { tools: ["away_check", "lights", "tv_control"], re: /\b(did i leave (?:anything|something|the \w+) on|(?:is )?anything (?:left )?on at home|left (?:anything|something|the \w+) on|away check|turn (?:things|stuff|everything) off (?:automatically )?when i leave)\b/ },
+  scene: { tools: ["scene", "lights"], re: /\b(scene|movie night|film night|reading lights?|dinner lights|save (?:this|the lights)|lights? like this|mood lighting)\b/ },
+  upkeep: { tools: ["upkeep", "life_log"], re: /\b(upkeep|jobs? (?:are )?due|every (?:\w+ )?(?:weeks?|months?|years?|days?)|descal\w*|filter|radiators?|tyre|service the|(?:i'?ve|i have) (?:just )?(?:done|descaled|changed|cleaned|bled|serviced))\b/ },
+  routines: { tools: ["routine_ideas", "reminder", "wakeup", "roundups"], re: /\b(routines? (?:have )?you (?:spotted|noticed)|what do i (?:always|usually) ask|spotted any routines|my habits)\b/ },
   weather: { tools: ["get_weather"], re: /\b(weather|rain|raining|wind|windy|temperature|cold|warm|hot|sunny|umbrella|forecast|coat|degrees|snow|storm)\b/ },
 };
 const ALWAYS = ["recall", "remember", "forget"];

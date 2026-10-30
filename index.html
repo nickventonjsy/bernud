@@ -309,6 +309,29 @@
   /* ---------- Drawers ---------- */
   .drawer { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.72); display: none; align-items: center; justify-content: center; padding: 16px; z-index: 10; }
   .drawer.open { display: flex; }
+  #featDrawer .panel { width: min(820px, 100%); }
+  .feat-tools { display: flex; flex-direction: column; gap: 10px; margin: 6px 0 12px; position: sticky; top: -16px; background: var(--bg); padding: 8px 0; z-index: 1; }
+  .feat-tools input { width: 100%; padding: 11px 12px; border-radius: 10px; border: 1px solid var(--line); background: #0b0304; font-size: 15px; outline: none; color: var(--text); }
+  .feat-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .feat-chips button { border: 1px solid var(--line); background: none; color: var(--muted); border-radius: 999px; padding: 6px 11px; font-size: 12.5px; cursor: pointer; }
+  .feat-chips button.on { color: var(--text); border-color: var(--red); background: rgba(255, 40, 40, 0.1); }
+  .feat-cat { margin: 18px 0 8px; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  .feat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+  .feat { border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 6px; background: rgba(255, 255, 255, 0.015); }
+  .feat h4 { margin: 0; font-size: 15px; font-weight: 600; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .feat .what { font-size: 13px; color: var(--muted); line-height: 1.45; }
+  .feat .tag { font-size: 10.5px; font-weight: 600; letter-spacing: .04em; border-radius: 6px; padding: 2px 6px; text-transform: uppercase; }
+  .feat .tag.new { background: rgba(255, 40, 40, 0.15); color: #ff8080; }
+  .feat .tag.auto { background: rgba(120, 180, 255, 0.12); color: #9cc4ff; }
+  .feat .use { font-size: 11.5px; color: var(--muted); }
+  .feat .use.idle { color: #f0b46a; }
+  .feat .says { display: flex; flex-direction: column; gap: 4px; margin-top: 2px; }
+  .feat .says button { text-align: left; border: 0; background: rgba(255, 255, 255, 0.04); color: var(--text); border-radius: 8px; padding: 7px 9px; font-size: 12.5px; cursor: pointer; line-height: 1.35; }
+  .feat .says button:hover { background: rgba(255, 40, 40, 0.12); }
+  .feat .says button::before { content: "\201C"; color: var(--red); margin-right: 2px; }
+  .feat .says button::after { content: "\201D"; color: var(--red); margin-left: 1px; }
+  .feat-count { font-size: 12px; color: var(--muted); }
+  @media (max-width: 820px) { .feat-chips { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; } .feat-chips button { flex: none; } }
   .drawer .panel { width: min(540px, 100%); max-height: 90vh; overflow: auto; }
   .drawer .p-title { font-family: var(--sans); font-size: 18px; letter-spacing: 0; text-transform: none; font-weight: 500; }
   .drawer p { color: var(--muted); font-size: 14px; line-height: 1.5; }
@@ -379,6 +402,7 @@
     <button type="button" data-go="brief"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/></svg>Files</button>
     <button type="button" data-go="tasksPanel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 12l3 3 5-6"/></svg>Tasks</button>
     <button type="button" data-say="Give me one genuinely useful idea for today, in two sentences." class="hide-m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.6.6 1 1.4 1 2.5h6c0-1.1.4-1.9 1-2.5A6 6 0 0 0 12 3z"/></svg>Ideas</button>
+    <button type="button" data-go="features"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.4 6.8 19.1l1-5.8L3.5 9.2l5.9-.9z"/></svg>Features</button>
     <span class="gap"></span>
     <button type="button" data-go="coinsPanel" class="hide-m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Analytics</button>
     <button type="button" data-say="What are my wake-up settings, and is bedtime set up?" class="hide-m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Automations</button>
@@ -596,6 +620,19 @@
 </div>
 
 <!-- CCP BRIEF -->
+<div class="drawer" id="featDrawer" role="dialog" aria-modal="true" aria-labelledby="featTitle">
+  <div class="panel">
+    <div class="p-head"><div class="p-title" id="featTitle">Everything Bernard can do</div><button class="btn" type="button" id="closeFeat">Close</button></div>
+    <div class="feat-tools">
+      <label for="featSearch" class="sr-only">Search features</label>
+      <input id="featSearch" type="text" placeholder="Search: lights, Spotify, email, payroll…" autocomplete="off">
+      <div class="feat-chips" id="featChips"></div>
+      <div class="feat-count" id="featCount"></div>
+    </div>
+    <div id="featList"></div>
+  </div>
+</div>
+
 <div class="drawer" id="receiptDrawer" role="dialog" aria-modal="true" aria-labelledby="receiptTitle">
   <div class="panel brief-panel" style="max-width:520px">
     <div class="p-head"><div class="p-title" id="receiptTitle">Receipt</div><button class="btn" type="button" id="closeReceipt">Close</button></div>
@@ -745,7 +782,7 @@
 
   // ---- Version numbers (bottom of the screen) ----
   // DASH_VERSION goes up by one with every dashboard change (a git hook bumps it automatically).
-  const DASH_VERSION = 49;
+  const DASH_VERSION = 50;
   (async () => {
     const set = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
     set("dashVer", DASH_VERSION);
@@ -2444,6 +2481,7 @@
     const go = b.dataset.go;
     if (go === "top") return scrollTo({ top: 0, behavior: "smooth" });
     if (go === "brief") return openBrief();
+    if (go === "features") return openFeatures();
     document.getElementById(go)?.scrollIntoView({ behavior: "smooth", block: "start" });
   }));
   $("tlogOpen").addEventListener("click", () => { $("tlog").hidden = false; $("tlogBtn").setAttribute("aria-expanded", "true"); $("tlog").scrollIntoView({ behavior: "smooth", block: "center" }); });
@@ -2563,6 +2601,118 @@
       if (j.ok) { $("receiptDrawer").classList.remove("open"); $("receiptMsg").textContent = `Removed ${j.removed.shop}, £${Number(j.removed.total).toFixed(2)}.`; loadDash(); } else $("receiptDelNote").textContent = "Couldn't remove it: " + (j.error || "unknown");
     } catch (e) { $("receiptDelNote").textContent = "Couldn't reach the server."; }
   });
+  // ---- Everything Bernard can do: a scrollable catalogue, with last week's use, so nothing gets forgotten ----
+  // u: the activity label it's counted under (server daylog routeLabel); auto: happens by itself; fresh: added recently.
+  const FEATURES = [
+    // Everyday
+    { c: "Everyday", n: "Weather", w: "Now and the next three days, Jersey unless you name somewhere.", say: ["What's the weather doing?", "Will it rain tomorrow?"], u: "weather" },
+    { c: "Everyday", n: "News", w: "Headlines for UK, world, business, tech, crypto, Jersey, sport or F1.", say: ["What's the news?", "Any Jersey news today?"], u: "news" },
+    { c: "Everyday", n: "Reminders", w: "On your phone and Telegram at a set time: one-off, daily, weekdays, weekly, monthly or yearly.", say: ["Remind me at half four to ring Kerr", "Remind me every Friday to back up the PC"], u: "reminders" },
+    { c: "Everyday", n: "Calendar", w: "Your CCP and personal calendars: what's on, add, move or delete (always read back first).", say: ["What's on tomorrow?", "Add the paint rep Thursday at ten"], u: "calendar" },
+    { c: "Everyday", n: "Countdowns", w: "Days until anything. Christmas, New Year, Halloween, Bonfire Night and Liberation Day built in. Nudges a week before and the day before.", say: ["How many days until Christmas?", "Start a countdown to Tenerife on the 19th of December"], u: "countdowns", fresh: true },
+    { c: "Everyday", n: "Life log", w: "Log things you do, then ask when you last did them or how often.", say: ["Log that I changed the car oil", "When did I last cut the grass?", "How many times have I been to the gym this month?"], u: "life log", fresh: true },
+    { c: "Everyday", n: "Upkeep jobs", w: "Jobs that come round again, counted from when you last did them. One morning nudge when due.", say: ["Remind me to descale the kettle every two months", "I've descaled the kettle", "What jobs are due?"], u: "upkeep jobs", fresh: true },
+    { c: "Everyday", n: "Where things are", w: "Tell him where you put something; ask later.", say: ["The spare key's under the blue pot", "Where did I put the passport?"], u: "memory" },
+    { c: "Everyday", n: "Memory", w: "Lasting facts about you and your people. He uses them without being asked.", say: ["Remember Michelle's birthday is the 6th of December", "What do you know about Oakley?"], u: "memory" },
+    { c: "Everyday", n: "Web search", w: "Anything current or local: opening hours, phone numbers, menus, facts. Says where it came from.", say: ["Is the Co-op in St Brelade open now?", "Find a Chinese takeaway that delivers"], u: "web search" },
+    { c: "Everyday", n: "Send to phone", w: "Any text or link as a notification on your phone.", say: ["Send that to my phone"], u: "sent to phone" },
+    // Around the house
+    { c: "Home", n: "Lights", w: "On, off, brightness, warm or cool white, colours; single lights or all of them.", say: ["Lights off", "Lounge lamp to warm white at 30 percent"], u: "lights" },
+    { c: "Home", n: "Scenes", w: "Snapshot every light as it is now under a name, optionally with music. Say the name to put it back.", say: ["Save this as movie night", "Movie night", "What scenes have I got?"], u: "scene", fresh: true },
+    { c: "Home", n: "Samsung TVs", w: "On, off, volume, inputs, apps, channels and remote keys.", say: ["Turn the TV on", "Put Netflix on the TV"], u: "TV" },
+    { c: "Home", n: "Fire TV Stick", w: "Power, apps like iPlayer and Netflix, play/pause and remote keys.", say: ["Open iPlayer on the Fire TV"], u: "Fire TV" },
+    { c: "Home", n: "TV home screen", w: "Clock, weather, diary, parcels, headlines and camera stills on the Samsung TV.", say: ["Put the home screen on the TV"], u: "TV home screen" },
+    { c: "Home", n: "Cameras", w: "Live views and snapshots from the Imou cameras, on screen or the TV.", say: ["Show me the front camera", "Show the car park camera on the TV"], u: "cameras" },
+    { c: "Home", n: "Sleep timer", w: "Music, TV, lights or everything off later.", say: ["Turn the music off in half an hour", "Everything off in an hour"], u: "sleep timer" },
+    { c: "Home", n: "Focus mode", w: "Cool white lights and a calm mix for a set time, then a spoken break call. Sessions are logged.", say: ["Focus mode for 45 minutes", "How long left on my focus?"], u: "focus mode", fresh: true },
+    { c: "Home", n: "Party mode", w: "Lights cycle colours with a party mix from your liked songs; stop puts them back to warm white.", say: ["Party mode", "Stop party mode"], u: "party mode" },
+    { c: "Home", n: "Announcements", w: "Says it on your phone, on the PC if it's on, and in every Telegram chat, Michelle's included.", say: ["Announce dinner's ready"], u: "announcement" },
+    { c: "Home", n: "Wake-up", w: "Lights fade up, optional music, then a good-morning message.", say: ["Wake me at seven tomorrow", "What are my wake-up settings?"], u: "wake-up" },
+    { c: "Home", n: "Bedtime", w: "Your goodnight routine in one word.", say: ["Bedtime", "Goodnight Bernard"], u: null },
+    { c: "Home", n: "Home reminders", w: "Reminders that go off when you next get home (needs the Bernard app running and home Wi-Fi set).", say: ["Remind me to put the bins out when I get in"], u: "home" },
+    { c: "Home", n: "Arriving home", w: "When your phone joins the home Wi-Fi: a greeting, and the hall lights if it's dark.", say: ["Change my arrival settings"], u: "home", auto: true },
+    { c: "Home", n: "Away check", w: "About ten minutes after you leave, flags lights and TVs left on, or switches them off if you turn auto-off on.", say: ["Did I leave anything on?", "Turn things off automatically when I leave"], u: "away check", auto: true, fresh: true },
+    // Music
+    { c: "Music", n: "Spotify", w: "Play anything, pause, skip, volume, shuffle, move it to another device.", say: ["Play Fleetwood Mac", "Play it on the TV"], u: "music" },
+    { c: "Music", n: "DJ mixes", w: "A mix for a mood or occasion, built from your own liked songs.", say: ["Play something for a Friday evening", "A mix for the drive"], u: "music" },
+    { c: "Music", n: "Echo and speakers", w: "Music on Michelle's Echo or another named speaker.", say: ["Play Michelle's oldies on the Echo"], u: "music" },
+    // Phone, PC, messages
+    { c: "Phone & PC", n: "Phone control", w: "Open apps, torch, Do Not Disturb, brightness, find the phone, Samsung Notes.", say: ["Find my phone", "Turn the torch on"], u: "phone" },
+    { c: "Phone & PC", n: "WhatsApp and Telegram", w: "Read messages, reply, message or call. Always read back to you and needs your yes before sending.", say: ["Read my WhatsApp messages", "Message Mum saying I'll be there at six"], u: "phone" },
+    { c: "Phone & PC", n: "PC control", w: "Open apps and sites, media, lock, system info, your scripts. Anything risky is read back first.", say: ["Open YouTube on the PC", "Lock the PC"], u: "PC" },
+    // Work: Cory Car Paints
+    { c: "CCP & work", n: "CCP morning brief", w: "Inbox, calendar, deadlines, crypto and a Jersey titbit. Automatically on weekdays at 9.", say: ["Give me my CCP morning brief"], u: "morning brief" },
+    { c: "CCP & work", n: "CCP documents and prices", w: "Price lists, data sheets and notes in the CCP Drive folder, with the source named.", say: ["What's the mixing ratio for Capella clear?", "Price for a litre of 2K primer"], u: "CCP documents" },
+    { c: "CCP & work", n: "Customer quotes", w: "Builds a quote from the price list and saves it as a Gmail draft for you to send.", say: ["Quote Kerr for two litres of clear and a hardener"], u: "email" },
+    { c: "CCP & work", n: "CCP email", w: "Search, read, draft replies, tidy, archive, label and delete (to the Bin, after a yes). Never sends.", say: ["What needs a reply?", "Draft a reply to the Screwfix email"], u: "email" },
+    { c: "CCP & work", n: "Personal email", w: "Bookings, orders, flights and references from nickventon@gmail.com, read-only.", say: ["What's my ferry booking reference?"], u: "email" },
+    { c: "CCP & work", n: "Payroll help", w: "Employee details and figures from the CCP folder; Jersey rules from gov.je.", say: ["What's the ITIS rate for…?", "When is the Combined Employer Return due?"], u: "CCP documents" },
+    { c: "CCP & work", n: "Priorities", w: "Today's top three from the brief plus your own.", say: ["What are my priorities?", "Add chase the Capella order to my priorities"], u: "priorities" },
+    { c: "CCP & work", n: "Printing", w: "CCP documents sent to the printer.", say: ["Print the latest Capella price list"], u: "printing" },
+    { c: "CCP & work", n: "Reorder list", w: "The CCP stock reorder list.", say: ["Add hardener to the reorder list"], u: "order list" },
+    // Shopping & food
+    { c: "Shopping & food", n: "Shopping list", w: "Sorted by aisle; goes to Telegram with tick-off buttons. Michelle can add too.", say: ["Add milk and bin bags", "Send me the shopping list"], u: "shopping list" },
+    { c: "Shopping & food", n: "Receipts and spending", w: "Photograph receipts; ask what you've spent and what's running low.", say: ["What have I spent this month?", "What's running low?"], u: "receipts" },
+    { c: "Shopping & food", n: "Parcels", w: "Deliveries on the way from both inboxes.", say: ["Any parcels coming?"], u: null },
+    { c: "Shopping & food", n: "Meal ideas", w: "Ideas that rotate cuisines and respect everyone's likes; full recipe to your phone.", say: ["What can I cook with chicken and peppers?", "Dinner ideas for four"], u: null },
+    { c: "Shopping & food", n: "Ordering food", w: "Finds the place, reads the menu, totals it, and sends it to your phone to place and pay.", say: ["Order a pizza from somewhere open now"], u: "web search" },
+    // Money
+    { c: "Markets", n: "ZentraWire watchlist", w: "Your watchlist, movers, alerts and chart signals (information, not advice).", say: ["How's my watchlist?", "What's moving?"], u: "markets" },
+    { c: "Markets", n: "Crypto prices", w: "Any coin in US dollars with the 24-hour change.", say: ["What's Bitcoin doing?"], u: "markets" },
+    { c: "Markets", n: "Price alerts", w: "A notification when a coin crosses a price.", say: ["Tell me if Solana goes above 300 dollars"], u: "markets" },
+    // Looking back
+    { c: "Looking back", n: "Rewind", w: "Finds what was said in past conversations and the activity log.", say: ["What did I say about the spare key?"], u: "looking back" },
+    { c: "Looking back", n: "Diary", w: "Written each night at half ten from your day, and sent to Telegram.", say: ["Read me yesterday's diary"], u: "looking back", auto: true },
+    { c: "Looking back", n: "YouTube summaries", w: "Give it a link and get the gist.", say: ["What's this video about? (paste the link)"], u: "video summary" },
+    { c: "Looking back", n: "Sport", w: "Scores, and goal updates on Telegram while you follow a match.", say: ["What's the Jersey Bulls score?", "Keep me posted on the match"], u: "sport" },
+    // Automatic
+    { c: "Automatic", n: "Round-ups", w: "Wrap-up weekdays 5:30, weekly spend Sundays, cameras 8am, payroll reminders, bin night Wednesdays 7pm with the right recycling box.", say: ["What's my wrap-up?", "Which recycling box this week?"], u: null, auto: true },
+    { c: "Automatic", n: "Spoken news", w: "A short bulletin in Bernard's voice on Telegram at half seven.", say: ["Send me the news to listen to"], u: null, auto: true },
+    { c: "Automatic", n: "Routine spotting", w: "Notices what you ask for at the same time most days, and offers to automate it. Sunday evening note.", say: ["What routines have you spotted?"], u: null, auto: true, fresh: true },
+    { c: "Automatic", n: "Camera pop-up on TV", w: "After hours, a person on camera pops up on the TV if it's already on.", say: ["Turn the camera pop-up off"], u: null, auto: true },
+    // Fun
+    { c: "Fun & learning", n: "Spanish and languages", w: "Lessons and practice in Spanish, French, Portuguese or Polish.", say: ["Practise Spanish with me"], u: null },
+    { c: "Fun & learning", n: "Adventure games and quizzes", w: "Spoken text adventures, riddles, twenty questions and trivia.", say: ["Let's play an adventure game", "Give me a quiz"], u: null },
+    { c: "Fun & learning", n: "Practice partner", w: "Rehearse an interview, a tricky call or a speech, then get three pointers.", say: ["Practise a job interview with me"], u: null },
+    { c: "Fun & learning", n: "Photos", w: "Show a paint tin, label or car damage; he reads it and finds the data sheet.", say: ["(Use the camera button) What's this product?"], u: null },
+    // Behind the scenes
+    { c: "Bernard himself", n: "System check", w: "What's working and what isn't, with the fix.", say: ["Is everything working?"], u: null },
+    { c: "Bernard himself", n: "Tell Claude", w: "Notes for Claude to build or fix; they appear in the For Claude panel.", say: ["Tell Claude the TV keeps losing the camera"], u: "note for Claude" },
+    { c: "Bernard himself", n: "Zapier", w: "Actions in your other apps through Zapier.", say: ["What can you do with Zapier?"], u: null },
+  ];
+  let featUsage = null, featCat = "All";
+  async function loadFeatUsage() {
+    const pass = store.get("bernud.dashKey"); if (!pass) return;
+    try { const j = await (await fetch(`${SERVER}/dash/usage`, { headers: { "x-dashboard-key": pass } })).json(); if (j.ok) featUsage = j.tools || {}; } catch {}
+  }
+  function renderFeatures() {
+    const q = $("featSearch").value.trim().toLowerCase();
+    const cats = ["All", "New", "Not used lately", ...new Set(FEATURES.map((f) => f.c))];
+    $("featChips").innerHTML = cats.map((c) => `<button type="button" class="${c === featCat ? "on" : ""}" data-cat="${esc(c)}">${esc(c)}</button>`).join("");
+    const used = (f) => (featUsage && f.u ? featUsage[f.u] || 0 : null);
+    const list = FEATURES.filter((f) => {
+      if (featCat === "New" && !f.fresh) return false;
+      if (featCat === "Not used lately" && !(featUsage && f.u && !used(f))) return false;
+      if (!["All", "New", "Not used lately"].includes(featCat) && f.c !== featCat) return false;
+      return !q || (f.n + " " + f.w + " " + f.say.join(" ") + " " + f.c).toLowerCase().includes(q);
+    });
+    const groups = {}; for (const f of list) (groups[f.c] ||= []).push(f);
+    $("featList").innerHTML = Object.entries(groups).map(([c, fs]) => `<div class="feat-cat">${esc(c)}</div><div class="feat-grid">${fs.map((f) => {
+      const n = used(f);
+      const use = n == null ? "" : n ? `<div class="use">Used ${n} time${n === 1 ? "" : "s"} this week</div>` : `<div class="use idle">Not used this week. Give it a go?</div>`;
+      return `<div class="feat"><h4>${esc(f.n)}${f.fresh ? '<span class="tag new">New</span>' : ""}${f.auto ? '<span class="tag auto">Automatic</span>' : ""}</h4><div class="what">${esc(f.w)}</div>${use}<div class="says">${f.say.map((x) => `<button type="button" data-try="${esc(x)}" title="Tap to ask Bernard">${esc(x)}</button>`).join("")}</div></div>`;
+    }).join("")}</div>`).join("") || `<p>Nothing matches "${esc(q)}".</p>`;
+    $("featCount").textContent = `${list.length} of ${FEATURES.length} features${featUsage ? "" : " · usage shows once you've entered your passcode"} · tap a phrase to ask Bernard`;
+  }
+  async function openFeatures() { $("featDrawer").classList.add("open"); renderFeatures(); await loadFeatUsage(); renderFeatures(); }
+  $("closeFeat").addEventListener("click", () => $("featDrawer").classList.remove("open"));
+  $("featDrawer").addEventListener("click", (e) => {
+    if (e.target === $("featDrawer")) return $("featDrawer").classList.remove("open");
+    const cat = e.target.closest("[data-cat]"); if (cat) { featCat = cat.dataset.cat; return renderFeatures(); }
+    const t = e.target.closest("[data-try]");
+    if (t && !/^\(/.test(t.dataset.try)) { $("featDrawer").classList.remove("open"); ask(t.dataset.try); }
+  });
+  $("featSearch").addEventListener("input", renderFeatures);
   $("closeReceipt").addEventListener("click", () => $("receiptDrawer").classList.remove("open"));
   $("receiptDrawer").addEventListener("click", (e) => { if (e.target === $("receiptDrawer")) $("receiptDrawer").classList.remove("open"); });
   $("receiptBtn").addEventListener("click", () => $("receiptInput").click());

@@ -179,5 +179,42 @@ assert.equal(newsRuns, 1);
   assert.equal(sent.length, n);   // he came back, no check
   console.log("countdowns + life log + focus + away check ok");
 }
+
+// Scenes, upkeep jobs, routine spotting.
+{
+  const kv4 = mem(); let t = Date.parse("2026-10-30T19:00:00Z"); const sent = [], calls = [];
+  const state = { "Lounge lamp": { power: "on", brightness: 30, white_kelvin: 2700 }, "Strip": { power: "on", brightness: 80, colour_rgb: [128, 0, 255] }, "Hall": { power: "off" } };
+  const j4 = createJarvis({ kv: kv4, now: () => new Date(t), notify: async (x, o) => { sent.push(o.title + "|" + x); return true; }, sayOnPhone: async () => {},
+    pc: { online: () => false }, telegram: {}, brain: {}, speakMp3: async () => null, headlines: async () => [], dayLog: { add() {} }, voiceRequests: async () => [], saveMemory: async () => {}, imou: {}, eventsToday: async () => [], parcels: {},
+    dj: { mix: async ({ mood }) => ({ ok: true, title: mood + " mix" }) },
+    lights: { list: async () => Object.keys(state).map((name) => ({ name, type: "light" })).concat([{ name: "55 TV", type: "tv" }]),
+      control: async (a) => { if (a.action === "status") return { ok: true, device: state[a.device] }; calls.push(`${a.device} ${a.action}${a.value ? " " + a.value : ""}`); return { ok: true }; } } });
+  let r = await j4.scene({ action: "save", name: "Movie night", music: "film night chill" });
+  assert.equal(r.ok, true); assert.deepEqual(r.lights_on, ["Lounge lamp", "Strip"]);
+  r = await j4.scene({ name: "the movie night scene" });
+  assert.equal(r.set, 3); assert.equal(r.music, "film night chill mix");
+  assert.deepEqual(calls, ["Lounge lamp on", "Lounge lamp white 2700K", "Lounge lamp brightness 30", "Strip on", "Strip colour purple", "Strip brightness 80", "Hall off"]);
+  assert.equal((await j4.scene({ name: "disco" })).ok, false);
+  assert.equal((await j4.scene({ action: "list" })).scenes.length, 1);
+  // Upkeep: due from when he last logged it; the morning nudge once; logging restarts the clock.
+  await j4.lifeLog({ action: "log", thing: "descaled the kettle", when: "2026-08-01" });
+  r = await j4.upkeep({ action: "add", thing: "descale the kettle", every_days: 60 });
+  assert.match(r.added.due, /overdue by \d+ days/);
+  await j4.upkeep({ action: "add", thing: "bleed the radiators", every_days: 365 });
+  t = Date.parse("2026-10-31T09:30:00Z"); await j4.upkeepTick(); await j4.upkeepTick();
+  assert.equal(sent.filter((x) => x.startsWith("🔧")).length, 1); assert.match(sent.at(-1), /descale the kettle: overdue/); assert.doesNotMatch(sent.at(-1), /radiators/);
+  r = await j4.upkeep({ action: "done", thing: "kettle" });
+  assert.equal(r.next, "in 60 days");
+  // Routines: weather around 7am on most weekdays gets spotted, once.
+  for (let d = 0; d < 21; d++) { const day = new Date(Date.parse("2026-10-12T07:10:00Z") + d * 864e5); if (day.getUTCDay() % 6 === 0) continue; t = day.getTime(); await j4.notePattern("weather"); await j4.notePattern("weather"); }
+  t = Date.parse("2026-11-01T18:30:00Z");   // a Sunday evening
+  r = await j4.routineIdeas();
+  assert.equal(r.ideas[0].what, "weather"); assert.equal(r.ideas[0].when, "weekdays around 7am"); assert.equal(r.ideas[0].times, 15);
+  await j4.routineTick(); await j4.routineTick();
+  assert.equal(sent.filter((x) => x.startsWith("🧭")).length, 1);
+  await j4.routineIdeas({ action: "dismiss", label: "weather" });
+  assert.equal((await j4.routineIdeas()).ideas.length, 0);
+  console.log("scenes + upkeep + routine spotting ok");
+}
 console.log("jarvis tests passed");
 process.exit(0);

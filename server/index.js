@@ -377,6 +377,7 @@ const PROMPT_FIXES = [
 ` + "# Not wired up yet")),
   (base) => (base.includes("- announce, party_mode") ? base : base.replace("- end_call: when he says goodbye", "- announce, party_mode, tv_home_screen, home_reminders, sleep_timer, countdown, life_log, focus_mode, away_check, sports, rewind, diary, news_audio and video_summary: see \"Around the house: extras\", \"Sport\" and \"Looking back\".\n- end_call: when he says goodbye")),
   (base) => (base.includes("When he says it didn't work") ? base : base.replace("- Receipts, always.", "- When he says it didn't work, believe him. Never repeat that something worked once he's told you it hasn't: you can't see his screens or hear his speakers. Say what the tool did report (\"the TV accepted the command\"), say what's probably wrong, and give the fix or the next thing to try.\n- Receipts, always.")),
+  (base) => (base.includes("routine_ideas") ? base : base.replace("- Arriving home: when his phone joins", "- Scenes: \"save this as movie night\" snapshots every light as it is now (scene save, optionally with a music mood); \"movie night\" puts it back (scene set). Prefer a saved scene over guessing light settings when he names one.\n- Upkeep jobs: \"remind me to descale the kettle every two months\" is upkeep add (counted from when he last did it, not fixed dates). \"I've descaled the kettle\" is upkeep done. \"What jobs are due?\" is upkeep due. One morning notification when something's due.\n- Routines: Bernud notices what he asks for at the same time most days. \"What routines have you spotted?\" is routine_ideas; offer to automate one at a time with wakeup, reminder or roundups, and dismiss ones he doesn't want.\n- Arriving home: when his phone joins")),
   (base) => (base.includes("focus_mode") ? base : base.replace("- Arriving home: when his phone joins", "- Countdowns: \"how many days until Christmas / my holiday?\" use countdown (Christmas, New Year, Halloween, Bonfire Night and Liberation Day are built in); \"start a countdown to…\" adds one. He's nudged a week before and the day before.\n- Life log: \"log that I changed the oil\", \"when did I last cut the grass?\", \"how many times have I been to the gym this month?\" use life_log. It only knows what he's logged; if nothing's there, say so and offer to log it now.\n- Focus mode: \"focus mode for 45 minutes\" / \"I need to concentrate\" use focus_mode: cool white lights and a calm mix, then a spoken break call when time's up. Say when it ends, briefly.\n- Away check: about ten minutes after he leaves, lights and TVs left on are flagged on his phone (or switched off if he's turned auto-off on). \"Did I leave anything on?\" is away_check check_now; offer to switch off what's on.\n- Arriving home: when his phone joins")),
   (base) => (base.includes("sleep_timer") ? base : base.replace("- Arriving home: when his phone joins", "- Reminders for when he gets home: \"remind me to put the bins out when I get in\" uses home_reminders add (not reminder). They go off the next time he arrives home.\n- Sleep timer: \"turn the music off in half an hour\", \"TV off in an hour\", \"everything off in an hour\" use sleep_timer. Say the clock time it'll happen.\n- Arriving home: when his phone joins")),
   (base) => (base.includes("spoken morning news at half seven") ? base : base.replace("and bin night on Wednesday at seven before Thursday's collection,", "the day's diary at half ten at night, the spoken morning news at half seven, and bin night on Wednesday at seven before Thursday's collection,")),
@@ -913,6 +914,11 @@ export async function handle(req, res) {
     if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
     return send(res, 200, { ok: true, url: `https://bernud.onrender.com/camera.html?tv=1&tvk=${TV_KEY}` }, req);
   }
+  // What he's used in the last week, for the "Everything Bernard can do" page.
+  if (path === "/dash/usage" && req.method === "GET") {
+    if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
+    try { const w = await dayLog.week(); return send(res, 200, { ok: true, days: w.days, tools: Object.fromEntries(w.tools) }, req); } catch (e) { return send(res, 200, { ok: false, tools: {} }, req); }
+  }
   if (path === "/dash/home-here" && req.method === "POST") {
     if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
     const ip = clientIp(req);
@@ -1175,7 +1181,7 @@ export async function handle(req, res) {
   }
 
   if (!API_KEY || req.headers["x-bernud-key"] !== API_KEY) return send(res, 401, { error: "unauthorised" });
-  { const label = dayLog.routeLabel(path); if (label && req.method !== "OPTIONS") dayLog.add("tool", label, String(req.headers["x-bernud-via"] || "voice").slice(0, 12)); }
+  { const label = dayLog.routeLabel(path); if (label && req.method !== "OPTIONS") { dayLog.add("tool", label, String(req.headers["x-bernud-via"] || "voice").slice(0, 12)); jarvis.notePattern(label).catch(() => {}); } }
 
   try {
     if (req.method === "POST" && path === "/memory/save") {
@@ -1268,6 +1274,9 @@ export async function handle(req, res) {
     }
     // ---- the "Jarvis" extras ----
     if (path === "/home/reminders" && req.method === "POST") return send(res, 200, await jarvis.homeReminders(await readJson(req)));
+    if (path === "/scene" && req.method === "POST") return send(res, 200, await jarvis.scene(await readJson(req)));
+    if (path === "/upkeep" && req.method === "POST") return send(res, 200, await jarvis.upkeep(await readJson(req)));
+    if (path === "/routine-ideas" && req.method === "POST") return send(res, 200, await jarvis.routineIdeas(await readJson(req)));
     if (path === "/countdown" && req.method === "POST") return send(res, 200, await jarvis.countdown(await readJson(req)));
     if (path === "/life-log" && req.method === "POST") return send(res, 200, await jarvis.lifeLog(await readJson(req)));
     if (path === "/focus" && req.method === "POST") return send(res, 200, await jarvis.focus(await readJson(req)));

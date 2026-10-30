@@ -411,7 +411,152 @@ export function createJarvis({ kv, notify, sayOnPhone, pc, telegram, lights, dj,
     dayLog?.add("event", `Away check: ${on.length} left on`);
   }
 
+  // ---------- scenes: "save the lights as movie night" / "movie night" ----------
+  // A snapshot of every light (on/off, brightness, white or colour), put back exactly on request.
+  const HUES = [["red", 0], ["orange", 8], ["yellow", 16], ["lime", 25], ["green", 33], ["teal", 47], ["cyan", 50], ["light blue", 58], ["blue", 66], ["purple", 75], ["violet", 78], ["magenta", 83], ["pink", 90], ["red", 100]];
+  function colourName(s) {
+    let hue = s.colour?.hue;   // SmartThings: 0-100
+    if (hue == null && Array.isArray(s.colour_rgb)) {
+      const [r, g, b] = s.colour_rgb.map((v) => v / 255), mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+      if (!d) return "white";
+      let h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+      hue = ((h * 60 + 360) % 360) / 3.6;
+    }
+    if (hue == null) return null;
+    return HUES.reduce((best, x) => (Math.abs(x[1] - hue) < Math.abs(best[1] - hue) ? x : best))[0];
+  }
+  async function snapshotLights() {
+    const devs = ((await lights.list?.().catch(() => [])) || []).filter((d) => d.name && !d.error && d.type === "light").slice(0, 20);
+    const out = [];
+    for (const d of devs) {
+      try {
+        const s = (await lights.control({ device: d.name, action: "status" }))?.device || {};
+        if (s.power !== "on" && s.power !== "off") continue;
+        out.push({ name: d.name, power: s.power, brightness: typeof s.brightness === "number" ? s.brightness : undefined,
+          kelvin: s.white_kelvin && !s.colour_rgb && !(s.colour?.saturation > 20) ? s.white_kelvin : undefined, colour: s.white_kelvin && !s.colour_rgb ? undefined : colourName(s) || undefined });
+      } catch {}
+    }
+    return out;
+  }
+  const sceneKey = (n) => String(n || "").toLowerCase().replace(/^(the|my)\s+/, "").replace(/\s+(scene|mode|lighting|lights)$/, "").trim();
+  async function scene({ action = "set", name = "", music = "" } = {}) {
+    const all = await loadJ("scenes", {});
+    const key = sceneKey(name);
+    if (action === "list") return { ok: true, scenes: Object.values(all).map((s) => ({ name: s.name, lights: s.lights.length, music: s.music || undefined })), note: Object.keys(all).length ? undefined : "No scenes saved yet. Set the lights how he likes them, then say 'save this as movie night'." };
+    if (!key) return { ok: false, error: "Which scene?" };
+    if (action === "save") {
+      const snap = await snapshotLights();
+      if (!snap.length) return { ok: false, error: "Couldn't read any of the lights just now, so nothing was saved." };
+      all[key] = { name: String(name).trim().slice(0, 40), lights: snap, music: String(music || "").slice(0, 80) || undefined, saved: now().toISOString() };
+      await kv.set("scenes", JSON.stringify(all));
+      return { ok: true, saved: all[key].name, lights_on: snap.filter((l) => l.power === "on").map((l) => l.name), lights_off: snap.filter((l) => l.power === "off").length, music: all[key].music };
+    }
+    const hit = all[key] || Object.values(all).find((s) => sceneKey(s.name).includes(key) || key.includes(sceneKey(s.name)));
+    if (action === "delete") { if (!hit) return { ok: false, error: "No scene by that name." }; delete all[sceneKey(hit.name)]; await kv.set("scenes", JSON.stringify(all)); return { ok: true, deleted: hit.name }; }
+    if (!hit) return { ok: false, error: `No scene called "${name}".`, saved: Object.values(all).map((s) => s.name) };
+    const done = [], failed = [];
+    for (const l of hit.lights) {
+      try {
+        if (l.power === "off") { await lights.control({ device: l.name, action: "off" }); done.push(l.name); continue; }
+        await lights.control({ device: l.name, action: "on" });
+        if (l.kelvin) await lights.control({ device: l.name, action: "white", value: `${l.kelvin}K` });
+        else if (l.colour) await lights.control({ device: l.name, action: "colour", value: l.colour });
+        if (l.brightness != null) await lights.control({ device: l.name, action: "brightness", value: String(l.brightness) });
+        done.push(l.name);
+      } catch (e) { failed.push(`${l.name}: ${String(e.message).slice(0, 60)}`); }
+    }
+    let playing;
+    if (hit.music && dj?.mix) { try { const r = await dj.mix({ mood: hit.music }); if (r?.ok) playing = r.title || hit.music; } catch {} }
+    dayLog?.add("event", `Scene: ${hit.name}`);
+    return { ok: done.length > 0, scene: hit.name, set: done.length, failed: failed.length ? failed : undefined, music: playing };
+  }
+
+  // ---------- upkeep: jobs that come round again, counted from when he last did them ----------
+  async function upkeep({ action = "list", thing = "", every_days = 0 } = {}) {
+    let jobs = await loadJ("upkeep_jobs", []);
+    const t = now();
+    const lastDone = async (j) => { const r = await lifeLog({ action: "last", thing: j.thing }); return r.found ? Date.parse(r.date + "T12:00:00Z") : Date.parse(j.added); };
+    const view = async (j) => { const last = await lastDone(j), due = last + j.every * 864e5, days = Math.round((due - t) / 864e5);
+      return { thing: j.thing, every_days: j.every, last_done: (await lifeLog({ action: "last", thing: j.thing })).found ? ago(t - last) : "not logged yet", due: days < 0 ? `overdue by ${-days} days` : days === 0 ? "today" : `in ${days} days`, days_left: days }; };
+    if (action === "add") {
+      thing = String(thing).trim().slice(0, 80); const every = Math.round(Number(every_days));
+      if (!thing || !(every >= 1 && every <= 3650)) return { ok: false, error: "Need the job and how often, in days (e.g. 60 for every two months)." };
+      jobs = [...jobs.filter((j) => !sameThing(j.thing, thing)), { thing, every, added: t.toISOString() }];
+      await kv.set("upkeep_jobs", JSON.stringify(jobs.slice(-40)));
+      return { ok: true, added: await view(jobs.at(-1)), note: "When he says he's done it, log it with life_log and the clock restarts." };
+    }
+    if (action === "remove") { const keep = jobs.filter((j) => !sameThing(j.thing, thing)); await kv.set("upkeep_jobs", JSON.stringify(keep)); return { ok: true, removed: jobs.length - keep.length }; }
+    if (action === "done") { const j = jobs.find((x) => sameThing(x.thing, thing)); await lifeLog({ action: "log", thing: j?.thing || thing }); return { ok: true, logged: j?.thing || thing, next: j ? (await view(j)).due : undefined }; }
+    const list = []; for (const j of jobs) list.push(await view(j));
+    list.sort((a, b) => a.days_left - b.days_left);
+    return { ok: true, jobs: action === "due" ? list.filter((j) => j.days_left <= 7) : list, note: jobs.length ? undefined : "No upkeep jobs yet." };
+  }
+  // Each morning after nine: one notification listing jobs that have come due (each job at most once a week).
+  async function upkeepTick() {
+    const t = now(), today = londonDay(t);
+    if (Number(new Intl.DateTimeFormat("en-GB", { timeZone: TZ, hour: "numeric", hour12: false }).format(t)) % 24 < 9) return;
+    if ((await kv.get("upkeep_checked")) === today) return;
+    await kv.set("upkeep_checked", today);
+    const nudged = await loadJ("upkeep_nudged", {});
+    const due = (await upkeep({ action: "list" })).jobs.filter((j) => j.days_left <= 0 && (!nudged[j.thing] || t - Date.parse(nudged[j.thing]) >= 7 * 864e5));
+    if (!due.length) return;
+    for (const j of due) nudged[j.thing] = t.toISOString();
+    await kv.set("upkeep_nudged", JSON.stringify(nudged));
+    await notify(due.map((j) => `• ${j.thing}: ${j.due === "today" ? "due today" : j.due} (last done ${j.last_done})`).join("\n") + "\nTell Bernard when it's done and the clock restarts.", { title: "🔧 Jobs due" }).catch(() => {});
+  }
+
+  // ---------- routine spotting: notices what he asks for at the same time most days ----------
+  const SKIP = /^(home|memory|sent to phone|note for claude|phone|PC)$/i;
+  const slotOf = (t) => {
+    const p = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: TZ, weekday: "short", hour: "numeric", hour12: false }).formatToParts(t).map((x) => [x.type, x.value]));
+    return { days: /Sat|Sun/.test(p.weekday) ? "weekends" : "weekdays", hour: Number(p.hour) % 24 };
+  };
+  async function notePattern(label) {
+    if (!label || SKIP.test(label)) return;
+    const t = now(), { days, hour } = slotOf(t), k = `${label}|${days}|${hour}`, day = londonDay(t);
+    const p = await loadJ("patterns", {});
+    const list = p[k] || [];
+    if (list.at(-1) === day) return;
+    p[k] = [...list, day].filter((d) => dayNum(d) > dayNum(day) - 28);
+    for (const key of Object.keys(p)) if (!p[key].some((d) => dayNum(d) > dayNum(day) - 28)) delete p[key];
+    await kv.set("patterns", JSON.stringify(p));
+  }
+  async function routineIdeas({ action = "list", label = "" } = {}) {
+    const dismissed = await loadJ("patterns_dismissed", []);
+    if (action === "dismiss") { await kv.set("patterns_dismissed", JSON.stringify([...new Set([...dismissed, String(label).toLowerCase()])].slice(-50))); return { ok: true, dismissed: label }; }
+    const p = await loadJ("patterns", {}), today = dayNum(londonDay(now()));
+    const merged = {};
+    for (const [k, list] of Object.entries(p)) {   // join neighbouring hours: "around 7" covers 6:xx-7:xx
+      const [lab, days, hour] = k.split("|");
+      for (const h of [Number(hour), Number(hour) + 1]) { const key = `${lab}|${days}|${h}`; merged[key] = new Set([...(merged[key] || []), ...list.filter((d) => dayNum(d) > today - 21)]); }
+    }
+    const ideas = [];
+    for (const [k, set] of Object.entries(merged)) {
+      const [lab, days, h] = k.split("|"), need = days === "weekdays" ? 6 : 3;
+      if (set.size < need || dismissed.includes(lab.toLowerCase())) continue;
+      const hour = (Number(h) - 1 + 24) % 24;
+      ideas.push({ what: lab, when: `${days} around ${hour === 0 ? "midnight" : hour < 12 ? hour + "am" : hour === 12 ? "midday" : hour - 12 + "pm"}`, times: set.size, out_of: days === "weekdays" ? 15 : 6 });
+    }
+    const best = {};
+    for (const i of ideas.sort((a, b) => b.times - a.times)) { const k = i.what + i.when.split(" ")[0]; if (!best[k]) best[k] = i; }
+    const list = Object.values(best).slice(0, 6);
+    return { ok: true, ideas: list, note: list.length ? "Offer to make these automatic with what already exists (wakeup, reminder, roundups, a scene), one at a time. If he's not interested, dismiss it." : "Nothing regular enough yet; it needs about three weeks of use." };
+  }
+  // Sunday evening: if there's a new pattern, mention it once.
+  async function routineTick() {
+    const t = now(), p = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: TZ, weekday: "short", hour: "numeric", hour12: false }).formatToParts(t).map((x) => [x.type, x.value]));
+    if (p.weekday !== "Sun" || Number(p.hour) % 24 < 18) return;
+    const day = londonDay(t);
+    if ((await kv.get("patterns_told")) === day) return;
+    await kv.set("patterns_told", day);
+    const told = await loadJ("patterns_told_list", []);
+    const fresh = (await routineIdeas()).ideas.filter((i) => !told.includes(i.what + "|" + i.when));
+    if (!fresh.length) return;
+    await kv.set("patterns_told_list", JSON.stringify([...told, ...fresh.map((i) => i.what + "|" + i.when)].slice(-60)));
+    await notify(fresh.map((i) => `• ${i.what}, ${i.when} (${i.times} times in 3 weeks)`).join("\n") + "\nAsk Bernard \"what routines have you spotted?\" and he can make any of these automatic.", { title: "🧭 Noticed a routine" }).catch(() => {});
+  }
+
   let timer = null;
-  return { countdown, countdownTick, lifeLog, focus, focusTick, awayCheck, leftHome, awayTick, homeReminders, arrivedHome, sleepTimer, sleepTick, announce, partyMode, sports, sportsTick, youtube, rewind, writeDiary, newsAudio, ambient,
-    start() { if (timer) return; timer = setInterval(() => { sportsTick().catch(() => {}); sleepTick().catch(() => {}); focusTick().catch(() => {}); awayTick().catch(() => {}); countdownTick().catch(() => {}); }, 30_000); timer.unref?.(); } };
+  return { scene, upkeep, upkeepTick, notePattern, routineIdeas, routineTick, countdown, countdownTick, lifeLog, focus, focusTick, awayCheck, leftHome, awayTick, homeReminders, arrivedHome, sleepTimer, sleepTick, announce, partyMode, sports, sportsTick, youtube, rewind, writeDiary, newsAudio, ambient,
+    start() { if (timer) return; timer = setInterval(() => { sportsTick().catch(() => {}); sleepTick().catch(() => {}); focusTick().catch(() => {}); awayTick().catch(() => {}); countdownTick().catch(() => {}); upkeepTick().catch(() => {}); routineTick().catch(() => {}); }, 30_000); timer.unref?.(); } };
 }

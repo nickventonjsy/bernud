@@ -228,3 +228,7 @@ console.log("brain ok");
   has("when did I last cut the grass", "lifelog"); has("focus mode for 45 minutes", "focus");
   has("did I leave anything on", "awaycheck"); assert.ok(!pickGroups("turn the lights off").includes("awaycheck"));
   console.log("new tool groups ok"); }
+{ const has = (t, g) => assert.ok(pickGroups(t).includes(g), `${t} -> ${pickGroups(t)}`);
+  has("movie night", "scene"); has("save this as reading", "scene"); has("remind me to descale the kettle every two months", "upkeep");
+  has("I've descaled the kettle", "upkeep"); has("what jobs are due", "upkeep"); has("what routines have you spotted", "routines");
+  console.log("scene/upkeep/routine groups ok"); }
