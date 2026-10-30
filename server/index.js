@@ -375,8 +375,9 @@ const PROMPT_FIXES = [
 - Practice partner: for a job interview, a difficult conversation, a sales call or a speech, play the other person realistically (a tough interviewer, an awkward customer), one question or reply at a time. When he says stop, give three short points: what went well, what to improve, and one better phrasing.
 
 ` + "# Not wired up yet")),
-  (base) => (base.includes("- announce, party_mode") ? base : base.replace("- end_call: when he says goodbye", "- announce, party_mode, tv_home_screen, sports, rewind, diary, news_audio and video_summary: see \"Around the house: extras\", \"Sport\" and \"Looking back\".\n- end_call: when he says goodbye")),
+  (base) => (base.includes("- announce, party_mode") ? base : base.replace("- end_call: when he says goodbye", "- announce, party_mode, tv_home_screen, home_reminders, sleep_timer, sports, rewind, diary, news_audio and video_summary: see \"Around the house: extras\", \"Sport\" and \"Looking back\".\n- end_call: when he says goodbye")),
   (base) => (base.includes("When he says it didn't work") ? base : base.replace("- Receipts, always.", "- When he says it didn't work, believe him. Never repeat that something worked once he's told you it hasn't: you can't see his screens or hear his speakers. Say what the tool did report (\"the TV accepted the command\"), say what's probably wrong, and give the fix or the next thing to try.\n- Receipts, always.")),
+  (base) => (base.includes("sleep_timer") ? base : base.replace("- Arriving home: when his phone joins", "- Reminders for when he gets home: \"remind me to put the bins out when I get in\" uses home_reminders add (not reminder). They go off the next time he arrives home.\n- Sleep timer: \"turn the music off in half an hour\", \"TV off in an hour\", \"everything off in an hour\" use sleep_timer. Say the clock time it'll happen.\n- Arriving home: when his phone joins")),
   (base) => (base.includes("spoken morning news at half seven") ? base : base.replace("and bin night on Wednesday at seven before Thursday's collection,", "the day's diary at half ten at night, the spoken morning news at half seven, and bin night on Wednesday at seven before Thursday's collection,")),
 ];
 let promptSyncTimer = null;
@@ -471,7 +472,10 @@ const { createJarvis, sameNetwork } = await import("./jarvis.js");
 export const jarvis = createJarvis({ kv: db.kv, notify, sayOnPhone, pc, telegram, lights, dj, brain, speakMp3, headlines, dayLog, voiceRequests: voiceRequestsToday,
   saveMemory: (text, category) => db.save(text, category), imou, parcels,
   eventsToday: () => eventsOn(new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(new Date())),
-  elevenKey: process.env.ELEVENLABS_API_KEY || "", agentId: process.env.AGENT_ID || "agent_0501m5q6cc15eqcrnamk2e1w84xc" });
+  elevenKey: process.env.ELEVENLABS_API_KEY || "", agentId: process.env.AGENT_ID || "agent_0501m5q6cc15eqcrnamk2e1w84xc",
+  // Sleep timer: pause Spotify wherever it's playing; switch the main TV off.
+  pauseMusic: async () => { const r = await fetch(`${(process.env.ZW_URL || "https://zentrawire.onrender.com").replace(/\/+$/, "")}/api/assistant/spotify/control`, { method: "POST", headers: { "content-type": "application/json", "x-zw-assistant": process.env.ZW_ASSISTANT_KEY || "" }, body: JSON.stringify({ action: "pause" }), signal: AbortSignal.timeout(15_000) }); return r.json().catch(() => ({})); },
+  tvOff: async (device = "") => { try { return await smartthings.control({ device, action: "off" }); } catch (e) { if (/Which TV/.test(e.message)) return smartthings.control({ device: "55", action: "off" }); throw e; } } });
 export const digests = createDigests({ kv: db.kv, notify, needsReply: async () => ((await gmail.connected()) ? gmail.needsReply() : null), priorities: async () => priorities.list(await briefPrioritiesTop()),
   events: eventsOn, parcels, receipts, camEvents: (a) => camAlerts.events(a),
   diary: () => jarvis.writeDiary(), newsAudio: () => jarvis.newsAudio() });
@@ -1152,14 +1156,14 @@ export async function handle(req, res) {
   if (req.method === "POST" && path === "/home/event") {
     if (!PHONE_SECRET || req.headers["x-phone-key"] !== PHONE_SECRET) return send(res, 401, { error: "unauthorised" });
     const ev = String(url.searchParams.get("e") || "");
-    if (ev === "arrive") { dayLog.add("event", "Arrived home", "phone"); return send(res, 200, await home.arrive()); }
+    if (ev === "arrive") { dayLog.add("event", "Arrived home", "phone"); const r = await home.arrive(); if (r.acted) r.home_reminders = await jarvis.arrivedHome().catch(() => []); return send(res, 200, r); }
     if (ev === "leave") { dayLog.add("event", "Left home", "phone"); return send(res, 200, await home.leave()); }
     // The Bernard app reports joining / losing Wi-Fi; it's home if the phone's internet address matches the house's.
     if (ev === "wifi") {
       const homeIps = await homeAddresses(), ip = clientIp(req);
       if (!homeIps.length) return send(res, 200, { ok: true, acted: false, reason: "home Wi-Fi not set (dashboard button)" });
       if (!homeIps.some((h) => sameNetwork(ip, h))) return send(res, 200, { ok: true, acted: false, reason: "not the home Wi-Fi" });
-      dayLog.add("event", "Arrived home (Wi-Fi)", "phone"); return send(res, 200, await home.arrive());
+      dayLog.add("event", "Arrived home (Wi-Fi)", "phone"); const r = await home.arrive(); if (r.acted) r.home_reminders = await jarvis.arrivedHome().catch(() => []); return send(res, 200, r);
     }
     if (ev === "wifi_lost") {
       let st = {}; try { st = JSON.parse((await db.kv.get("home_state")) || "{}"); } catch {}
@@ -1262,6 +1266,8 @@ export async function handle(req, res) {
       catch (e) { console.error("zapier", e.message); return send(res, 200, { ok: false, error: e.code || "zapier_error", message: String(e.message).slice(0, 300) }); }
     }
     // ---- the "Jarvis" extras ----
+    if (path === "/home/reminders" && req.method === "POST") return send(res, 200, await jarvis.homeReminders(await readJson(req)));
+    if (path === "/sleep-timer" && req.method === "POST") return send(res, 200, await jarvis.sleepTimer(await readJson(req)));
     if (path === "/announce" && req.method === "POST") return send(res, 200, await jarvis.announce(await readJson(req)));
     if (path === "/party" && req.method === "POST") { try { return send(res, 200, await jarvis.partyMode(await readJson(req))); } catch (e) { return send(res, 200, { ok: false, message: String(e.message).slice(0, 200) }); } }
     if (path === "/sports" && req.method === "POST") { try { return send(res, 200, await jarvis.sports(await readJson(req))); } catch (e) { return send(res, 200, { ok: false, message: "Couldn't get the scores just now." }); } }

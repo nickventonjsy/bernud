@@ -108,5 +108,29 @@ assert.equal(diaryRuns, 1); assert.ok(dn.includes("📔 Today's diary"));
 await mk("2026-10-29T07:31:00Z").tick();
 assert.equal(newsRuns, 1);
 
+// Home reminders and the sleep timer.
+{
+  const kv2 = mem(); let t = Date.parse("2026-10-30T21:00:00Z"); const spoken = [], sent = [], acts = [];
+  const j2 = createJarvis({ kv: kv2, now: () => new Date(t), notify: async (x, o) => { sent.push(o.title + "|" + x); return true; }, sayOnPhone: async (x) => spoken.push(x),
+    pc: { online: () => false }, telegram: {}, lights: { control: async (a) => { acts.push("lights " + a.action); return { ok: true }; } }, dj: {}, brain: {}, speakMp3: async () => null,
+    headlines: async () => [], dayLog: { add() {} }, voiceRequests: async () => [], saveMemory: async () => {}, imou: {}, eventsToday: async () => [], parcels: {},
+    pauseMusic: async () => acts.push("music paused"), tvOff: async (d) => acts.push("tv off " + d) });
+  await j2.homeReminders({ action: "add", text: "put the bins out" });
+  await j2.homeReminders({ action: "add", text: "ring Mum" });
+  assert.equal((await j2.homeReminders({})).reminders.length, 2);
+  const got = await j2.arrivedHome();
+  assert.deepEqual(got, ["put the bins out", "ring Mum"]);
+  assert.match(spoken[0], /remind you: put the bins out\. And ring Mum/); assert.match(sent[0], /Now you're home/);
+  assert.equal((await j2.arrivedHome()).length, 0);   // cleared after going off once
+  let r = await j2.sleepTimer({ what: "music", minutes: 30 });
+  assert.equal(r.ok, true); assert.equal(r.minutes, 30);
+  await j2.sleepTimer({ what: "tv", minutes: 60, device: "bedroom" });
+  t += 31 * 60_000; await j2.sleepTick();
+  assert.deepEqual(acts, ["music paused"]);
+  t += 30 * 60_000; await j2.sleepTick();
+  assert.deepEqual(acts, ["music paused", "tv off bedroom"]);
+  assert.equal((await j2.sleepTimer({ action: "list" })).timers.length, 0);
+  console.log("home reminders + sleep timer ok");
+}
 console.log("jarvis tests passed");
 process.exit(0);

@@ -124,6 +124,8 @@ export const GROUPS = {
   rewind: { tools: ["rewind", "diary"], re: /\b(what did (?:i|we|you) (?:say|ask|talk)|earlier|last (?:week|time)|the other day|rewind|remind me what|did i (?:ask|tell)|we (?:talked|spoke|discussed)|diary|journal)\b/ },
   newsaudio: { tools: ["news_audio"], re: /\b(spoken news|news (?:audio|bulletin|podcast)|read (?:me )?the news|morning news)\b/ },
   tvhome: { tools: ["tv_home_screen"], re: /\b(home ?screen|ambient|dashboard on the (?:tv|telly)|clock on the (?:tv|telly))\b/ },
+  homerem: { tools: ["home_reminders", "reminder"], re: /\b(when i (?:get|come|arrive) (?:home|in|back)|when i'?m (?:home|back)|get home|once i'?m home)\b/ },
+  sleeptimer: { tools: ["sleep_timer"], re: /\b(sleep timer|(?:off|stop|pause) in (?:an? |\d+|half|one|two|three|ten|twenty|thirty|forty|fifteen|forty-five)|in (?:an? hour|\d+ minutes?|half an hour)|cancel (?:the )?timer)\b/ },
   weather: { tools: ["get_weather"], re: /\b(weather|rain|raining|wind|windy|temperature|cold|warm|hot|sunny|umbrella|forecast|coat|degrees|snow|storm)\b/ },
 };
 const ALWAYS = ["recall", "remember", "forget"];

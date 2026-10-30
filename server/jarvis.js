@@ -32,7 +32,8 @@ export function parseEspn(j) {
 }
 
 export function createJarvis({ kv, notify, sayOnPhone, pc, telegram, lights, dj, brain, speakMp3, headlines, dayLog, voiceRequests, saveMemory, imou, eventsToday, parcels,
-  elevenKey = "", agentId = "", fetchImpl = fetch, now = () => new Date(), log = console }) {
+  elevenKey = "", agentId = "", fetchImpl = fetch, now = () => new Date(), log = console,
+  pauseMusic = async () => {}, tvOff = async () => {} }) {
 
   // ---------- announcements to the house ----------
   async function announce({ text = "" } = {}) {
@@ -192,7 +193,66 @@ export function createJarvis({ kv, notify, sayOnPhone, pc, telegram, lights, dj,
     return value;
   }
 
+  // ---------- "remind me when I get home" ----------
+  const loadJ = async (k, d) => { try { return JSON.parse((await kv.get(k)) || "null") ?? d; } catch { return d; } };
+  async function homeReminders({ action = "list", text = "", id = "" } = {}) {
+    let list = await loadJ("home_reminders", []);
+    if (action === "add") {
+      text = String(text).trim().slice(0, 300);
+      if (!text) return { ok: false, error: "What should I remind him of when he gets home?" };
+      list.push({ id: Math.random().toString(36).slice(2, 8), text, at: now().toISOString() });
+      await kv.set("home_reminders", JSON.stringify(list.slice(-20)));
+      return { ok: true, added: text, waiting: list.length, note: "It goes off the next time his phone joins the home Wi-Fi after he's been out (the Bernard app needs to be running, and the home Wi-Fi set once from the dashboard)." };
+    }
+    if (action === "cancel") {
+      const q = String(id || text).toLowerCase();
+      const keep = list.filter((r) => r.id !== q && !(q && r.text.toLowerCase().includes(q)));
+      await kv.set("home_reminders", JSON.stringify(keep));
+      return { ok: true, removed: list.length - keep.length, waiting: keep.length };
+    }
+    return { ok: true, reminders: list.map((r) => ({ id: r.id, text: r.text })), note: list.length ? undefined : "No reminders waiting for when he gets home." };
+  }
+  // Called when he arrives home: say them on the phone and send them to Telegram, then clear them.
+  async function arrivedHome() {
+    const list = await loadJ("home_reminders", []);
+    if (!list.length) return [];
+    await kv.set("home_reminders", "[]");
+    const lines = list.map((r) => r.text);
+    try { await sayOnPhone(`Welcome back, sir. You asked me to remind you: ${lines.join(". And ")}.`); } catch {}
+    await notify(lines.map((l) => "• " + l).join("\n"), { title: "🏠 Now you're home" }).catch(() => {});
+    dayLog?.add("event", `Home reminders: ${lines.length}`);
+    return lines;
+  }
+
+  // ---------- sleep timer: music / TV / lights off later ----------
+  const WHAT = { music: "the music", tv: "the TV", lights: "the lights", all: "the music, TV and lights" };
+  async function sleepTimer({ action = "set", what = "music", minutes = 30, device = "" } = {}) {
+    let list = await loadJ("sleep_timers", []);
+    if (action === "cancel") { const before = list.length; list = what && what !== "all_timers" ? list.filter((t) => t.what !== what) : []; await kv.set("sleep_timers", JSON.stringify(list)); return { ok: true, cancelled: before - list.length }; }
+    if (action === "list") return { ok: true, timers: list.map((t) => ({ what: WHAT[t.what], at: hhmm(new Date(t.due)) })) };
+    if (!WHAT[what]) return { ok: false, error: "Which: music, tv, lights or all?" };
+    const m = Math.min(Math.max(Number(minutes) || 30, 1), 600);
+    const due = now().getTime() + m * 60_000;
+    list = [...list.filter((t) => t.what !== what), { what, due, device: String(device || "").slice(0, 40) }];
+    await kv.set("sleep_timers", JSON.stringify(list));
+    return { ok: true, what: WHAT[what], minutes: m, at: hhmm(new Date(due)) };
+  }
+  async function sleepTick() {
+    const list = await loadJ("sleep_timers", []);
+    if (!list.length) return;
+    const t = now().getTime(), due = list.filter((x) => x.due <= t);
+    if (!due.length) return;
+    await kv.set("sleep_timers", JSON.stringify(list.filter((x) => x.due > t)));
+    for (const x of due) {
+      if (x.what === "music" || x.what === "all") await pauseMusic().catch((e) => log.error?.("sleep timer music", e.message));
+      if (x.what === "tv" || x.what === "all") await tvOff(x.device || "").catch((e) => log.error?.("sleep timer tv", e.message));
+      if (x.what === "lights" || x.what === "all") await lights.control({ device: "all", action: "off" }).catch((e) => log.error?.("sleep timer lights", e.message));
+      dayLog?.add("event", `Sleep timer: ${WHAT[x.what]} off`);
+      log.log?.(`sleep timer: ${x.what} off`);
+    }
+  }
+
   let timer = null;
-  return { announce, partyMode, sports, sportsTick, youtube, rewind, writeDiary, newsAudio, ambient,
-    start() { if (timer) return; timer = setInterval(() => sportsTick().catch(() => {}), 60_000); timer.unref?.(); } };
+  return { homeReminders, arrivedHome, sleepTimer, sleepTick, announce, partyMode, sports, sportsTick, youtube, rewind, writeDiary, newsAudio, ambient,
+    start() { if (timer) return; timer = setInterval(() => { sportsTick().catch(() => {}); sleepTick().catch(() => {}); }, 30_000); timer.unref?.(); } };
 }
