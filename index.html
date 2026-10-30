@@ -745,7 +745,7 @@
 
   // ---- Version numbers (bottom of the screen) ----
   // DASH_VERSION goes up by one with every dashboard change (a git hook bumps it automatically).
-  const DASH_VERSION = 45;
+  const DASH_VERSION = 46;
   (async () => {
     const set = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
     set("dashVer", DASH_VERSION);
@@ -1866,7 +1866,7 @@
           if (pendingPhoto) { const p = pendingPhoto; pendingPhoto = null; setTimeout(() => sendPhoto(p.blob, p.text), 400); }
           else if (pendingText) { const t = pendingText; pendingText = null; setTimeout(() => sendText(t), 400); }
         },
-        onDisconnect: () => onConversationEnded(),
+        onDisconnect: (d) => onConversationEnded(d && d.reason === "agent"),
         onError: (e) => { console.error("Bernard error", e); setEmotion("concerned", 5); $("subline").textContent = "Error: " + String((e && e.message) || e).slice(0, 120); },
         onModeChange: ({ mode: m }) => {
           if (!busy) return;
@@ -1926,11 +1926,13 @@
     }, 250);
   }
 
-  function onConversationEnded() {
+  function onConversationEnded(saidBye = false) {
     clearInterval(micWatch);
+    if (saidBye) goodbyeQuiet();
     appCall("conversationEnded");
     conversation = null; busy = false;
-    if (armed) { setMode("standby", "Say \"Hey Bernard\" when you need me."); setTimeout(startWakeWord, 800); }
+    if (saidBye) setMode("idle", QUIET_SUB);
+    else if (armed) { setMode("standby", "Say \"Hey Bernard\" when you need me."); setTimeout(startWakeWord, 800); }
     else setMode("idle", "Tap the core or the microphone to talk.");
   }
 
@@ -1979,7 +1981,6 @@
         let text = ""; for await (const chunk of reader) { text += chunk; if (!mine) caption(text); }
         text = text.trim(); if (!text) return;
         lkPoke();
-        if (mine && isGoodbye(text, lastAgentLine, lkReplies)) lkBye = true;
         if (mine) { captionDone(); $("subline").textContent = "You: " + (text.length > 140 ? text.slice(0, 137) + "…" : text); logLine("You", text); setEmotion("curious", 2); }
         else { lastAgentLine = text; lkReplies++; caption(text); captionDone(); reactTo(text); logLine("Bernard", text); }
       });
@@ -1990,6 +1991,7 @@
         if (ui && ui.camera) openCamera(ui.camera.name);
         if (ui && ui.closeCamera) closeCamera();
         if (ui && ui.brief) { try { openBrief(); } catch {} }
+        if (ui && ui.bye) lkBye = true;   // Bernard's worker says this call ended with a goodbye
       });
       await room.connect(j.url, j.token);
       await room.localParticipant.setMicrophoneEnabled(true, store.get(STORE.mic) ? { deviceId: store.get(STORE.mic) } : undefined);
@@ -2006,13 +2008,24 @@
     if (!lkRoom) return;
     try { await lkRoom.localParticipant.sendText(text, { topic: "lk.chat" }); $("subline").textContent = "You: " + text; logLine("You", text); } catch (e) { $("subline").textContent = "Couldn't send that: " + String(e.message || e).slice(0, 80); }
   }
+  // "Goodbye" means stop listening: the "Hey Bernard" wake word goes off too, so chatting with people afterwards
+  // can't wake him by mistake (30 Oct: it woke on "Bernard"-sounding words minutes after a goodbye).
+  // Turn it back on with the "Hey Bernard" standby button, or just tap the core to talk.
+  const QUIET_SUB = "Listening off. Tap the core to talk, or turn \"Hey Bernard\" back on with the standby button.";
+  function goodbyeQuiet() {
+    if (APP) appCall("setWakeWord", false); else { try { localStorage.setItem("bernud.standby", "0"); } catch {} try { stopWakeWord(); } catch {} }
+    armed = false;
+  }
   function lkCleanup(sub) {
     clearTimeout(lkTimer);
     try { lkAudio?.remove(); } catch {} lkAudio = null; lkSpeaking = false;
     const r = lkRoom; lkRoom = null; lkActive = false;
     try { r?.disconnect(); } catch {}
+    const saidBye = lkBye; lkBye = false;
+    if (saidBye) goodbyeQuiet();
     busy = false; appCall("conversationEnded");
-    if (armed) { setMode("standby", sub || "Say \"Hey Bernard\" when you need me."); setTimeout(startWakeWord, 800); }
+    if (saidBye) setMode("idle", QUIET_SUB);
+    else if (armed) { setMode("standby", sub || "Say \"Hey Bernard\" when you need me."); setTimeout(startWakeWord, 800); }
     else setMode("idle", sub || "Tap the core or the microphone to talk.");
   }
   async function lkEnd() { lkCleanup(); }
@@ -2049,7 +2062,7 @@
   refreshCredits(); setInterval(refreshCredits, 10 * 60_000);
   const engine = () => store.get(ENGINE_KEY) || "auto";
   const useFree = () => engine() === "free" || (engine() === "auto" && Boolean(creditInfo && creditInfo.ok && creditInfo.saving));
-  let freeActive = false, freeSession = "", freeRec = null, freeLast = "";
+  let freeActive = false, freeSession = "", freeRec = null, freeLast = "", freeBye = false;
   const freeCb = {};
   // Same rule as the phone's voice worker: clear farewells end the call; a bare "thanks" only ends a short call where
   // Bernard didn't just ask something (so a lesson or game isn't cut off by "thank you"). "Stop" never ends it.
@@ -2233,7 +2246,7 @@
         if (!freeActive) return;
         if (heard === null) { $("subline").textContent = "Speech recognition isn't available here. Type instead, or switch to ElevenLabs in Settings."; return; }
         if (!heard) return;
-        if (isGoodbye(heard, freeLast, i)) { $("subline").textContent = "You: " + heard; await freeSpeak(oneOf(["Very good, sir.", "Right you are.", "Any time.", "I'll be here."])); return; }
+        if (isGoodbye(heard, freeLast, i)) { $("subline").textContent = "You: " + heard; await freeSpeak(oneOf(["Very good, sir.", "Right you are.", "Any time.", "I'll be here."])); freeBye = true; return; }
         if (await freeTurn(heard)) return;
       }
     } finally { if (freeActive) freeEnd(); }
@@ -2246,7 +2259,8 @@
     try { if (gAudio) { gAudio.pause(); gAudio = null; } } catch {}
     appCall("freeEnded");
     window.bernudHeard(""); window.bernudSpoke();
-    if (armed) { setMode("standby", freeLast || undefined); setTimeout(startWakeWord, 800); }
+    if (freeBye) { freeBye = false; goodbyeQuiet(); setMode("idle", QUIET_SUB); }
+    else if (armed) { setMode("standby", freeLast || undefined); setTimeout(startWakeWord, 800); }
     else setMode("idle", freeLast || undefined);
   }
 

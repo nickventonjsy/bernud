@@ -148,7 +148,10 @@ export default defineAgent({
       // After the farewell has been spoken, leave: closing the room ends the call on the dashboard and phone too.
       if (agent.ending && e.oldState === "speaking" && !leaving) {
         leaving = true;
-        setTimeout(async () => { say("leaving after goodbye"); try { await ctx.deleteRoom(); } catch (err) { say("deleteRoom failed: " + String(err.message || err).slice(0, 120)); } ctx.shutdown("goodbye"); }, 400);
+        setTimeout(async () => { say("leaving after goodbye");
+          // Tell the phone/dashboard it was a goodbye, so it turns "Hey Bernard" listening off too.
+          try { await ctx.room.localParticipant.sendText(JSON.stringify({ bye: true }), { topic: "bernud.ui" }); } catch {}
+          try { await ctx.deleteRoom(); } catch (err) { say("deleteRoom failed: " + String(err.message || err).slice(0, 120)); } ctx.shutdown("goodbye"); }, 400);
       }
     });
     session.on("user_input_transcribed", (e) => { if (e.isFinal) say(`heard: "${String(e.transcript).slice(0, 120)}"`); });
