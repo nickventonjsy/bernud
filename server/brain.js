@@ -133,6 +133,7 @@ export const GROUPS = {
   scene: { tools: ["scene", "lights"], re: /\b(scene|movie night|film night|reading lights?|dinner lights|save (?:this|the lights)|lights? like this|mood lighting)\b/ },
   upkeep: { tools: ["upkeep", "life_log"], re: /\b(upkeep|jobs? (?:are )?due|every (?:\w+ )?(?:weeks?|months?|years?|days?)|descal\w*|filter|radiators?|tyre|service the|(?:i'?ve|i have) (?:just )?(?:done|descaled|changed|cleaned|bled|serviced))\b/ },
   routines: { tools: ["routine_ideas", "reminder", "wakeup", "roundups"], re: /\b(routines? (?:have )?you (?:spotted|noticed)|what do i (?:always|usually) ask|spotted any routines|my habits)\b/ },
+  prep: { tools: ["emergency_store"], re: /\b(emergency (?:list|store|kit|supplies)|prep(?:per|ping)? list|survival (?:list|kit|checklist)|world war|ww3|amazon basket|in my basket)\b/ },
   weather: { tools: ["get_weather"], re: /\b(weather|rain|raining|wind|windy|temperature|cold|warm|hot|sunny|umbrella|forecast|coat|degrees|snow|storm)\b/ },
 };
 const ALWAYS = ["recall", "remember", "forget"];

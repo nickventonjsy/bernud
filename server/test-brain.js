@@ -232,3 +232,4 @@ console.log("brain ok");
   has("movie night", "scene"); has("save this as reading", "scene"); has("remind me to descale the kettle every two months", "upkeep");
   has("I've descaled the kettle", "upkeep"); has("what jobs are due", "upkeep"); has("what routines have you spotted", "routines");
   console.log("scene/upkeep/routine groups ok"); }
+{ assert.ok(pickGroups("what's left on the emergency list").includes("prep")); assert.ok(pickGroups("add it to my Amazon basket").includes("prep")); console.log("prep group ok"); }
