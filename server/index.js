@@ -219,7 +219,9 @@ export const brain = createBrain({ briefHandler: (text) => briefForBrain(text), 
 const { createDJ } = await import("./dj.js");
 export const dj = createDJ({ zw: { url: (process.env.ZW_URL || "https://zentrawire.onrender.com").replace(/\/+$/, ""), key: process.env.ZW_ASSISTANT_KEY || "" }, complete: (o) => brain.complete(o) });
 const { createSpeakers } = await import("./speakers.js");
-export const speakers = createSpeakers({ zw: { url: (process.env.ZW_URL || "https://zentrawire.onrender.com").replace(/\/+$/, ""), key: process.env.ZW_ASSISTANT_KEY || "" }, dj });
+export const speakers = createSpeakers({ zw: { url: (process.env.ZW_URL || "https://zentrawire.onrender.com").replace(/\/+$/, ""), key: process.env.ZW_ASSISTANT_KEY || "" }, dj,
+  // Open the Spotify app on his phone so it appears as a Spotify device.
+  wakePhone: async () => { if (phone.online()) return phone.send("open_app", "Spotify"); if (PHONE_TOPIC && PHONE_SECRET) return devices.ntfyPublish(PHONE_TOPIC, devices.phoneMessage(PHONE_SECRET, "open_app", "Spotify"), { priority: 5 }); } });
 
 // Goodnight: Bernard's verdict on the day, from what Nicholas asked him (free mode and voice mode) and his calendar.
 const VERDICT_SYSTEM = `You are Bernud, Nicholas's AI butler: calm, polished and quietly witty, with a dry British sense of humour.
@@ -1279,7 +1281,8 @@ export async function handle(req, res) {
       if (!r || !r.ok || !r.phone) return r;
       let held = false;
       if (phone.online()) { try { const p = await phone.send("music_started", ""); held = /^in_conversation/.test(String(p.output || "")); } catch {} }
-      return { ...r, ...(held ? { starts_when_call_ends: true, note: "He's talking to you on his phone, and Spotify on the phone stays quiet while the call has the audio. Tell him in one short sentence that it'll start the moment you hang up, then end the call with end_call (unless he has something else to ask)." } : {}) };
+      // hang_up: the phone voice worker ends the call by itself after this reply, so the music can start.
+      return { ...r, ...(held ? { starts_when_call_ends: true, hang_up: true, note: "He's talking to you on his phone, and Spotify on the phone stays quiet while the call has the audio. Tell him in one short sentence what's playing and that it starts as you hang up, then end the call with end_call (unless he has something else to ask)." } : {}) };
     }
     if (path === "/music/dj" && req.method === "POST") {
       try {

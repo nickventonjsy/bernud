@@ -745,7 +745,7 @@
 
   // ---- Version numbers (bottom of the screen) ----
   // DASH_VERSION goes up by one with every dashboard change (a git hook bumps it automatically).
-  const DASH_VERSION = 46;
+  const DASH_VERSION = 47;
   (async () => {
     const set = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
     set("dashVer", DASH_VERSION);
@@ -1937,7 +1937,7 @@
   }
 
   // ---- LiveKit mode: Bernard's own voice through LiveKit (worker on the server), about half the ElevenLabs credits ----
-  let lkRoom = null, lkActive = false, lkAudio = null, lkSpeaking = false, lkTimer = null, lkBye = false, lkStateSeen = false, lkReplies = 0;
+  let lkRoom = null, lkActive = false, lkAudio = null, lkSpeaking = false, lkTimer = null, lkBye = false, lkStateSeen = false, lkReplies = 0, lkMusic = false;
   // A call nobody speaks in is ended after a few quiet minutes, so a forgotten tab doesn't keep the line open.
   const LK_QUIET_MS = 4 * 60 * 1000;
   function lkPoke() { clearTimeout(lkTimer); lkTimer = setTimeout(() => { if (lkActive) lkCleanup("Ended after a few quiet minutes."); }, LK_QUIET_MS); }
@@ -1945,7 +1945,7 @@
     if (lkActive) { if (firstText) lkSend(firstText); return; }
     const pass = store.get("bernud.dashKey");
     if (!pass) return setMode("idle", "LiveKit mode needs your passcode: enter it in the CCP brief first.");
-    lkActive = true; busy = true; lkBye = false; lkStateSeen = false; lkReplies = 0;
+    lkActive = true; busy = true; lkBye = false; lkStateSeen = false; lkReplies = 0; lkMusic = false;
     appCall("conversationStarted");
     await stopWakeWord();
     setMode("connecting", "One moment.");
@@ -1973,8 +1973,8 @@
         if (st === "thinking" || st === "speaking" || st === "listening") setMode(st);
       });
       // He leaves the room after "goodbye" (or if his worker stops): end the call here too.
-      room.on(RoomEvent.ParticipantDisconnected, (p) => { if (lkActive && p.identity !== room.localParticipant.identity) lkCleanup(lkBye ? undefined : "Bernard hung up."); });
-      room.on(RoomEvent.Disconnected, () => { if (lkActive) lkCleanup(lkBye ? undefined : "Bernard hung up."); });
+      room.on(RoomEvent.ParticipantDisconnected, (p) => { if (lkActive && p.identity !== room.localParticipant.identity) lkCleanup(lkBye ? undefined : lkMusic ? "Music starting." : "Bernard hung up."); });
+      room.on(RoomEvent.Disconnected, () => { if (lkActive) lkCleanup(lkBye ? undefined : lkMusic ? "Music starting." : "Bernard hung up."); });
       // Live captions: Bernard's words and yours arrive as text streams on the transcription topic.
       room.registerTextStreamHandler("lk.transcription", async (reader, info) => {
         const mine = info.identity === room.localParticipant.identity;
@@ -1991,7 +1991,8 @@
         if (ui && ui.camera) openCamera(ui.camera.name);
         if (ui && ui.closeCamera) closeCamera();
         if (ui && ui.brief) { try { openBrief(); } catch {} }
-        if (ui && ui.bye) lkBye = true;   // Bernard's worker says this call ended with a goodbye
+        if (ui && ui.bye) lkBye = true;
+        if (ui && ui.hangup) lkMusic = true;   // he hangs up so Spotify on this phone can start   // Bernard's worker says this call ended with a goodbye
       });
       await room.connect(j.url, j.token);
       await room.localParticipant.setMicrophoneEnabled(true, store.get(STORE.mic) ? { deviceId: store.get(STORE.mic) } : undefined);

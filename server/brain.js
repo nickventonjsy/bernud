@@ -250,6 +250,7 @@ export function createBrain({ briefHandler = null, dayLog = null, learner = null
     try {
       const out = t ? await runTool(t, args || {}, used.via || "") : { error: "unknown tool" };
       if (out && out.show_camera) used.ui = { camera: out.show_camera }; // tells the screen to open the camera
+      if (out && out.hang_up) used.ui = { ...(used.ui || {}), hangup: true };  // music on his phone starts once the call ends
       return out;
     } catch (e) { return { error: String(e.message || e).slice(0, 300) }; }
   }

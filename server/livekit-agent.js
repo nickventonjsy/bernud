@@ -110,6 +110,8 @@ export class BernardAgent extends voice.Agent {
       const a = await askBrain({ session: this.session_id, text, fetchImpl: this.fetchImpl });
       reply = speakable(a.reply); say(`brain: ${Date.now() - t0}ms -> "${reply.slice(0, 80)}"`);
       // Screen actions (open the camera, the brief…) go to the dashboard or phone on their own text topic.
+      // Music started on his phone: it can only play once this call lets go of the audio, so hang up after this reply.
+      if (a.ui && a.ui.hangup) { this.ending = true; this.musicHangup = true; say("hanging up so the music can play"); }
       if (a.ui && this.room) this.room.localParticipant.sendText(JSON.stringify(a.ui), { topic: "bernud.ui" }).then(() => say("screen: " + Object.keys(a.ui).join(","))).catch((e) => say("screen send failed: " + String(e.message || e).slice(0, 100)));
     }
     catch (e) { reply = "I'm afraid my brain didn't answer: " + String(e.message || e).slice(0, 80) + "."; say("brain error: " + String(e.message || e).slice(0, 200)); }
@@ -148,9 +150,9 @@ export default defineAgent({
       // After the farewell has been spoken, leave: closing the room ends the call on the dashboard and phone too.
       if (agent.ending && e.oldState === "speaking" && !leaving) {
         leaving = true;
-        setTimeout(async () => { say("leaving after goodbye");
+        setTimeout(async () => { say(agent.musicHangup ? "leaving so the music can play" : "leaving after goodbye");
           // Tell the phone/dashboard it was a goodbye, so it turns "Hey Bernard" listening off too.
-          try { await ctx.room.localParticipant.sendText(JSON.stringify({ bye: true }), { topic: "bernud.ui" }); } catch {}
+          if (!agent.musicHangup) { try { await ctx.room.localParticipant.sendText(JSON.stringify({ bye: true }), { topic: "bernud.ui" }); } catch {} }
           try { await ctx.deleteRoom(); } catch (err) { say("deleteRoom failed: " + String(err.message || err).slice(0, 120)); } ctx.shutdown("goodbye"); }, 400);
       }
     });

@@ -1,5 +1,5 @@
 // "Play X on Michelle's Echo": find a Spotify Connect speaker by name and play there (music only; Bernard stays on the phone).
-export function createSpeakers({ zw, dj, fetchImpl = fetch }) {
+export function createSpeakers({ zw, dj, fetchImpl = fetch, wakePhone = null, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
   const call = async (path, body) => {
     if (!zw.url || !zw.key) throw new Error("Spotify isn't linked: ZentraWire's assistant key is missing on the server.");
     const r = await fetchImpl(`${zw.url}${path}`, { method: body ? "POST" : "GET", headers: { "x-zw-assistant": zw.key, ...(body ? { "content-type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(20_000) });
@@ -36,7 +36,15 @@ export function createSpeakers({ zw, dj, fetchImpl = fetch }) {
 
   // { device: "michelle's echo", query: "Michelle's oldies" | mood: "a Friday evening" | neither = move what's playing }
   async function playOn({ device = "echo", query = "", mood = "" } = {}) {
-    const { device: d, all } = await findDevice(device);
+    let { device: d, all } = await findDevice(device);
+    // His phone only shows up in Spotify while the Spotify app is open on it: open it there, then wait for it to appear.
+    if (!d && wakePhone && /\b(phone|mobile|s2\d|galaxy)\b/i.test(device || "")) {
+      try {
+        await wakePhone();
+        for (let i = 0; i < 8 && !d; i++) { await sleep(1500); ({ device: d, all } = await findDevice(device)); }
+      } catch {}
+      if (!d) return { ok: false, error: "phone_not_in_spotify", message: "I opened Spotify on his phone but it still hasn't shown up as a Spotify device. Ask him to tap play once in Spotify on the phone, then try again." };
+    }
     if (!d) return { ok: false, error: "speaker_not_found", message: `Spotify isn't listing ${device || "that speaker"} for you right now${all.length ? ` (I can see: ${all.join(", ")})` : ""}. Pick it once from the Spotify app on your phone (speaker icon), then ask me again.` };
     if (mood) {
       const r = await dj.mix({ mood, device_id: d.id });

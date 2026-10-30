@@ -104,3 +104,23 @@ assert.deepEqual(calls2.at(-1)[1], { action: "play", uri: "spotify:playlist:abc"
 const r2 = await sp.playOn({ device: "michelle's echo" }); assert.equal(r2.moved, true); assert.deepEqual(calls2.at(-1)[1], { action: "transfer", value: "e1" });
 const r3 = await sp.playOn({ device: "phone" }); assert.equal(r3.device, "Nicholas's S24"); assert.deepEqual(calls2.at(-1)[1], { action: "transfer", value: "p1" });
 console.log("echo ok");
+
+// "Play it on my phone" when Spotify isn't open there: open it on the phone, wait for it to appear, then play.
+{
+  const { createSpeakers } = await import("./speakers.js");
+  let woke = 0, phoneListed = false, played = null;
+  const fetchImpl = async (url, opts) => {
+    if (url.includes("what=devices")) return { json: async () => ({ devices: [{ id: "lounge", name: "Lounge", type: "Speaker" }, ...(phoneListed ? [{ id: "s24", name: "Nick's S24 Ultra", type: "Smartphone" }] : [])] }) };
+    if (url.includes("what=shortcuts")) return { json: async () => ({ shortcuts: [] }) };
+    if (url.includes("what=search")) return { json: async () => ({ tracks: [{ name: "Yellow", artists: "Coldplay", uri: "spotify:track:x" }] }) };
+    if (url.includes("/control")) { played = JSON.parse(opts.body); return { json: async () => ({ ok: true }) }; }
+    throw new Error(url);
+  };
+  const sp = createSpeakers({ zw: { url: "https://zw", key: "k" }, dj: {}, fetchImpl, sleep: async () => {}, wakePhone: async () => { woke++; phoneListed = true; } });
+  const r = await sp.playOn({ device: "my phone", query: "Coldplay Yellow" });
+  assert.equal(woke, 1); assert.equal(r.ok, true); assert.equal(r.phone, true); assert.equal(played.device_id, "s24");
+  // Not a phone: no app opening.
+  const r2 = await createSpeakers({ zw: { url: "https://zw", key: "k" }, dj: {}, fetchImpl, sleep: async () => {}, wakePhone: async () => { throw new Error("should not wake"); } }).playOn({ device: "kitchen", query: "x" });
+  assert.equal(r2.ok, false);
+  console.log("phone spotify wake ok");
+}
