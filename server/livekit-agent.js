@@ -65,7 +65,7 @@ export function isGoodbye(text, { lastReply = "", replies = 0, overlapped = fals
   return SOFT_BYE_RE.test(t) && !overlapped && replies <= 2 && !midActivity(lastReply);
 }
 
-const STT_HINT = process.env.LIVEKIT_STT_HINT || "Bernard, Michelle, Oakley, Shakira and Vega in St Brelade, Jersey. Cory Car Paints, ZentraWire, Spotify, Telegram, WhatsApp.";
+const STT_HINT = process.env.LIVEKIT_STT_HINT || "Bernard, Michelle, Oakley, Shakira and Vega in St Brelade, Jersey. Cory Car Paints, ZentraWire, Spotify, Telegram, WhatsApp. The Samsung S95B TV.";
 const HOLD_MS = Number(process.env.LIVEKIT_HOLD_MS || 3000);
 const HOLDING = ["One moment, sir.", "Bear with me, sir.", "Just a moment, sir.", "Let me look, sir."];
 const FAREWELLS = ["Very good, sir.", "Right you are, sir.", "Any time, sir.", "I'll be here, sir.", "Good night, sir."];
@@ -135,7 +135,7 @@ export class BernardAgent extends voice.Agent {
     const answer = (async () => {
     try {
       const a = await askBrain({ session: this.session_id, text, fetchImpl: this.fetchImpl });
-      reply = speakable(a.reply); say(`brain: ${Date.now() - t0}ms -> "${reply.slice(0, 80)}"`);
+      reply = speakable(a.reply); say(`brain: ${Date.now() - t0}ms [${(a.tools || []).join(",") || "no tools"}${a.model ? " · " + a.model : ""}] -> "${reply.slice(0, 80)}"`);
       // Screen actions (open the camera, the brief…) go to the dashboard or phone on their own text topic.
       // Music started on his phone: it can only play once this call lets go of the audio, so hang up after this reply.
       if (a.ui && a.ui.hangup) { this.ending = true; this.musicHangup = true; say("hanging up so the music can play"); }

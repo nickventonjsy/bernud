@@ -1,5 +1,5 @@
 // "Play X on Michelle's Echo": find a Spotify Connect speaker by name and play there (music only; Bernard stays on the phone).
-export function createSpeakers({ zw, dj, fetchImpl = fetch, wakePhone = null, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
+export function createSpeakers({ zw, dj, fetchImpl = fetch, wakePhone = null, wakeTv = null, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
   const call = async (path, body) => {
     if (!zw.url || !zw.key) throw new Error("Spotify isn't linked: ZentraWire's assistant key is missing on the server.");
     const r = await fetchImpl(`${zw.url}${path}`, { method: body ? "POST" : "GET", headers: { "x-zw-assistant": zw.key, ...(body ? { "content-type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(20_000) });
@@ -44,6 +44,14 @@ export function createSpeakers({ zw, dj, fetchImpl = fetch, wakePhone = null, sl
         for (let i = 0; i < 8 && !d; i++) { await sleep(1500); ({ device: d, all } = await findDevice(device)); }
       } catch {}
       if (!d) return { ok: false, error: "phone_not_in_spotify", message: "I opened Spotify on his phone but it still hasn't shown up as a Spotify device. Ask him to tap play once in Spotify on the phone, then try again." };
+    }
+    // The Samsung TV only appears in Spotify once the Spotify app is open on it: open it there (SmartThings), then wait.
+    if (!d && wakeTv && /\b(tv|telly|television|s95b?|samsung|lounge tv|living room tv)\b/i.test(device || "")) {
+      try {
+        await wakeTv(device);
+        for (let i = 0; i < 10 && !d; i++) { await sleep(1500); ({ device: d, all } = await findDevice(device)); if (!d) { const tv = (await findDevice("tv samsung")).device; if (tv) d = tv; } }
+      } catch (e) { return { ok: false, error: "tv_wake_failed", message: `I couldn't open Spotify on the TV: ${String(e.message || e).slice(0, 120)}. Is the TV switched on?` }; }
+      if (!d) return { ok: false, error: "tv_not_in_spotify", message: "I opened Spotify on the TV, but it hasn't shown up as a Spotify speaker yet. Give it a few seconds and ask again." };
     }
     if (!d) return { ok: false, error: "speaker_not_found", message: `Spotify isn't listing ${device || "that speaker"} for you right now${all.length ? ` (I can see: ${all.join(", ")})` : ""}. Pick it once from the Spotify app on your phone (speaker icon), then ask me again.` };
     if (mood) {

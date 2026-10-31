@@ -219,13 +219,23 @@ export const coinPrices = createCrypto();
 const { createBrain } = await import("./brain.js");
 const { createLearner } = await import("./learn.js");
 export const learner = createLearner({ db, complete: (a) => brain.complete(a) });
+// 31 Oct: Whisper heard "S95B" as "SP95" and Bernard learned it that way. Put the right name in (once; harmless after).
+setTimeout(async () => { try { for (const r of await db.all()) if (/\bSP ?95\b/.test(r.text)) { await db.remove(r.id); await db.save(r.text.replace(/\bSP ?95\b/g, "S95B").replace(/only the S95B TV should be powered on and no other TVs/, "turn on all the lights and only the S95B TV (no other TVs)"), r.category); console.log("fixed learned TV name"); scheduleAgentPromptSync(); } } catch (e) { console.error("fix learned:", e.message); } }, 15_000).unref?.();
 export const brain = createBrain({ briefHandler: (text) => briefForBrain(text), dayLog, learner, geminiKey: (process.env.GEMINI_API_KEY || "").trim(), groqKey: (process.env.GROQ_API_KEY || "").trim(), elevenKey: process.env.ELEVENLABS_API_KEY || "", agentId: process.env.AGENT_ID || "agent_0501m5q6cc15eqcrnamk2e1w84xc", kv: db.kv, port: PORT, bernudKey: API_KEY, zwKey: process.env.ZW_ASSISTANT_KEY || "" });
 const { createDJ } = await import("./dj.js");
 export const dj = createDJ({ zw: { url: (process.env.ZW_URL || "https://zentrawire.onrender.com").replace(/\/+$/, ""), key: process.env.ZW_ASSISTANT_KEY || "" }, complete: (o) => brain.complete(o) });
 const { createSpeakers } = await import("./speakers.js");
 export const speakers = createSpeakers({ zw: { url: (process.env.ZW_URL || "https://zentrawire.onrender.com").replace(/\/+$/, ""), key: process.env.ZW_ASSISTANT_KEY || "" }, dj,
   // Open the Spotify app on his phone so it appears as a Spotify device.
-  wakePhone: async () => { if (phone.online()) return phone.send("open_app", "Spotify"); if (PHONE_TOPIC && PHONE_SECRET) return devices.ntfyPublish(PHONE_TOPIC, devices.phoneMessage(PHONE_SECRET, "open_app", "Spotify"), { priority: 5 }); } });
+  wakePhone: async () => { if (phone.online()) return phone.send("open_app", "Spotify"); if (PHONE_TOPIC && PHONE_SECRET) return devices.ntfyPublish(PHONE_TOPIC, devices.phoneMessage(PHONE_SECRET, "open_app", "Spotify"), { priority: 5 }); },
+  // Open Spotify on the Samsung TV (switching it on first) so it appears as a Spotify device.
+  wakeTv: async (name = "") => { const tv = await mainTv(name); await smartthings.control({ device: tv, action: "on" }).catch(() => {}); return smartthings.control({ device: tv, action: "app", value: "Spotify" }); } });
+// The TV he means by "the TV": the 55-inch S95B unless he named another one.
+async function mainTv(name = "") {
+  const n = String(name || "").toLowerCase().replace(/\b(the|my|on|samsung|tv|telly|television|living room|lounge)\b/g, "").trim();
+  if (n && !/^s95b?$/.test(n)) return n;
+  return (await db.kv.get("main_tv").catch(() => null)) || "55";
+}
 
 // Goodnight: Bernard's verdict on the day, from what Nicholas asked him (free mode and voice mode) and his calendar.
 const VERDICT_SYSTEM = `You are Bernud, Nicholas's AI butler: calm, polished and quietly witty, with a dry British sense of humour.
@@ -377,6 +387,10 @@ const PROMPT_FIXES = [
 ` + "# Not wired up yet")),
   (base) => (base.includes("- announce, party_mode") ? base : base.replace("- end_call: when he says goodbye", "- announce, party_mode, tv_home_screen, home_reminders, sleep_timer, countdown, life_log, focus_mode, away_check, sports, rewind, diary, news_audio and video_summary: see \"Around the house: extras\", \"Sport\" and \"Looking back\".\n- end_call: when he says goodbye")),
   (base) => (base.includes("When he says it didn't work") ? base : base.replace("- Receipts, always.", "- When he says it didn't work, believe him. Never repeat that something worked once he's told you it hasn't: you can't see his screens or hear his speakers. Say what the tool did report (\"the TV accepted the command\"), say what's probably wrong, and give the fix or the next thing to try.\n- Receipts, always.")),
+  (base) => (base.includes('spotify_play_on with device "TV"') ? base : base
+    .replace("- \"Play it on the TV / PC / Lounge speaker\": spotify_info devices, then spotify_control transfer with that device's id.", "- Anything on the TV (\"put Ella Langley on Spotify on the TV\", \"play it on the telly\"): spotify_play_on with device \"TV\" and the query (empty query moves what's playing). It switches the S95B on and opens Spotify there if the TV isn't listed yet. Never tell him the TV isn't a Spotify device without trying spotify_play_on first. The PC or another speaker: spotify_play_on with that device's name.")
+    .replace("- To play Spotify on the TV, use spotify_info devices and spotify_control transfer to the TV, not tv_control.", "- To play Spotify on the TV, use spotify_play_on with device \"TV\" (it opens Spotify on the TV itself), not tv_control.")
+    .replace("- Arriving home: when his phone joins", "- \"Turn everything on\" / \"I'm home, put everything on\": the everything tool (action on): every light plus the S95B only, never the other TVs. \"Turn everything off\" is action off. Report exactly what it says came on and what failed.\n- Arriving home: when his phone joins")),
   (base) => (base.includes("emergency_store") ? base : base.replace("- Arriving home: when his phone joins", "- Emergency store: the household emergency list (water, food, light, warmth, first aid and so on, with quantities for his household). \"What's left on the emergency list?\" is emergency_store missing; \"I've bought the water containers\" is tick (with use_by if he gives a date); \"send me what's left\" is send (Amazon links to his phone). You can't add things to his Amazon basket or buy anything: say so if asked, and offer to send the links instead.\n- Arriving home: when his phone joins")),
   (base) => (base.includes("routine_ideas") ? base : base.replace("- Arriving home: when his phone joins", "- Scenes: \"save this as movie night\" snapshots every light as it is now (scene save, optionally with a music mood); \"movie night\" puts it back (scene set). Prefer a saved scene over guessing light settings when he names one.\n- Upkeep jobs: \"remind me to descale the kettle every two months\" is upkeep add (counted from when he last did it, not fixed dates). \"I've descaled the kettle\" is upkeep done. \"What jobs are due?\" is upkeep due. One morning notification when something's due.\n- Routines: Bernud notices what he asks for at the same time most days. \"What routines have you spotted?\" is routine_ideas; offer to automate one at a time with wakeup, reminder or roundups, and dismiss ones he doesn't want.\n- Arriving home: when his phone joins")),
   (base) => (base.includes("focus_mode") ? base : base.replace("- Arriving home: when his phone joins", "- Countdowns: \"how many days until Christmas / my holiday?\" use countdown (Christmas, New Year, Halloween, Bonfire Night and Liberation Day are built in); \"start a countdown to…\" adds one. He's nudged a week before and the day before.\n- Life log: \"log that I changed the oil\", \"when did I last cut the grass?\", \"how many times have I been to the gym this month?\" use life_log. It only knows what he's logged; if nothing's there, say so and offer to log it now.\n- Focus mode: \"focus mode for 45 minutes\" / \"I need to concentrate\" use focus_mode: cool white lights and a calm mix, then a spoken break call when time's up. Say when it ends, briefly.\n- Away check: about ten minutes after he leaves, lights and TVs left on are flagged on his phone (or switched off if he's turned auto-off on). \"Did I leave anything on?\" is away_check check_now; offer to switch off what's on.\n- Arriving home: when his phone joins")),
@@ -480,6 +494,8 @@ export const jarvis = createJarvis({ kv: db.kv, notify, sayOnPhone, pc, telegram
   elevenKey: process.env.ELEVENLABS_API_KEY || "", agentId: process.env.AGENT_ID || "agent_0501m5q6cc15eqcrnamk2e1w84xc",
   // Sleep timer: pause Spotify wherever it's playing; switch the main TV off.
   pauseMusic: async () => { const r = await fetch(`${(process.env.ZW_URL || "https://zentrawire.onrender.com").replace(/\/+$/, "")}/api/assistant/spotify/control`, { method: "POST", headers: { "content-type": "application/json", "x-zw-assistant": process.env.ZW_ASSISTANT_KEY || "" }, body: JSON.stringify({ action: "pause" }), signal: AbortSignal.timeout(15_000) }); return r.json().catch(() => ({})); },
+  tvOn: async (device = "") => smartthings.control({ device: device || (await mainTv()), action: "on" }),
+  mainTv,
   tvOff: async (device = "") => { try { return await smartthings.control({ device, action: "off" }); } catch (e) { if (/Which TV/.test(e.message)) return smartthings.control({ device: "55", action: "off" }); throw e; } } });
 export const digests = createDigests({ kv: db.kv, notify, needsReply: async () => ((await gmail.connected()) ? gmail.needsReply() : null), priorities: async () => priorities.list(await briefPrioritiesTop()),
   events: eventsOn, parcels, receipts, camEvents: (a) => camAlerts.events(a),
@@ -1287,6 +1303,7 @@ export async function handle(req, res) {
     if (path === "/scene" && req.method === "POST") return send(res, 200, await jarvis.scene(await readJson(req)));
     if (path === "/upkeep" && req.method === "POST") return send(res, 200, await jarvis.upkeep(await readJson(req)));
     if (path === "/routine-ideas" && req.method === "POST") return send(res, 200, await jarvis.routineIdeas(await readJson(req)));
+    if (path === "/home/everything" && req.method === "POST") return send(res, 200, await jarvis.everything(await readJson(req)));
     if (path === "/countdown" && req.method === "POST") return send(res, 200, await jarvis.countdown(await readJson(req)));
     if (path === "/life-log" && req.method === "POST") return send(res, 200, await jarvis.lifeLog(await readJson(req)));
     if (path === "/focus" && req.method === "POST") return send(res, 200, await jarvis.focus(await readJson(req)));

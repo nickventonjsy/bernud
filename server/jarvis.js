@@ -33,7 +33,7 @@ export function parseEspn(j) {
 
 export function createJarvis({ kv, notify, sayOnPhone, pc, telegram, lights, dj, brain, speakMp3, headlines, dayLog, voiceRequests, saveMemory, imou, eventsToday, parcels,
   elevenKey = "", agentId = "", fetchImpl = fetch, now = () => new Date(), log = console,
-  pauseMusic = async () => {}, tvOff = async () => {} }) {
+  pauseMusic = async () => {}, tvOff = async () => {}, tvOn = async () => {}, mainTv = async () => "55" }) {
 
   // ---------- announcements to the house ----------
   async function announce({ text = "" } = {}) {
@@ -411,6 +411,18 @@ export function createJarvis({ kv, notify, sayOnPhone, pc, telegram, lights, dj,
     dayLog?.add("event", `Away check: ${on.length} left on`);
   }
 
+  // ---------- "turn everything on" (he's home): every light plus the main TV (the S95B) only, never the other TVs ----------
+  async function everything({ action = "on" } = {}) {
+    const on = action !== "off", done = [], failed = [];
+    try { const r = await lights.control({ device: "all", action: on ? "on" : "off" }); if (r?.ok !== false) done.push(`lights ${on ? "on" : "off"}${r?.devices?.length ? ` (${r.devices.length})` : ""}`); else failed.push("lights: " + (r?.message || r?.error || "no lights answered")); if (r?.failed) failed.push(...[].concat(r.failed).map((f) => "light " + f)); }
+    catch (e) { failed.push("lights: " + String(e.message).slice(0, 100)); }
+    const tv = await mainTv();
+    try { await (on ? tvOn(tv) : tvOff(tv)); done.push(`the S95B TV ${on ? "on" : "off"}`); } catch (e) { failed.push("TV: " + String(e.message).slice(0, 100)); }
+    dayLog?.add("event", `Everything ${on ? "on" : "off"}: ${done.join(", ") || "nothing answered"}`);
+    return { ok: done.length > 0, done, failed: failed.length ? failed : undefined,
+      note: on ? "Only the main TV (S95B) is switched on, as he asked; other TVs are left alone. If he says nothing came on, believe him and report what failed." : undefined };
+  }
+
   // ---------- scenes: "save the lights as movie night" / "movie night" ----------
   // A snapshot of every light (on/off, brightness, white or colour), put back exactly on request.
   const HUES = [["red", 0], ["orange", 8], ["yellow", 16], ["lime", 25], ["green", 33], ["teal", 47], ["cyan", 50], ["light blue", 58], ["blue", 66], ["purple", 75], ["violet", 78], ["magenta", 83], ["pink", 90], ["red", 100]];
@@ -557,6 +569,6 @@ export function createJarvis({ kv, notify, sayOnPhone, pc, telegram, lights, dj,
   }
 
   let timer = null;
-  return { scene, upkeep, upkeepTick, notePattern, routineIdeas, routineTick, countdown, countdownTick, lifeLog, focus, focusTick, awayCheck, leftHome, awayTick, homeReminders, arrivedHome, sleepTimer, sleepTick, announce, partyMode, sports, sportsTick, youtube, rewind, writeDiary, newsAudio, ambient,
+  return { everything, scene, upkeep, upkeepTick, notePattern, routineIdeas, routineTick, countdown, countdownTick, lifeLog, focus, focusTick, awayCheck, leftHome, awayTick, homeReminders, arrivedHome, sleepTimer, sleepTick, announce, partyMode, sports, sportsTick, youtube, rewind, writeDiary, newsAudio, ambient,
     start() { if (timer) return; timer = setInterval(() => { sportsTick().catch(() => {}); sleepTick().catch(() => {}); focusTick().catch(() => {}); awayTick().catch(() => {}); countdownTick().catch(() => {}); upkeepTick().catch(() => {}); routineTick().catch(() => {}); }, 30_000); timer.unref?.(); } };
 }

@@ -813,7 +813,7 @@
 
   // ---- Version numbers (bottom of the screen) ----
   // DASH_VERSION goes up by one with every dashboard change (a git hook bumps it automatically).
-  const DASH_VERSION = 51;
+  const DASH_VERSION = 52;
   (async () => {
     const set = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
     set("dashVer", DASH_VERSION);
@@ -2649,6 +2649,7 @@
     { c: "Everyday", n: "Send to phone", w: "Any text or link as a notification on your phone.", say: ["Send that to my phone"], u: "sent to phone" },
     // Around the house
     { c: "Home", n: "Lights", w: "On, off, brightness, warm or cool white, colours; single lights or all of them.", say: ["Lights off", "Lounge lamp to warm white at 30 percent"], u: "lights" },
+    { c: "Home", n: "Everything on / off", w: "Every light plus the S95B in one go (never the other TVs). Off does the same in reverse.", say: ["Turn everything on, I'm home", "Turn everything off"], u: "home", fresh: true },
     { c: "Home", n: "Scenes", w: "Snapshot every light as it is now under a name, optionally with music. Say the name to put it back.", say: ["Save this as movie night", "Movie night", "What scenes have I got?"], u: "scene", fresh: true },
     { c: "Home", n: "Samsung TVs", w: "On, off, volume, inputs, apps, channels and remote keys.", say: ["Turn the TV on", "Put Netflix on the TV"], u: "TV" },
     { c: "Home", n: "Fire TV Stick", w: "Power, apps like iPlayer and Netflix, play/pause and remote keys.", say: ["Open iPlayer on the Fire TV"], u: "Fire TV" },
@@ -2664,7 +2665,7 @@
     { c: "Home", n: "Arriving home", w: "When your phone joins the home Wi-Fi: a greeting, and the hall lights if it's dark.", say: ["Change my arrival settings"], u: "home", auto: true },
     { c: "Home", n: "Away check", w: "About ten minutes after you leave, flags lights and TVs left on, or switches them off if you turn auto-off on.", say: ["Did I leave anything on?", "Turn things off automatically when I leave"], u: "away check", auto: true, fresh: true },
     // Music
-    { c: "Music", n: "Spotify", w: "Play anything, pause, skip, volume, shuffle, move it to another device.", say: ["Play Fleetwood Mac", "Play it on the TV"], u: "music" },
+    { c: "Music", n: "Spotify", w: "Play anything, pause, skip, volume, shuffle, move it to another device. On the TV, Bernard switches the S95B on and opens Spotify there himself.", say: ["Play Fleetwood Mac", "Put Ella Langley on Spotify on the TV"], u: "music" },
     { c: "Music", n: "DJ mixes", w: "A mix for a mood or occasion, built from your own liked songs.", say: ["Play something for a Friday evening", "A mix for the drive"], u: "music" },
     { c: "Music", n: "Echo and speakers", w: "Music on Michelle's Echo or another named speaker.", say: ["Play Michelle's oldies on the Echo"], u: "music" },
     { c: "Home", n: "Emergency store", w: "Your household emergency list: water, food, light, warmth, first aid and the rest, sized for your household. Tick things off; monthly nudge about gaps and use-by dates.", say: ["What's left on the emergency list?", "I've bought the water containers", "Send me what's left"], u: "emergency store", fresh: true, open: "prep" },

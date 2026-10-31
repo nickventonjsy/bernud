@@ -125,7 +125,8 @@ export function classify(doc, today = todayLondon()) {
   const where = doc.path || name;
   if (/\b(old|archived?|archive|historical|historic|previous|legacy|superseded|obsolete|expired|do not use)\b/i.test(where)) { status = "historical"; reasons.push(/historic/i.test(where) ? "file or folder name marks it as HISTORICAL" : "file or folder name marks it as old/archived"); }
   else if (supBy) { status = "historical"; reasons.push(`says it is ${supBy[1].toLowerCase()} "${supBy[2].trim()}"`); }
-  else if (expires && expires < today) { status = "historical"; reasons.push(`validity ended ${expires}`); }
+  // A past expiry date only retires a price list, offer, terms or quote; notes that merely mention one ("quote expires 30/10") stay live.
+  else if (expires && expires < today && /\b(price|prices|pricing|tariff|offer|promo\w*|terms|quote|quotation|rate card)\b/i.test(name)) { status = "historical"; reasons.push(`validity ended ${expires}`); }
   else if (effective && effective > today) { status = "uncertain"; reasons.push(`not effective until ${effective}`); }
   else if (effective || (expires && expires >= today) || nameVersion || nameDate) {
     status = "current";

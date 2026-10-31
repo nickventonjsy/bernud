@@ -96,7 +96,7 @@ export function toDeclaration(t) {
 // Tool groups and the words that bring them in. Tools not listed in any group (added later in ElevenLabs) are always sent.
 export const GROUPS = {
   cameras: { tools: ["camera"], re: /\b(cameras?|cctv|doorbell|front door|driveway|garden|garage|imou|shop|car ?park|living room|bedroom|anyone|anybody|someone|motion|movement|alerts?|intruder|security|overnight|last night|snapshot|footage)\b/ },
-  home: { tools: ["lights", "tv_control", "goodnight", "home_arrival", "youtube"], re: /\b(lights?|lamps?|bulbs?|bright|dim|colou?r|ceiling|govee|hue|tv|telly|television|netflix|youtube|video|watch|good ?night|bed|arriv|home|leave|leaving)\b/ },
+  home: { tools: ["lights", "tv_control", "everything", "goodnight", "home_arrival", "youtube"], re: /\b(lights?|lamps?|bulbs?|bright|dim|colou?r|ceiling|govee|hue|tv|telly|television|netflix|youtube|video|watch|good ?night|bed|arriv|home|leave|leaving)\b/ },
   music: { tools: ["spotify_info", "spotify_control", "spotify_dj", "spotify_play_on"], re: /\b(echo|alexa|spotify|music|songs?|play|playing|playlist|tracks?|album|artist|pause|resume|skip|next|previous|shuffle|repeat|louder|quieter|volume|speaker|dj|mix|tunes|vibe|mood)\b/ },
   claude: { tools: ["tell_claude"], re: /\b(claude|pass (it|this|that) on|feature request|change request|can you (add|change|fix)|i'?d like (you|bernard) to)\b/ },
   receipts: { tools: ["receipts", "shopping_list"], re: /\b(receipts?|spent|spend|spending|bill|cost me|running low|usual shop|how much (did|have) i)\b/ },
@@ -146,6 +146,15 @@ const SECTION_TOOLS = [
   [/^The CCP Brain/, ["ccp_search", "ccp_delete"]], [/^CCP morning brief/, ["ccp_brief_context"]], [/^CCP pricing/, ["ccp_search"]],
 ];
 const FOOD = /\b(food|order|takeaway|restaurant|menu|delivery|deliveroo|just eat|pizza|curry|chinese|indian|burger|kebab|book a table|dinner|lunch)\b/;
+
+// He asked for something to be done and the reply says it was, but no tool ran: the one thing Bernard must never do.
+const ASKS_ACTION = /\b(turn|switch|put|play|start|stop|pause|resume|skip|open|set|send|add|remind|dim|brighten|lock|ring|call|message|text|book|schedule|cancel|move|cast|show)\b/i;
+const CLAIMS_DONE = /\b(turning|switching|putting|starting|playing|opening|sending|adding|dimming|setting|is now|are now|now (?:on|off|playing|showing)|i'?ve (?:turned|switched|put|started|set|sent|added|opened|played|dimmed|locked|moved|cancelled)|i have (?:turned|switched|put|started|set|sent|added)|has been (?:turned|switched|set|sent|added|started)|have been (?:turned|switched|set)|done,? sir|all set|consider it done|right away|on its way|coming (?:on|up)|is on now|are on now)\b/i;
+const HEDGED = /\b(can'?t|cannot|couldn'?t|unable|not able|isn'?t (?:wired|connected)|not (?:wired|connected)|which (?:one|tv|light|speaker|device)|shall i|should i|would you like|do you want|want me to|didn'?t|did not|failed|no (?:tv|speaker|device)s?\b)/i;
+export function claimsUndoneAction(text, reply) {
+  return ASKS_ACTION.test(String(text || "")) && CLAIMS_DONE.test(String(reply || "")) && !HEDGED.test(String(reply || ""));
+}
+const NO_TOOL_NUDGE = "\n\n[System check: your last answer said this was done, but you called no tool, so nothing happened. Call the right tool now. If no tool can do it, say plainly that it isn't done and why. Never say something is done unless a tool did it.]";
 
 export function pickGroups(text, previous = []) {
   const t = String(text || "").toLowerCase();
@@ -560,6 +569,15 @@ export function createBrain({ briefHandler = null, dayLog = null, learner = null
     if (!out) {
       if (!geminiKey) return { ok: false, code: "busy", reply: "My fast brain is resting for a minute. Try again shortly." };
       out = await runGemini(job);
+    }
+    // Receipts, always: a "done" with no tool behind it gets one more go with a nudge; if still nothing ran, say so honestly.
+    if (!used.length && claimsUndoneAction(text, out.reply)) {
+      log.error?.("claimed an action with no tool call, retrying:", String(out.reply).slice(0, 100));
+      let again = null;
+      const retry = { ...job, text: text + NO_TOOL_NUDGE };
+      try { again = geminiKey ? await runGemini(retry) : await runGroq(retry); } catch (e) { log.error?.("retry failed:", String(e.message || e).slice(0, 100)); }
+      if (again && (used.length || !claimsUndoneAction(text, again.reply))) out = { ...again, model: again.model + "+recheck" };
+      else out = { reply: "I'm afraid I haven't actually done that: none of my controls were called. Ask me again and I'll have another go.", model: out.model + "+guard" };
     }
     remember(out.reply, out.model, groups);
     return { ok: true, reply: out.reply, tools: used, ui: used.ui, model: out.model, ms: Date.now() - t0, groups, config: c.source };

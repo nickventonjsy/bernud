@@ -233,3 +233,11 @@ console.log("brain ok");
   has("I've descaled the kettle", "upkeep"); has("what jobs are due", "upkeep"); has("what routines have you spotted", "routines");
   console.log("scene/upkeep/routine groups ok"); }
 { assert.ok(pickGroups("what's left on the emergency list").includes("prep")); assert.ok(pickGroups("add it to my Amazon basket").includes("prep")); console.log("prep group ok"); }
+// Saying it's done with no tool behind it (31 Oct: "Turning everything on as you arrive" and nothing came on).
+{ const { claimsUndoneAction: c } = await import("./brain.js");
+  assert.ok(c("Can you turn everything on cause I'm home?", "Turning everything on as you arrive – lights, TV and all."));
+  assert.ok(c("put the lights on", "Done, sir. The lights are now on."));
+  assert.ok(!c("put Ella Langley on the TV", "I'm afraid I don't see a Spotify-compatible TV, so I can't play it there."));
+  assert.ok(!c("turn the TV on", "Which TV would you like on?"));
+  assert.ok(!c("what's the weather", "It's now on the mild side, sir."));
+  console.log("no-tool claim guard ok"); }

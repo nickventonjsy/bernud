@@ -93,6 +93,12 @@ export function matchQuick(text, lastDevice = "") {
     return { tool: "shopping_list", args: { action: "note" }, reply: (r) => (r.ok === false ? r.message || null : r.empty ? r.message : r.done || "Opened it in Notes.") };
   }
 
+  // "Turn everything on, I'm home": every light plus the S95B only (his rule, 31 Oct). Off is the same in reverse.
+  if ((m = t.match(/^(?:(?:can|could|will) you |please )?(?:turn|switch|put) (?:everything|it all|all of it|the lot|all) (on|off)(?: please)?(?:,? ?(?:cause|cos|because|as|since|now) i(?:'?m| am) (?:home|back|in|off|out|going out|leaving)| i(?:'?m| am) (?:home|back))?$|^i(?:'?m| am) (?:home|back),? (?:turn|switch|put) (?:everything|it all) (on)$/))) {
+    const on = (m[1] || m[2]) === "on";
+    return { tool: "everything", args: { action: on ? "on" : "off" }, reply: (r) => (r.ok === false ? null : r.failed ? null : on ? "Lights on and the S95B is warming up. Welcome home, sir." : "Everything's off, sir.") };
+  }
+
   // Watchdog: "is everything working?"
   if (/^(?:is everything (?:working|ok|okay|alright|all right)|(?:run a |do a )?(?:system|systems) check|status report|are you (?:working|ok|okay) properly|health check)$/.test(t)) {
     return { tool: "system_check", args: {}, reply: (r) => (r.ok === false ? null : r.all_ok ? `Everything's working: ${r.working.length} checks all fine.` : `Mostly fine, but ${r.not_working.map((x) => `${x.name} (${x.problem})`).join("; ")}.`) };
