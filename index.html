@@ -268,6 +268,7 @@
   /* Tasks + activity */
   .task { display: grid; grid-template-columns: 40px 1fr 110px 16px; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid rgba(255, 45, 45, 0.10); }
   .task:last-child { border-bottom: 0; }
+  .task.tap { cursor: pointer; } .task.tap:hover .t { color: var(--red); } .task.tap:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; border-radius: 6px; }
   .task .t { font-weight: 500; font-size: 14px; } .task .s { font-size: 12px; color: var(--muted); margin-top: 1px; }
   .task .prog { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 12px; justify-content: flex-end; }
   .task .prog .bar { width: 70px; }
@@ -813,7 +814,7 @@
 
   // ---- Version numbers (bottom of the screen) ----
   // DASH_VERSION goes up by one with every dashboard change (a git hook bumps it automatically).
-  const DASH_VERSION = 53;
+  const DASH_VERSION = 54;
   (async () => {
     const set = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
     set("dashVer", DASH_VERSION);
@@ -2562,8 +2563,17 @@
       else if (t.brief_last) rows.push({ t: "CCP morning brief", s: t.brief_last.ok ? `Last prepared ${fmtTime(t.brief_last.at)}${t.brief_last.via ? " via " + t.brief_last.via : ""}` : "Last run failed: " + esc(t.brief_last.error || ""), state: t.brief_last.ok ? "Done" : "Failed", bad: !t.brief_last.ok });
       rows.push({ t: "Reminders", s: t.next_reminder ? `Next: ${esc(t.next_reminder.text)} · ${esc(t.next_reminder.when)}` : "Nothing pending", state: `${t.reminders} queued` });
       rows.push({ t: "Wake-up", s: esc(t.wakeup || "Not set"), state: t.wakeup_enabled ? "On" : "Off", dim: !t.wakeup_enabled });
+      if (d.spend) {   // receipts: this month's total and the latest one; tap to open the latest receipt
+        const sp = d.spend, last = sp.recent?.[0], gbp = (n) => "£" + Number(n || 0).toFixed(2);
+        rows.push({ t: "Receipts", s: sp.month.receipts ? `${gbp(sp.month.total)} in ${esc(sp.month.month_name)} · ${sp.month.receipts} receipt${sp.month.receipts === 1 ? "" : "s"}${last ? ` · last: ${esc(last.shop)} ${gbp(last.total)}` : ""}` : "No receipts this month yet. Tap to add one.", state: sp.month.receipts ? `${sp.month.receipts} this month` : "Add one", act: last ? "receipt:" + last.id : "addReceipt", dim: !sp.month.receipts });
+      }
+      if (t.prep) {    // the survival list (emergency store): progress; tap to open it
+        const pct = t.prep.total ? Math.round(t.prep.sorted / t.prep.total * 100) : 0;
+        rows.push({ t: "Survival list", s: `${t.prep.sorted} of ${t.prep.total} sorted for ${t.prep.people} people, ${t.prep.days} days${t.prep.next?.length ? ` · next: ${esc(t.prep.next.join(", "))}` : ""}`, state: `${pct}%`, act: "prep", pct });
+      }
       $("tasksTag").textContent = `${rows.filter((r) => r.prog || r.state === "On").length} active`;
-      $("tasksList").innerHTML = rows.map((r) => `<div class="task"><div class="ico">${icon('<path d="M4 6h16M4 12h16M4 18h10"/>')}</div><div><div class="t">${r.t}</div><div class="s">${r.s}</div></div>${r.prog ? `<div class="prog"><div class="bar"><i style="width:60%"></i></div>${r.prog}</div>` : `<div class="state ${r.bad ? "bad" : ""}" style="${r.bad ? "color:var(--red)" : r.dim ? "" : "color:var(--text)"}">${r.state}</div>`}<span class="chev">⋮</span></div>`).join("");
+      const tIco = { Receipts: '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>', "Survival list": '<path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/><path d="M9 12l2 2 4-4"/>' };
+      $("tasksList").innerHTML = rows.map((r) => `<div class="task${r.act ? " tap" : ""}"${r.act ? ` data-act="${esc(r.act)}" role="button" tabindex="0" title="Open"` : ""}><div class="ico">${icon(tIco[r.t] || '<path d="M4 6h16M4 12h16M4 18h10"/>')}</div><div><div class="t">${r.t}</div><div class="s">${r.s}</div></div>${r.prog ? `<div class="prog"><div class="bar"><i style="width:60%"></i></div>${r.prog}</div>` : r.pct != null ? `<div class="prog"><div class="bar"><i style="width:${r.pct}%"></i></div>${r.state}</div>` : `<div class="state ${r.bad ? "bad" : ""}" style="${r.bad ? "color:var(--red)" : r.dim ? "" : "color:var(--text)"}">${r.state}</div>`}<span class="chev">${r.act ? "›" : "⋮"}</span></div>`).join("");
     }
     // Recent activity
     if (d.activity) {
@@ -2771,6 +2781,10 @@
   $("prepDrawer").addEventListener("click", (e) => { if (e.target === $("prepDrawer")) $("prepDrawer").classList.remove("open"); });
   $("prepList").addEventListener("change", async (e) => { const k = e.target.dataset.key; if (!k) return; if (await prepCall({ action: e.target.checked ? "tick" : "untick", item: k })) renderPrep(); });
   for (const id of ["prepPeople", "prepDays"]) $(id).addEventListener("change", async () => { if (await prepCall({ action: "settings", people: +$("prepPeople").value, days: +$("prepDays").value })) renderPrep(); });
+  // Active tasks rows that open something: the latest receipt, adding a receipt, or the survival list.
+  function taskAct(a) { if (!a) return; if (a === "prep") return openPrep(); if (a === "addReceipt") return $("receiptBtn").click(); if (a.startsWith("receipt:")) return openReceipt(a.slice(8)); }
+  $("tasksList").addEventListener("click", (e) => { const r = e.target.closest("[data-act]"); if (r) taskAct(r.dataset.act); });
+  $("tasksList").addEventListener("keydown", (e) => { const r = e.target.closest("[data-act]"); if (r && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); taskAct(r.dataset.act); } });
   $("closeReceipt").addEventListener("click", () => $("receiptDrawer").classList.remove("open"));
   $("receiptDrawer").addEventListener("click", (e) => { if (e.target === $("receiptDrawer")) $("receiptDrawer").classList.remove("open"); });
   $("receiptBtn").addEventListener("click", () => $("receiptInput").click());

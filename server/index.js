@@ -1018,6 +1018,7 @@ export async function handle(req, res) {
       const wk = await wakeup.handle({ action: "settings" });
       const sch = await scheduler.status();
       out.tasks = { brief_running: sch.running, brief_last: sch.last_result, reminders: rem.count || 0, next_reminder: rem.reminders?.[0] || null, wakeup: wk.summary || null, wakeup_enabled: Boolean(wk.settings?.enabled) };
+      try { const pv = await prepStore.view(); out.tasks.prep = { sorted: pv.sorted, total: pv.total, people: pv.people, days: pv.days, next: pv.sections.flatMap((x) => x.items.filter((i) => !i.have).map((i) => i.name)).slice(0, 2) }; } catch {}
     } catch (e) { out.tasks = { error: e.message }; }
     out.status = { watchdog: watchdog.last(), phone: phone.online(), pc: pc.online(), work_laptop: workPc.online(), storage: db.kind, telegram: await telegram.status().catch(() => null) };
     try { out.credits = await creditsStatus(); } catch {}
