@@ -37,7 +37,7 @@ const PAUSE_MS = Number(process.env.LIVEKIT_PAUSE_MS || 1400);
 // Clear farewells always end it. A bare "thanks" / "cheers" / "nothing" only ends a short call where Bernard didn't
 // just ask him something: in a lesson, game or long chat, "thank you" is part of the conversation (29 Oct: two Spanish
 // lessons were cut off by "Thank you."). "Stop" never ends a call (the practice partner uses it).
-export const BYE_RE = /^(?:ok(?:ay)?[ ,]*)?(?:(?:thanks?(?: you)?|cheers)[ ,]*(?:bernard|bernie|bernud)?[ ,]*)?(?:bye(?: bye)?|goodbye|good ?night|that'?s all|that is all|that'?s it(?: for now)?|nothing else|no(?:pe)?,? thanks?|no,? thank you|never ?mind|see you(?: later)?|speak (?:to you )?later)(?:[ ,]*(?:bernard|bernie|bernud|sir))?[.!, ]*$/i;
+export const BYE_RE = /^(?:ok(?:ay)?[ ,]*)?(?:(?:thanks?(?: you)?|cheers)[ ,]*(?:bernard|bernie|bernud)?[ ,]*)?(?:bye(?: bye)?|goodbye|good ?night|that'?s all|that is all|that'?s it(?: for now)?|nothing else|no(?:pe)?,? thanks?|no,? thank you|never ?mind|see you(?: later| soon)?|speak (?:to you )?later|tchau|tchao|ciao|adi[oó]s|hasta luego|ta[ -]?ra|laters|catch you later)(?:[ ,]*(?:bernard|bernie|bernud|sir))?[.!, ]*$/i;
 export const SOFT_BYE_RE = /^(?:ok(?:ay)?[ ,]*)?(?:thanks?(?: you)?(?: very much)?|cheers|nothing|no(?:pe)?)(?:[ ,]*(?:bernard|bernie|bernud))?[.!, ]*$/i;
 // Whisper writes these when it hears noise or Bernard's own voice coming back through the speaker.
 export const PHANTOM_RE = /^(?:thank you\.?|thanks\.?|thank you(?: very much)?(?: for watching)?[.!]?|thanks for watching[.!]?|you\.?|bye\.?|\.+|okay\.?)$/i;
@@ -47,11 +47,21 @@ const midActivity = (reply) => /[¿¡ñáéíóúãõçàèâêôłśżźćńę�
 export const FRAGMENT_RE = /^(?:to|and|well|uh+|um+|er+m?|hmm+|mm+(?:-?hmm)?|so|the|a|an|but|oh|ah|and then|i|it|is)[.,!?…\s]*$/i;
 // What to do with a short transcript before it reaches the brain: "ignore" (no reply), "echo" (repeat last reply) or "".
 const norm = (x) => String(x || "").toLowerCase().replace(/[^a-z ]/g, " ").replace(/\s+/g, " ").trim();
+// Most of the words are near-copies of words in Whisper's hint list: noise turned into the hint, not something he said.
+export function looksLikeHint(text, hint) {
+  const words = (x) => (String(x).toLowerCase().match(/[a-z0-9]+/g) || []).filter((w) => w.length >= 3);
+  const said = words(text), hw = words(hint).filter((w) => !/^(the|and)$/.test(w));
+  if (said.length < 4) return false;
+  const near = (w) => hw.some((h) => h.slice(0, 3) === w.slice(0, 3) || [...Array(Math.max(0, w.length - 3)).keys()].some((i) => h.includes(w.slice(i, i + 4))));
+  return said.filter(near).length / said.length >= 0.7;
+}
 export function screenTranscript(text, { overlapped = false, replies = 0, lastPhantomAt = 0, now = Date.now(), hint = "" } = {}) {
   const t = String(text || "").trim();
   if (!t || FRAGMENT_RE.test(t)) return "ignore";
   // Whisper repeating its own hint list back on a silent line.
   if (hint && norm(t).length > 8 && norm(hint).includes(norm(t))) return "ignore";
+  if (hint && looksLikeHint(t, hint)) return "ignore";       // a garbled version of it ("Cory Cary, Sampira, NittraWire…")
+  { const w = t.toLowerCase().match(/[a-z']+/g) || []; if (w.length >= 3 && w[0].length >= 4 && w.every((x) => x === w[0]) && !/^(stop|wait|help)$/.test(w[0])) return "ignore"; }   // "Tarek, Tarek, Tarek"
   if (PHANTOM_RE.test(t)) {
     if (overlapped) return "echo";
     if (replies === 0) return "ignore";                       // before he's answered anything: noise, not a goodbye
@@ -61,7 +71,8 @@ export function screenTranscript(text, { overlapped = false, replies = 0, lastPh
 }
 export function isGoodbye(text, { lastReply = "", replies = 0, overlapped = false } = {}) {
   const t = String(text || "").trim();
-  if (BYE_RE.test(t)) return !overlapped || !PHANTOM_RE.test(t);
+  const lastBit = t.split(/[.!?]+\s+/).filter(Boolean).pop() || t;   // "Thank you. Goodbye." ends in a goodbye
+  if (BYE_RE.test(t) || (lastBit !== t && BYE_RE.test(lastBit) && !PHANTOM_RE.test(lastBit))) return !overlapped || !PHANTOM_RE.test(t);
   return SOFT_BYE_RE.test(t) && !overlapped && replies <= 2 && !midActivity(lastReply);
 }
 
@@ -80,7 +91,7 @@ export async function askBrain({ session, text, fetchImpl = fetch, server = SERV
   });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error || `brain ${r.status}`);
-  return { reply: String(j.reply || "").trim() || "I'm afraid I've nothing to say to that.", ok: j.ok !== false, code: j.code, ui: j.ui || undefined };
+  return { reply: String(j.reply || "").trim() || "I'm afraid I've nothing to say to that.", ok: j.ok !== false, code: j.code, ui: j.ui || undefined, tools: Array.isArray(j.tools) ? j.tools : [], model: j.model };
 }
 
 // Spoken replies shouldn't carry markdown, links or control tags meant for a screen.
@@ -112,6 +123,8 @@ export class BernardAgent extends voice.Agent {
     const last = [...chatCtx.items].reverse().find((i) => i.type === "message" && i.role === "user");
     const text = last ? (last.textContent ?? "") : "";
     if (!text.trim()) { say("brain: nothing to answer (empty transcript)"); return null; }
+    // Once he's said goodbye, nothing else he (or the room) says should set anything off while Bernard hangs up.
+    if (this.ending) { say(`ignored "${text.trim()}" (after goodbye)`); return null; }
     // Echo, noise and fragments: a "thank you" that started while Bernard was talking is his own voice coming back
     // (carry on with what he was saying); stray bits of words and repeated phantom "thank you"s get no answer.
     const screened = screenTranscript(text, { overlapped: this.overlapped, replies: this.replies || 0, lastPhantomAt: this.lastPhantomAt || 0, hint: STT_HINT });

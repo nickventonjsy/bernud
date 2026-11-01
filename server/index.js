@@ -387,6 +387,7 @@ const PROMPT_FIXES = [
 ` + "# Not wired up yet")),
   (base) => (base.includes("- announce, party_mode") ? base : base.replace("- end_call: when he says goodbye", "- announce, party_mode, tv_home_screen, home_reminders, sleep_timer, countdown, life_log, focus_mode, away_check, sports, rewind, diary, news_audio and video_summary: see \"Around the house: extras\", \"Sport\" and \"Looking back\".\n- end_call: when he says goodbye")),
   (base) => (base.includes("When he says it didn't work") ? base : base.replace("- Receipts, always.", "- When he says it didn't work, believe him. Never repeat that something worked once he's told you it hasn't: you can't see his screens or hear his speakers. Say what the tool did report (\"the TV accepted the command\"), say what's probably wrong, and give the fix or the next thing to try.\n- Receipts, always.")),
+  (base) => (base.includes("light_show") ? base : base.replace("- Arriving home: when his phone joins", "- Light show: \"make the lights go with the music\" / \"lights dance to the music\" is light_show music (the Govee lights listen through their own microphones). \"Make it christmasy\" / \"festive lights\" is light_show festive (red, green and gold, changing). \"Stop the light show\" is stop. Don't switch the TV on for these.\n- Goodbyes are goodbyes: \"bye\", \"tchau\", \"ciao\", \"see you\" never mean the bedtime routine. Only run goodnight when he says bed, bedtime or goodnight.\n- Arriving home: when his phone joins")),
   (base) => (base.includes('spotify_play_on with device "TV"') ? base : base
     .replace("- \"Play it on the TV / PC / Lounge speaker\": spotify_info devices, then spotify_control transfer with that device's id.", "- Anything on the TV (\"put Ella Langley on Spotify on the TV\", \"play it on the telly\"): spotify_play_on with device \"TV\" and the query (empty query moves what's playing). It switches the S95B on and opens Spotify there if the TV isn't listed yet. Never tell him the TV isn't a Spotify device without trying spotify_play_on first. The PC or another speaker: spotify_play_on with that device's name.")
     .replace("- To play Spotify on the TV, use spotify_info devices and spotify_control transfer to the TV, not tv_control.", "- To play Spotify on the TV, use spotify_play_on with device \"TV\" (it opens Spotify on the TV itself), not tv_control.")
@@ -488,7 +489,7 @@ async function eventsOn(day) {
 const { createJarvis, sameNetwork } = await import("./jarvis.js");
 const { createPrepStore } = await import("./prepstore.js");
 export const prepStore = createPrepStore({ kv: db.kv, notify });
-export const jarvis = createJarvis({ kv: db.kv, notify, sayOnPhone, pc, telegram, lights, dj, brain, speakMp3, headlines, dayLog, voiceRequests: voiceRequestsToday,
+export const jarvis = createJarvis({ govee, kv: db.kv, notify, sayOnPhone, pc, telegram, lights, dj, brain, speakMp3, headlines, dayLog, voiceRequests: voiceRequestsToday,
   saveMemory: (text, category) => db.save(text, category), imou, parcels,
   eventsToday: () => eventsOn(new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(new Date())),
   elevenKey: process.env.ELEVENLABS_API_KEY || "", agentId: process.env.AGENT_ID || "agent_0501m5q6cc15eqcrnamk2e1w84xc",
@@ -1303,6 +1304,7 @@ export async function handle(req, res) {
     if (path === "/scene" && req.method === "POST") return send(res, 200, await jarvis.scene(await readJson(req)));
     if (path === "/upkeep" && req.method === "POST") return send(res, 200, await jarvis.upkeep(await readJson(req)));
     if (path === "/routine-ideas" && req.method === "POST") return send(res, 200, await jarvis.routineIdeas(await readJson(req)));
+    if (path === "/light-show" && req.method === "POST") return send(res, 200, await jarvis.lightShow(await readJson(req)));
     if (path === "/home/everything" && req.method === "POST") return send(res, 200, await jarvis.everything(await readJson(req)));
     if (path === "/countdown" && req.method === "POST") return send(res, 200, await jarvis.countdown(await readJson(req)));
     if (path === "/life-log" && req.method === "POST") return send(res, 200, await jarvis.lifeLog(await readJson(req)));

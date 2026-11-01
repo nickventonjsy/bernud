@@ -241,3 +241,7 @@ console.log("brain ok");
   assert.ok(!c("turn the TV on", "Which TV would you like on?"));
   assert.ok(!c("what's the weather", "It's now on the mild side, sir."));
   console.log("no-tool claim guard ok"); }
+{ const { FAREWELL } = await import("./brain.js");
+  assert.ok(FAREWELL.test("Tchau.")); assert.ok(FAREWELL.test("Goodbye.")); assert.ok(!FAREWELL.test("goodnight")); assert.ok(!FAREWELL.test("bye, turn the lights off"));
+  console.log("farewell ok"); }
+{ assert.ok(pickGroups("get all the lights to go with the music").includes("lightshow")); assert.ok(pickGroups("make it kind of christmasy").includes("lightshow")); console.log("light show group ok"); }

@@ -134,6 +134,7 @@ export const GROUPS = {
   upkeep: { tools: ["upkeep", "life_log"], re: /\b(upkeep|jobs? (?:are )?due|every (?:\w+ )?(?:weeks?|months?|years?|days?)|descal\w*|filter|radiators?|tyre|service the|(?:i'?ve|i have) (?:just )?(?:done|descaled|changed|cleaned|bled|serviced))\b/ },
   routines: { tools: ["routine_ideas", "reminder", "wakeup", "roundups"], re: /\b(routines? (?:have )?you (?:spotted|noticed)|what do i (?:always|usually) ask|spotted any routines|my habits)\b/ },
   prep: { tools: ["emergency_store"], re: /\b(emergency (?:list|store|kit|supplies)|prep(?:per|ping)? list|survival (?:list|kit|checklist)|world war|ww3|amazon basket|in my basket)\b/ },
+  lightshow: { tools: ["light_show", "lights"], re: /\b(lights? (?:to |that )?(?:go|dance|move|pulse|react|sync|flash)\w* (?:with|to) (?:the )?music|music mode|light show|disco lights|christmas?y|xmas lights|festive|christmas lights)\b/ },
   weather: { tools: ["get_weather"], re: /\b(weather|rain|raining|wind|windy|temperature|cold|warm|hot|sunny|umbrella|forecast|coat|degrees|snow|storm)\b/ },
 };
 const ALWAYS = ["recall", "remember", "forget"];
@@ -147,6 +148,7 @@ const SECTION_TOOLS = [
 ];
 const FOOD = /\b(food|order|takeaway|restaurant|menu|delivery|deliveroo|just eat|pizza|curry|chinese|indian|burger|kebab|book a table|dinner|lunch)\b/;
 
+export const FAREWELL = /^(?:ok(?:ay)?[ ,]*)?(?:(?:thanks?(?: you)?|cheers)[ ,]*)?(?:bye(?: bye)?|goodbye|tchau|tchao|ciao|adi[oó]s|hasta luego|ta[ -]?ra|laters|see you(?: later| soon)?|catch you later|speak (?:to you )?(?:later|soon))(?:[ ,]*(?:bernard|bernie|bernud|sir|then|now))?[.!, ]*$/i;
 // He asked for something to be done and the reply says it was, but no tool ran: the one thing Bernard must never do.
 const ASKS_ACTION = /\b(turn|switch|put|play|start|stop|pause|resume|skip|open|set|send|add|remind|dim|brighten|lock|ring|call|message|text|book|schedule|cancel|move|cast|show)\b/i;
 const CLAIMS_DONE = /\b(turning|switching|putting|starting|playing|opening|sending|adding|dimming|setting|is now|are now|now (?:on|off|playing|showing)|i'?ve (?:turned|switched|put|started|set|sent|added|opened|played|dimmed|locked|moved|cancelled)|i have (?:turned|switched|put|started|set|sent|added)|has been (?:turned|switched|set|sent|added|started)|have been (?:turned|switched|set)|done,? sir|all set|consider it done|right away|on its way|coming (?:on|up)|is on now|are on now)\b/i;
@@ -264,6 +266,10 @@ export function createBrain({ briefHandler = null, dayLog = null, learner = null
     return s.length > 12_000 ? { truncated: true, text: s.slice(0, 12_000) } : (Array.isArray(out) ? { result: out } : out);
   }
   async function callTool(byName, name, args, used) {
+    // The bedtime routine turns everything off and silences his phone: only when he actually asked for bed (31 Oct: a
+    // "tchau" at half three in the afternoon ran it).
+    if (name === "goodnight" && args?.action !== "status" && !/\b(bed|bedtime|good ?night|night night|sleep|nighty)\b/i.test(String(used.said || "")))
+      return { ok: false, error: "not_asked", message: "NOT RUN: he didn't ask for bed. Goodbye words are just goodbye; say a short farewell instead." };
     used.push(name);
     if (name === "phone_control" && args?.confirm_code && !SAID_YES.test(String(used.said || "").trim()))
       return { ok: false, sent: false, error: "no_yes", message: "NOT SENT: he hasn't said yes to the read-back. Read it back and ask \"Shall I send it?\", then wait for his answer." };
@@ -520,6 +526,12 @@ export function createBrain({ briefHandler = null, dayLog = null, learner = null
       return { ok: true, reply, tools: [], model: "instant", ms: Date.now() - t0 };
     }
 
+    // Plain goodbyes in any language get a goodbye, never an action.
+    if (FAREWELL.test(text.trim())) {
+      const reply = /night/i.test(text) ? "Good night, sir." : "Very good, sir.";
+      s.turns = [...s.turns, { user: text, reply }].slice(-6);
+      return { ok: true, reply, tools: [], model: "instant", ms: Date.now() - t0 };
+    }
     // Close the camera window on his screen (a screen action, nothing else to do).
     if (CLOSE_CAMERA.test(text.trim())) {
       const reply = "Camera closed, sir.";

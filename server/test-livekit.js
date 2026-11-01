@@ -23,8 +23,8 @@ await new Promise((r) => { const ch = spawned; lk.stop; r(); });
 // speakable() and the brain bridge in the agent file (the LiveKit SDK itself isn't exercised here).
 const { speakable, askBrain } = await import("./livekit-agent.js");
 assert.equal(speakable("Done, **sir**. See [the brief](https://x) at https://y/z."), "Done, sir. See the brief at the link");
-const fetchImpl = async (url, o) => { assert.match(url, /\/brain\/chat$/); assert.equal(JSON.parse(o.body).session, "lk-r1"); return { ok: true, json: async () => ({ ok: true, reply: "Lamp on." }) }; };
-assert.deepEqual(await askBrain({ session: "lk-r1", text: "lamp on", fetchImpl, server: "http://s", key: "d" }), { reply: "Lamp on.", ok: true, code: undefined, ui: undefined });
+const fetchImpl = async (url, o) => { assert.match(url, /\/brain\/chat$/); assert.equal(JSON.parse(o.body).session, "lk-r1"); return { ok: true, json: async () => ({ ok: true, reply: "Lamp on.", tools: ["lights"], model: "groq:x" }) }; };
+assert.deepEqual(await askBrain({ session: "lk-r1", text: "lamp on", fetchImpl, server: "http://s", key: "d" }), { reply: "Lamp on.", ok: true, code: undefined, ui: undefined, tools: ["lights"], model: "groq:x" });
 // The placeholder model the session needs before it will reply at all.
 const { BrainLLM } = await import("./livekit-agent.js");
 const { llm } = await import("@livekit/agents");
@@ -73,4 +73,16 @@ console.log("livekit ok");
   assert.equal(screenTranscript("Michelle, Oakley, Shakira and Vega in St Brelade, Jersey.", { replies: 2, hint: "Bernard, Michelle, Oakley, Shakira and Vega in St Brelade, Jersey. Cory Car Paints." }), "ignore");
   assert.equal(screenTranscript("Tell me about Michelle.", { replies: 2, hint: "Bernard, Michelle, Oakley." }), "");
   console.log("transcript screening ok");
+}
+
+// 31 Oct: goodbyes in other languages, garbled hint echoes and a repeated word.
+{
+  const { screenTranscript, isGoodbye } = await import("./livekit-agent.js");
+  const H = "Bernard, Michelle, Oakley, Shakira and Vega in St Brelade, Jersey. Cory Car Paints, ZentraWire, Spotify, Telegram, WhatsApp. The Samsung S95B TV.";
+  assert.equal(screenTranscript("Cory Cary, Sampira, NittraWire, Ssakira, NittraWire, Satsangira.", { replies: 1, hint: H }), "ignore");
+  assert.equal(screenTranscript("Tarek, Tarek, Tarek.", { replies: 1, hint: H }), "ignore");
+  assert.equal(screenTranscript("Message Michelle on WhatsApp saying hello", { replies: 1, hint: H }), "");
+  assert.equal(screenTranscript("Put all the lights to relax mode.", { replies: 1, hint: H }), "");
+  assert.ok(isGoodbye("Tchau.", { replies: 3 })); assert.ok(isGoodbye("Thank you.  Goodbye.", { replies: 3 })); assert.ok(!isGoodbye("Put the lights on", { replies: 1 }));
+  console.log("goodbyes + noise ok");
 }

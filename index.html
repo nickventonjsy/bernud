@@ -813,7 +813,7 @@
 
   // ---- Version numbers (bottom of the screen) ----
   // DASH_VERSION goes up by one with every dashboard change (a git hook bumps it automatically).
-  const DASH_VERSION = 52;
+  const DASH_VERSION = 53;
   (async () => {
     const set = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
     set("dashVer", DASH_VERSION);
@@ -2657,6 +2657,7 @@
     { c: "Home", n: "Cameras", w: "Live views and snapshots from the Imou cameras, on screen or the TV.", say: ["Show me the front camera", "Show the car park camera on the TV"], u: "cameras" },
     { c: "Home", n: "Sleep timer", w: "Music, TV, lights or everything off later.", say: ["Turn the music off in half an hour", "Everything off in an hour"], u: "sleep timer" },
     { c: "Home", n: "Focus mode", w: "Cool white lights and a calm mix for a set time, then a spoken break call. Sessions are logged.", say: ["Focus mode for 45 minutes", "How long left on my focus?"], u: "focus mode", fresh: true },
+    { c: "Home", n: "Light show", w: "Lights that dance to whatever's playing (Govee music mode, using the lights' own microphones), or a festive red, green and gold cycle.", say: ["Make the lights go with the music", "Make it christmasy", "Stop the light show"], u: "light show", fresh: true },
     { c: "Home", n: "Party mode", w: "Lights cycle colours with a party mix from your liked songs; stop puts them back to warm white.", say: ["Party mode", "Stop party mode"], u: "party mode" },
     { c: "Home", n: "Announcements", w: "Says it on your phone, on the PC if it's on, and in every Telegram chat, Michelle's included.", say: ["Announce dinner's ready"], u: "announcement" },
     { c: "Home", n: "Wake-up", w: "Lights fade up, optional music, then a good-morning message.", say: ["Wake me at seven tomorrow", "What are my wake-up settings?"], u: "wake-up" },

@@ -90,6 +90,17 @@ export function createGovee({ apiKey, fetchImpl = fetch, cacheMs = 10 * 60_000 }
         await send(d, "powerSwitch", 1);
         return send(d, "colorRgb", (rgb[0] << 16) + (rgb[1] << 8) + rgb[2]);
       }
+      case "music": {   // music mode: the light listens through its own microphone and dances to whatever's playing
+        const cap = capOf(d, "musicMode");
+        if (!cap) throw new Error(`${name(d)} has no music mode.`);
+        const field = (cap.parameters?.fields || []).find((f) => f.fieldName === "musicMode");
+        const opts = field?.options || [];
+        const want = String(val || "").toLowerCase();
+        const pickOpt = opts.find((o) => want && String(o.name).toLowerCase().includes(want)) || [/energ/i, /rhythm/i, /dynamic/i, /spectrum/i].map((re) => opts.find((o) => re.test(o.name))).find(Boolean) || opts[0];
+        if (!pickOpt) throw new Error(`${name(d)} didn't list any music modes.`);
+        await send(d, "powerSwitch", 1);
+        return send(d, "musicMode", { musicMode: pickOpt.value, sensitivity: 100, autoColor: 1 });
+      }
       default: throw new Error("Unknown action.");
     }
   }

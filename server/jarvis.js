@@ -33,7 +33,7 @@ export function parseEspn(j) {
 
 export function createJarvis({ kv, notify, sayOnPhone, pc, telegram, lights, dj, brain, speakMp3, headlines, dayLog, voiceRequests, saveMemory, imou, eventsToday, parcels,
   elevenKey = "", agentId = "", fetchImpl = fetch, now = () => new Date(), log = console,
-  pauseMusic = async () => {}, tvOff = async () => {}, tvOn = async () => {}, mainTv = async () => "55" }) {
+  pauseMusic = async () => {}, tvOff = async () => {}, tvOn = async () => {}, mainTv = async () => "55", govee = null }) {
 
   // ---------- announcements to the house ----------
   async function announce({ text = "" } = {}) {
@@ -70,6 +70,35 @@ export function createJarvis({ kv, notify, sayOnPhone, pc, telegram, lights, dj,
       if (party === p) { party = null; await lights.control({ device: "all", action: "white", value: "warm" }).catch(() => {}); }
     })();
     return { ok: true, started: true, minutes: Math.round((p.until - now().getTime()) / 60_000), music: mix ? (mix.ok ? { title: mix.title, playing_on: mix.playing_on, starts_with: mix.starts_with?.[0] } : { failed: mix.message || mix.error }) : "not asked" };
+  }
+
+  // ---------- light show: lights that dance to the music (Govee music mode), or a festive colour cycle ----------
+  const FESTIVE = ["red", "green", "gold", "red", "green", "white"];
+  let show = null;
+  async function lightShow({ action = "music", minutes = 60 } = {}) {
+    if (show) { show.stop = true; show = null; }
+    if (action === "stop") { await lights.control({ device: "all", action: "white", value: "warm" }).catch(() => {}); return { ok: true, stopped: true, note: "Lights back to warm white." }; }
+    if (action === "music") {
+      if (!govee?.configured?.()) return { ok: false, error: "no_govee", message: "Music mode needs the Govee lights, and Govee isn't connected." };
+      const r = await govee.controlAll({ action: "music" });
+      return { ok: r.done.length > 0, dancing: r.done, cant: r.failed.length ? r.failed : undefined,
+        note: "The lights listen through their own microphones, so they follow whatever is playing in the room (TV, speaker or phone). Lights without music mode keep their colour." };
+    }
+    if (action === "festive" || action === "christmas") {
+      const p = { stop: false, until: now().getTime() + Math.min(Math.max(Number(minutes) || 60, 5), 240) * 60_000 };
+      show = p;
+      (async () => {
+        let i = 0;
+        while (!p.stop && now().getTime() < p.until) {
+          const c = FESTIVE[i++ % FESTIVE.length];
+          await lights.control({ device: "all", action: c === "white" ? "white" : "colour", value: c === "white" ? "warm" : c }).catch(() => {});
+          await sleep(8000);
+        }
+        if (show === p) { show = null; await lights.control({ device: "all", action: "white", value: "warm" }).catch(() => {}); }
+      })();
+      return { ok: true, started: "festive", colours: "red, green and gold, changing every few seconds", minutes: Math.round((p.until - now().getTime()) / 60_000) };
+    }
+    return { ok: false, error: "Which: music, festive or stop?" };
   }
 
   // ---------- live sports ----------
@@ -569,6 +598,6 @@ export function createJarvis({ kv, notify, sayOnPhone, pc, telegram, lights, dj,
   }
 
   let timer = null;
-  return { everything, scene, upkeep, upkeepTick, notePattern, routineIdeas, routineTick, countdown, countdownTick, lifeLog, focus, focusTick, awayCheck, leftHome, awayTick, homeReminders, arrivedHome, sleepTimer, sleepTick, announce, partyMode, sports, sportsTick, youtube, rewind, writeDiary, newsAudio, ambient,
+  return { everything, lightShow, scene, upkeep, upkeepTick, notePattern, routineIdeas, routineTick, countdown, countdownTick, lifeLog, focus, focusTick, awayCheck, leftHome, awayTick, homeReminders, arrivedHome, sleepTimer, sleepTick, announce, partyMode, sports, sportsTick, youtube, rewind, writeDiary, newsAudio, ambient,
     start() { if (timer) return; timer = setInterval(() => { sportsTick().catch(() => {}); sleepTick().catch(() => {}); focusTick().catch(() => {}); awayTick().catch(() => {}); countdownTick().catch(() => {}); upkeepTick().catch(() => {}); routineTick().catch(() => {}); }, 30_000); timer.unref?.(); } };
 }
