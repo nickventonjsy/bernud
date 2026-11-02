@@ -482,7 +482,7 @@ export function createBrain({ briefHandler = null, dayLog = null, learner = null
   // ---------------- One question ----------------
   async function chat({ session = "default", text }) {
     if (!geminiKey && !groqKey) return { ok: false, code: "not_set_up", reply: "Free mode isn't set up yet: the Gemini API key needs adding on the server." };
-    text = String(text || "").trim().slice(0, 4000);
+    text = String(text || "").trim().slice(0, 4000).replace(/\bS ?P ?95 ?B?\b/gi, "S95B");   // Whisper hears "S95B" as "SP95"
     if (!text) return { ok: false, reply: "I didn't catch anything." };
     // Where the question came from, for the activity feed: Telegram chats are tg-…, the phone app app-…, the dashboard anything else.
     const via = session.startsWith("tg-") ? "telegram" : session.startsWith("app-") ? "phone" : session.startsWith("lk-") ? "voice" : "dashboard";

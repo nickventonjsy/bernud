@@ -50,8 +50,9 @@ const norm = (x) => String(x || "").toLowerCase().replace(/[^a-z ]/g, " ").repla
 // Most of the words are near-copies of words in Whisper's hint list: noise turned into the hint, not something he said.
 export function looksLikeHint(text, hint) {
   const words = (x) => (String(x).toLowerCase().match(/[a-z0-9]+/g) || []).filter((w) => w.length >= 3);
-  const said = words(text), hw = words(hint).filter((w) => !/^(the|and)$/.test(w));
-  if (said.length < 4) return false;
+  const LITTLE = /^(the|and|for|you|are|was|that|this|with|has|have|its|it's|but|not|our|your)$/;
+  const said = words(text).filter((w) => !LITTLE.test(w)), hw = words(hint).filter((w) => !LITTLE.test(w));
+  if (said.length < 3) return false;
   const near = (w) => hw.some((h) => h.slice(0, 3) === w.slice(0, 3) || [...Array(Math.max(0, w.length - 3)).keys()].some((i) => h.includes(w.slice(i, i + 4))));
   return said.filter(near).length / said.length >= 0.7;
 }
@@ -60,6 +61,8 @@ export function screenTranscript(text, { overlapped = false, replies = 0, lastPh
   if (!t || FRAGMENT_RE.test(t)) return "ignore";
   // Whisper repeating its own hint list back on a silent line.
   if (hint && norm(t).length > 8 && norm(hint).includes(norm(t))) return "ignore";
+  { const parts = t.split(/[.!?]+/).map((x) => x.trim()).filter(Boolean);   // "X. X." where X is part of the hint
+    if (hint && parts.length > 1 && parts.every((x) => norm(x).length > 3 && norm(hint).includes(norm(x)))) return "ignore"; }
   if (hint && looksLikeHint(t, hint)) return "ignore";       // a garbled version of it ("Cory Cary, Sampira, NittraWire…")
   { const w = t.toLowerCase().match(/[a-z']+/g) || []; if (w.length >= 3 && w[0].length >= 4 && w.every((x) => x === w[0]) && !/^(stop|wait|help)$/.test(w[0])) return "ignore"; }   // "Tarek, Tarek, Tarek"
   if (PHANTOM_RE.test(t)) {
@@ -76,7 +79,9 @@ export function isGoodbye(text, { lastReply = "", replies = 0, overlapped = fals
   return SOFT_BYE_RE.test(t) && !overlapped && replies <= 2 && !midActivity(lastReply);
 }
 
-const STT_HINT = process.env.LIVEKIT_STT_HINT || "Bernard, Michelle, Oakley, Shakira and Vega in St Brelade, Jersey. Cory Car Paints, ZentraWire, Spotify, Telegram, WhatsApp. The Samsung S95B TV.";
+const STT_HINT = process.env.LIVEKIT_STT_HINT || "Bernard, Michelle, Oakley, Shakira and Vega in St Brelade, Jersey. Cory Car Paints, ZentraWire, Spotify, Telegram, WhatsApp.";
+const CONFUSED = /\b(not sure what|could you (?:please )?clarify|can you clarify|could you tell me what|not clear on what|what you'?d like me to|pardon(?:,| me)|i don'?t follow|not sure i follow)\b/i;
+const MAX_CALL_MIN = Number(process.env.LIVEKIT_MAX_CALL_MIN || 15), QUIET_HANGUP_MS = Number(process.env.LIVEKIT_QUIET_MS || 180_000);
 const HOLD_MS = Number(process.env.LIVEKIT_HOLD_MS || 3000);
 const HOLDING = ["One moment, sir.", "Bear with me, sir.", "Just a moment, sir.", "Let me look, sir."];
 const FAREWELLS = ["Very good, sir.", "Right you are, sir.", "Any time, sir.", "I'll be here, sir.", "Good night, sir."];
@@ -156,6 +161,10 @@ export class BernardAgent extends voice.Agent {
     }
     catch (e) { reply = "I'm afraid my brain didn't answer: " + String(e.message || e).slice(0, 80) + "."; say("brain error: " + String(e.message || e).slice(0, 200)); }
     clearTimeout(holding);
+    // The phone has been left listening to the telly: three "what do you mean?" answers in a row and he bows out
+    // (keeps "Hey Bernard" on; 2 Nov an 18-minute call of TV chatter ended with the voice server out of memory).
+    if (CONFUSED.test(reply)) self.confused = (self.confused || 0) + 1; else self.confused = 0;
+    if (self.confused >= 3 && !self.ending) { self.ending = true; self.quietHangup = true; reply = "I think that's the television talking, sir. I'll leave you to it. Say Hey Bernard when you need me."; say("hanging up: background audio"); }
     self.replies = (self.replies || 0) + 1; self.lastReply = reply;
     return reply;
     })();
@@ -201,11 +210,23 @@ export default defineAgent({
         leaving = true;
         setTimeout(async () => { say(agent.musicHangup ? "leaving so the music can play" : "leaving after goodbye");
           // Tell the phone/dashboard it was a goodbye, so it turns "Hey Bernard" listening off too.
-          if (!agent.musicHangup) { try { await ctx.room.localParticipant.sendText(JSON.stringify({ bye: true }), { topic: "bernud.ui" }); } catch {} }
+          if (!agent.musicHangup && !agent.quietHangup) { try { await ctx.room.localParticipant.sendText(JSON.stringify({ bye: true }), { topic: "bernud.ui" }); } catch {} }
           try { await ctx.deleteRoom(); } catch (err) { say("deleteRoom failed: " + String(err.message || err).slice(0, 120)); } ctx.shutdown("goodbye"); }, 400);
       }
     });
-    session.on("user_input_transcribed", (e) => { if (e.isFinal) say(`heard: "${String(e.transcript).slice(0, 120)}"`); });
+    let lastHeard = Date.now();
+    session.on("user_input_transcribed", (e) => { if (e.isFinal) { lastHeard = Date.now(); say(`heard: "${String(e.transcript).slice(0, 120)}"`); } });
+    // Calls end on their own: after MAX_CALL_MIN minutes, or after QUIET_HANGUP_MS with nothing said. Each call is a
+    // process of its own and grows as it goes; a forgotten open call was what ran the voice server out of memory.
+    const started = Date.now();
+    const guard = setInterval(() => {
+      if (leaving) return clearInterval(guard);
+      const long = Date.now() - started > MAX_CALL_MIN * 60_000, quiet = Date.now() - lastHeard > QUIET_HANGUP_MS && !agent.speaking;
+      if (!long && !quiet) return;
+      clearInterval(guard); say(long ? "hanging up: call too long" : "hanging up: nothing said for a while");
+      agent.ending = true; agent.quietHangup = true;
+      session.say(long ? "I'll hang up now, sir, to keep things running smoothly. Just say Hey Bernard to carry on." : "I'll hang up for now, sir.", { allowInterruptions: false });
+    }, 20_000);
     session.on("speech_created", (e) => say(`speech created (${e.source}${e.userInitiated ? ", user-initiated" : ""})`));
     session.on("agent_false_interruption", () => say("false interruption (noise or echo cut him off)"));
     session.on("metrics_collected", (e) => { const m = e.metrics || {}; if (m.type === "stt_metrics") say(`stt: ${Math.round((m.audioDurationMs ?? m.audioDuration * 1000) || 0)}ms audio in ${Math.round(m.durationMs ?? m.duration * 1000 ?? 0)}ms`); else if (m.type === "tts_metrics") say(`tts: "${String(m.characters ?? "").slice(0, 6)}" chars, first audio after ${Math.round(m.ttfbMs ?? m.ttfb * 1000 ?? 0)}ms`); });
@@ -224,7 +245,10 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   // worker mark itself unavailable and never take a call. It's one person; always take the job.
   const opts = new WorkerOptions({ agent: fileURLToPath(import.meta.url), production: true, loadThreshold: Infinity, loadFunc: async () => 0,
     // Health port: localhost only when running beside the main server; 0.0.0.0:$PORT when this is its own Render service.
-    host: process.env.LIVEKIT_HEALTH_HOST || "127.0.0.1", port: Number(process.env.LIVEKIT_HEALTH_PORT || 8081) });
+    host: process.env.LIVEKIT_HEALTH_HOST || "127.0.0.1", port: Number(process.env.LIVEKIT_HEALTH_PORT || 8081),
+    // A call that grows past this is ended on its own, rather than Render killing the whole worker at 512MB.
+    jobMemoryWarnMB: Number(process.env.LIVEKIT_JOB_WARN_MB || 280), jobMemoryLimitMB: Number(process.env.LIVEKIT_JOB_LIMIT_MB || 360) });
+  opts.jobMemoryWarnMB = Number(process.env.LIVEKIT_JOB_WARN_MB || 280); opts.jobMemoryLimitMB = Number(process.env.LIVEKIT_JOB_LIMIT_MB || 360);
   // 3) No warm spare call processes (each ~180MB); a call starts its own in about a second. The library treats 0 as
   //    "unset" (and the CLI rebuilds these options, so setting it afterwards is lost), but anything not > 0 means none:
   //    hence -1.

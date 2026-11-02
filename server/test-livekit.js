@@ -86,3 +86,14 @@ console.log("livekit ok");
   assert.ok(isGoodbye("Tchau.", { replies: 3 })); assert.ok(isGoodbye("Thank you.  Goodbye.", { replies: 3 })); assert.ok(!isGoodbye("Put the lights on", { replies: 1 }));
   console.log("goodbyes + noise ok");
 }
+
+// 2 Nov: the hint heard back twice over, and old S95B-style echoes; real requests still get through.
+{
+  const { screenTranscript } = await import("./livekit-agent.js");
+  const H2 = "Bernard, Michelle, Oakley, Shakira and Vega in St Brelade, Jersey. Cory Car Paints, ZentraWire, Spotify, Telegram, WhatsApp. The Samsung S95B TV.";
+  assert.equal(screenTranscript("The Samsung S95B TV.  The Samsung S95B TV.", { replies: 2, hint: H2 }), "ignore");
+  assert.equal(screenTranscript("Cory Car Paints, ZentraWire, Telegram.", { replies: 2, hint: H2 }), "ignore");
+  assert.equal(screenTranscript("Turn the Samsung TV off please", { replies: 2, hint: H2 }), "");
+  assert.equal(screenTranscript("What's on my Cory Car Paints calendar today", { replies: 2, hint: H2 }), "");
+  console.log("hint echo v2 ok");
+}

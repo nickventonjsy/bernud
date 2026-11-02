@@ -198,7 +198,7 @@ const TV_KEY = DASHBOARD_KEY ? createHmac("sha256", "tv:" + DASHBOARD_KEY).updat
 const tvOrDashboard = (req) => Boolean(DASHBOARD_KEY) && (req.headers["x-dashboard-key"] === DASHBOARD_KEY || (TV_KEY && req.headers["x-tv-key"] === TV_KEY));
 // After-hours person alert: if the lounge TV is already on, put that camera up on it (never switches the TV on). Off with kv camera_tv_popup = "off".
 async function cameraTvPopup(cam) {
-  if ((await db.kv.get("camera_tv_popup")) === "off") return;
+  if ((await db.kv.get("camera_tv_popup")) !== "on") return;   // off unless he turns it on (2 Nov: it kept switching the TV to the browser)
   if (!(await smartthings.connected().catch(() => false))) return;
   await db.kv.set("tv_camera", JSON.stringify({ id: cam.id, name: cam.name, at: Date.now() }));
   const r = await smartthings.openBrowser("", { onlyIfOn: true });
@@ -219,6 +219,8 @@ export const coinPrices = createCrypto();
 const { createBrain } = await import("./brain.js");
 const { createLearner } = await import("./learn.js");
 export const learner = createLearner({ db, complete: (a) => brain.complete(a) });
+// 2 Nov: the camera pop-up kept switching his TV to the browser. Off (once); he can turn it back on by voice.
+setTimeout(async () => { try { if (!(await db.kv.get("camera_tv_popup_reset_2nov"))) { await db.kv.set("camera_tv_popup", "off"); await db.kv.set("camera_tv_popup_reset_2nov", "1"); console.log("camera TV pop-up switched off"); } } catch {} }, 10_000).unref?.();
 // 31 Oct: Whisper heard "S95B" as "SP95" and Bernard learned it that way. Put the right name in (once; harmless after).
 setTimeout(async () => { try { for (const r of await db.all()) if (/\bSP ?95\b/.test(r.text)) { await db.remove(r.id); await db.save(r.text.replace(/\bSP ?95\b/g, "S95B").replace(/only the S95B TV should be powered on and no other TVs/, "turn on all the lights and only the S95B TV (no other TVs)"), r.category); console.log("fixed learned TV name"); scheduleAgentPromptSync(); } } catch (e) { console.error("fix learned:", e.message); } }, 15_000).unref?.();
 export const brain = createBrain({ briefHandler: (text) => briefForBrain(text), dayLog, learner, geminiKey: (process.env.GEMINI_API_KEY || "").trim(), groqKey: (process.env.GROQ_API_KEY || "").trim(), elevenKey: process.env.ELEVENLABS_API_KEY || "", agentId: process.env.AGENT_ID || "agent_0501m5q6cc15eqcrnamk2e1w84xc", kv: db.kv, port: PORT, bernudKey: API_KEY, zwKey: process.env.ZW_ASSISTANT_KEY || "" });
@@ -387,6 +389,7 @@ const PROMPT_FIXES = [
 ` + "# Not wired up yet")),
   (base) => (base.includes("- announce, party_mode") ? base : base.replace("- end_call: when he says goodbye", "- announce, party_mode, tv_home_screen, home_reminders, sleep_timer, countdown, life_log, focus_mode, away_check, sports, rewind, diary, news_audio and video_summary: see \"Around the house: extras\", \"Sport\" and \"Looking back\".\n- end_call: when he says goodbye")),
   (base) => (base.includes("When he says it didn't work") ? base : base.replace("- Receipts, always.", "- When he says it didn't work, believe him. Never repeat that something worked once he's told you it hasn't: you can't see his screens or hear his speakers. Say what the tool did report (\"the TV accepted the command\"), say what's probably wrong, and give the fix or the next thing to try.\n- Receipts, always.")),
+  (base) => (base.includes("pop-up is off unless he turns it on") ? base : base.replace("- After hours, when a camera sees a person and the TV is already on, that camera pops up on the TV by itself. It never switches the TV on for this.", "- The camera pop-up on the TV (a person on a shop camera after hours switches the TV to the browser to show it) is off unless he turns it on with tv_popup. The phone alerts still come either way.")),
   (base) => (base.includes("light_show") ? base : base.replace("- Arriving home: when his phone joins", "- Light show: \"make the lights go with the music\" / \"lights dance to the music\" is light_show music (the Govee lights listen through their own microphones). \"Make it christmasy\" / \"festive lights\" is light_show festive (red, green and gold, changing). \"Stop the light show\" is stop. Don't switch the TV on for these.\n- Goodbyes are goodbyes: \"bye\", \"tchau\", \"ciao\", \"see you\" never mean the bedtime routine. Only run goodnight when he says bed, bedtime or goodnight.\n- Arriving home: when his phone joins")),
   (base) => (base.includes('spotify_play_on with device "TV"') ? base : base
     .replace("- \"Play it on the TV / PC / Lounge speaker\": spotify_info devices, then spotify_control transfer with that device's id.", "- Anything on the TV (\"put Ella Langley on Spotify on the TV\", \"play it on the telly\"): spotify_play_on with device \"TV\" and the query (empty query moves what's playing). It switches the S95B on and opens Spotify there if the TV isn't listed yet. Never tell him the TV isn't a Spotify device without trying spotify_play_on first. The PC or another speaker: spotify_play_on with that device's name.")
@@ -957,7 +960,7 @@ export async function handle(req, res) {
     const b = await readJson(req);
     if (b.tv_popup !== undefined) await db.kv.set("camera_tv_popup", b.tv_popup ? "on" : "off");
     const r = await digests.handle({ action: b.action === "set" ? "set" : "status", wrapup: b.wrapup, spend: b.spend, cameras: b.cameras, payroll: b.payroll, bins: b.bins, diary: b.diary, news_audio: b.news_audio });
-    return send(res, 200, { ...r, tv_camera_popup: (await db.kv.get("camera_tv_popup")) === "off" ? "off" : "on" }, req);
+    return send(res, 200, { ...r, tv_camera_popup: (await db.kv.get("camera_tv_popup")) === "on" ? "on" : "off" }, req);
   }
   if (path === "/dash/priorities" && req.method === "POST") {
     if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
@@ -1340,7 +1343,7 @@ export async function handle(req, res) {
     }
     if (path === "/meals/ideas" && req.method === "POST") { try { return send(res, 200, await meals.ideas(await readJson(req))); } catch (e) { return send(res, 200, { ok: false, error: "busy", message: "I couldn't come up with ideas just now. Ask me again in a moment." }); } }
     if (path === "/parcels" && req.method === "POST") { const b = await readJson(req); try { return send(res, 200, await parcels.list({ refresh: b.refresh === true })); } catch (e) { return send(res, 200, { ok: false, error: e.code === "busy" ? "The AI is busy, try again in a minute." : String(e.message).slice(0, 160) }); } }
-    if (path === "/digests" && req.method === "POST") { const b = await readJson(req); if (b.tv_popup !== undefined) await db.kv.set("camera_tv_popup", b.tv_popup ? "on" : "off"); return send(res, 200, { ...(await digests.handle(b)), tv_camera_popup: (await db.kv.get("camera_tv_popup")) === "off" ? "off" : "on (after-hours person alerts, only when the TV is already on)" }); }
+    if (path === "/digests" && req.method === "POST") { const b = await readJson(req); if (b.tv_popup !== undefined) await db.kv.set("camera_tv_popup", b.tv_popup ? "on" : "off"); return send(res, 200, { ...(await digests.handle(b)), tv_camera_popup: (await db.kv.get("camera_tv_popup")) === "on" ? "on (after-hours person alerts switch the TV to the browser to show the camera, only when the TV is already on)" : "off (phone alerts still come)" }); }
     if (path === "/priorities" && req.method === "POST") { const b = await readJson(req); return send(res, 200, await priorities.handle({ ...b, brief: await briefPriorities() })); }
     if (path === "/wakeup" && req.method === "POST") return send(res, 200, await wakeup.handle(await readJson(req)));
     if (path === "/firetv" && req.method === "POST") {
