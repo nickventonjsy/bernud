@@ -204,7 +204,9 @@ async function cameraTvPopup(cam) {
   const r = await smartthings.openBrowser("", { onlyIfOn: true });
   if (!r.skipped) dayLog.add("event", `Put ${cam.name} on ${r.tv} (person after hours)`, "camera");
 }
-export const camAlerts = createCamAlerts({ kv: db.kv, imou, notify, onPerson: (cam) => cameraTvPopup(cam), publicUrl: PUBLIC_URL, hookSecret: createHmac("sha256", "hook:" + DASHBOARD_KEY).update("imou").digest("hex").slice(0, 24) });
+// Camera alerts go to his phone only unless he turns Telegram back on (5 Nov: he asked for them off Telegram).
+const cameraNotify = async (text, opts = {}) => notify(text, { ...opts, telegram: (await db.kv.get("camera_alerts_telegram").catch(() => null)) === "on" });
+export const camAlerts = createCamAlerts({ kv: db.kv, imou, notify: cameraNotify, onPerson: (cam) => cameraTvPopup(cam), publicUrl: PUBLIC_URL, hookSecret: createHmac("sha256", "hook:" + DASHBOARD_KEY).update("imou").digest("hex").slice(0, 24) });
 async function cameraShow(name, quality = "HD") {
   const cam = await imou.find(name);
   const { url, quality: q } = await imou.stream(cam, quality);
@@ -219,6 +221,8 @@ export const coinPrices = createCrypto();
 const { createBrain } = await import("./brain.js");
 const { createLearner } = await import("./learn.js");
 export const learner = createLearner({ db, complete: (a) => brain.complete(a) });
+// 5 Nov: camera notifications off Telegram: the 08:00 overnight-cameras round-up too (once; he can turn it back on).
+setTimeout(async () => { try { if (!(await db.kv.get("camera_telegram_off_5nov"))) { await digests.handle({ action: "set", cameras: false }); await db.kv.set("camera_telegram_off_5nov", "1"); console.log("camera round-up switched off"); } } catch (e) { console.error("camera round-up off:", e.message); } }, 12_000).unref?.();
 // 2 Nov: the camera pop-up kept switching his TV to the browser. Off (once); he can turn it back on by voice.
 setTimeout(async () => { try { if (!(await db.kv.get("camera_tv_popup_reset_2nov"))) { await db.kv.set("camera_tv_popup", "off"); await db.kv.set("camera_tv_popup_reset_2nov", "1"); console.log("camera TV pop-up switched off"); } } catch {} }, 10_000).unref?.();
 // 31 Oct: Whisper heard "S95B" as "SP95" and Bernard learned it that way. Put the right name in (once; harmless after).
@@ -389,6 +393,7 @@ const PROMPT_FIXES = [
 ` + "# Not wired up yet")),
   (base) => (base.includes("- announce, party_mode") ? base : base.replace("- end_call: when he says goodbye", "- announce, party_mode, tv_home_screen, home_reminders, sleep_timer, countdown, life_log, focus_mode, away_check, sports, rewind, diary, news_audio and video_summary: see \"Around the house: extras\", \"Sport\" and \"Looking back\".\n- end_call: when he says goodbye")),
   (base) => (base.includes("When he says it didn't work") ? base : base.replace("- Receipts, always.", "- When he says it didn't work, believe him. Never repeat that something worked once he's told you it hasn't: you can't see his screens or hear his speakers. Say what the tool did report (\"the TV accepted the command\"), say what's probably wrong, and give the fix or the next thing to try.\n- Receipts, always.")),
+  (base) => (base.includes("Camera alerts go to his phone only") ? base : base.replace("- Arriving home: when his phone joins", "- Camera alerts go to his phone only, not Telegram (his choice, 5 Nov), and the 08:00 overnight-cameras round-up is off. If he wants them on Telegram again, note it for Claude with tell_claude; the round-up can be switched back on with roundups (cameras on).\n- Arriving home: when his phone joins")),
   (base) => (base.includes("pop-up is off unless he turns it on") ? base : base.replace("- After hours, when a camera sees a person and the TV is already on, that camera pops up on the TV by itself. It never switches the TV on for this.", "- The camera pop-up on the TV (a person on a shop camera after hours switches the TV to the browser to show it) is off unless he turns it on with tv_popup. The phone alerts still come either way.")),
   (base) => (base.includes("light_show") ? base : base.replace("- Arriving home: when his phone joins", "- Light show: \"make the lights go with the music\" / \"lights dance to the music\" is light_show music (the Govee lights listen through their own microphones). \"Make it christmasy\" / \"festive lights\" is light_show festive (red, green and gold, changing). \"Stop the light show\" is stop. Don't switch the TV on for these.\n- Goodbyes are goodbyes: \"bye\", \"tchau\", \"ciao\", \"see you\" never mean the bedtime routine. Only run goodnight when he says bed, bedtime or goodnight.\n- Arriving home: when his phone joins")),
   (base) => (base.includes('spotify_play_on with device "TV"') ? base : base
@@ -1414,6 +1419,7 @@ export async function handle(req, res) {
           return send(res, 200, { ok: Boolean(sent), camera: cam.name, with_picture: Boolean(pic), message: sent ? `Test alert sent for ${cam.name}${pic ? " with a picture" : " (no picture: the snapshot failed)"}.` : "Couldn't send the test alert." });
         }
         if (action === "events") return send(res, 200, await camAlerts.events({ camera: b.camera, hours: b.hours }));
+        if (action === "alerts" && b.telegram !== undefined) { await db.kv.set("camera_alerts_telegram", b.telegram ? "on" : "off"); return send(res, 200, { ok: true, telegram: b.telegram ? "on" : "off", note: b.telegram ? "Camera alerts go to Telegram again (and the phone if Telegram can't be reached)." : "Camera alerts now go to his phone only, not Telegram." }); }
         if (action === "alerts") return send(res, 200, await camAlerts.configure({ action: b.mode || b.people_only !== undefined || b.enabled !== undefined || b.start || b.end || b.saturday_from || b.weekends !== undefined ? "set" : "status", camera: b.camera, mode: b.mode, people_only: b.people_only, enabled: b.enabled, start: b.start, end: b.end, saturday_from: b.saturday_from, weekends: b.weekends }));
         const cam = await imou.find(b.camera);
         const tv = /tv|telly|television|s95|samsung|lounge/i.test(String(b.screen || ""));
