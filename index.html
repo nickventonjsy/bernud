@@ -692,11 +692,6 @@
   </div>
 </div>
 
-<!-- CAMERA VIEW (Imou live video, opened by Bernard) -->
-<div id="camOverlay" style="display:none;position:fixed;inset:0;z-index:60;background:#000">
-  <iframe id="camFrame" title="Camera" style="width:100%;height:100%;border:0" allow="fullscreen; autoplay"></iframe>
-</div>
-
 <!-- SETTINGS -->
 <div class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="setTitle">
   <div class="panel">
@@ -768,7 +763,7 @@
     <div class="btnrow"><button class="btn" type="button" id="privBtn">Check</button><button class="btn primary" type="button" id="privLockBtn" style="display:none">Make Bernard private</button><button class="btn" type="button" id="privOpenBtn" style="display:none">Make public again</button></div>
     <div class="note" id="privNote"></div>
     <hr style="border:0;border-top:1px solid var(--line, #5a1a1f);margin:16px 0">
-    <p><b style="color:var(--text)">Round-ups and reminders.</b> Sent to your Telegram: end-of-day wrap-up (weekdays), weekly spend (Sundays), overnight cameras (8am), payroll reminders, bin night, and the camera popping up on the TV when someone's seen after hours (only if the TV is already on).</p>
+    <p><b style="color:var(--text)">Round-ups and reminders.</b> Sent to your Telegram: end-of-day wrap-up (weekdays), weekly spend (Sundays), payroll reminders, bin night, the nightly diary and the spoken morning news.</p>
     <div class="btnrow"><button class="btn" type="button" id="rdBtn">Show round-ups</button><button class="btn" type="button" id="homeHere" title="Press this on a device connected to your home Wi-Fi">This is my home Wi-Fi</button><button class="btn" type="button" id="tvLink" title="The address to set as the TV browser's home page">TV home page address</button></div>
     <div id="rdList"></div>
     <div class="note" id="rdNote"></div>
@@ -814,7 +809,7 @@
 
   // ---- Version numbers (bottom of the screen) ----
   // DASH_VERSION goes up by one with every dashboard change (a git hook bumps it automatically).
-  const DASH_VERSION = 54;
+  const DASH_VERSION = 55;
   (async () => {
     const set = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
     set("dashVer", DASH_VERSION);
@@ -1924,8 +1919,6 @@
       conversation = await Conversation.startSession({
         ...session,
         overrides: { agent: { firstMessage: pickGreeting() } },
-        clientTools: { show_camera: async ({ camera } = {}) => { openCamera(camera || ""); return "The camera is now showing on Nicholas's screen."; },
-          close_camera: async () => { const open = $("camOverlay").style.display !== "none"; closeCamera(); return open ? "The camera window is closed; Nicholas is back on the main screen." : "No camera window was open."; } },
         connectionType: store.get(STORE.conn) === "websocket" ? "websocket" : "webrtc",
         ...(store.get(STORE.mic) ? { inputDeviceId: store.get(STORE.mic) } : {}),
         onConnect: () => {
@@ -2053,12 +2046,10 @@
         if (mine) { captionDone(); $("subline").textContent = "You: " + (text.length > 140 ? text.slice(0, 137) + "…" : text); logLine("You", text); setEmotion("curious", 2); }
         else { lastAgentLine = text; lkReplies++; caption(text); captionDone(); reactTo(text); logLine("Bernard", text); }
       });
-      // Screen actions from Bernard (open a camera, the brief), the same as in the other modes.
+      // Screen actions from Bernard (the brief and so on), the same as in the other modes.
       room.registerTextStreamHandler("bernud.ui", async (reader) => {
         let t = ""; for await (const c of reader) t += c;
         let ui = null; try { ui = JSON.parse(t); } catch { return; }
-        if (ui && ui.camera) openCamera(ui.camera.name);
-        if (ui && ui.closeCamera) closeCamera();
         if (ui && ui.brief) { try { openBrief(); } catch {} }
         if (ui && ui.bye) lkBye = true;
         if (ui && ui.hangup) lkMusic = true;   // he hangs up so Spotify on this phone can start   // Bernard's worker says this call ended with a goodbye
@@ -2102,16 +2093,6 @@
 
   function ask(text) { startConversation(text); }
 
-  // ---- Camera view: Bernard opens it when you ask to see a camera ----
-  function openCamera(name) {
-    const o = $("camOverlay"), f = $("camFrame");
-    if (o.style.display === "block" && f.contentWindow) { f.contentWindow.postMessage({ bernud: "showCamera", camera: name || "" }, "*"); return; }
-    f.src = `camera.html?embed=1&camera=${encodeURIComponent(name || "")}`;
-    o.style.display = "block";
-  }
-  function closeCamera() { $("camOverlay").style.display = "none"; $("camFrame").src = "about:blank"; }
-  window.addEventListener("message", (e) => { if (e.data && e.data.bernud === "closeCamera") closeCamera(); });
-  window.bernudShowCamera = openCamera;
 
   // =====================================================================
   //  FREE MODE (£0): the device listens and speaks, Bernard's Gemini brain on the server thinks.
@@ -2289,8 +2270,6 @@
     setMode("connecting", "Thinking…");
     const r = await freeAsk(text);
     if (!freeActive) return true;
-    if (r.ui && r.ui.camera) openCamera(r.ui.camera.name);
-    if (r.ui && r.ui.closeCamera) closeCamera();
     if (r.ui && r.ui.brief) { try { openBrief(); } catch {} }
     const reply = String(r.reply || "Sorry, no answer came back.");
     lastAgentLine = reply; freeLast = reply;
@@ -2589,7 +2568,7 @@
     if (wd) {
       const bad = wd.results.filter((r) => !r.ok);
       $("sysSummary").innerHTML = `<span class="dot ${bad.length ? "red" : ""}"></span><span>${bad.length ? `${bad.length} need${bad.length === 1 ? "s" : ""} attention` : "All systems nominal"}</span>`;
-      const show = wd.results.filter((r) => /camera|phone|credits|telegram|brief|spotify|smartthings|govee|drive|gmail|calendar/i.test(r.name)).slice(0, 6);
+      const show = wd.results.filter((r) => /phone|credits|telegram|brief|spotify|smartthings|govee|drive|gmail|calendar/i.test(r.name)).slice(0, 6);
       $("sysRows").innerHTML = show.map((r) => `<div class="row"><div class="ico">${icon('<circle cx="12" cy="12" r="9"/>' + (r.ok ? '<path d="M8 12l3 3 5-6"/>' : '<path d="M12 8v5M12 16h.01"/>'))}</div><div class="lbl"><b>${esc(r.name)}</b><small>${esc(r.ok ? "Working" : r.detail || "Not working")}</small></div><div class="val"><span class="state ${r.ok ? "ok" : "bad"}"><span class="dot ${r.ok ? "" : "off"}"></span>${r.ok ? "OK" : "Check"}</span></div><span class="chev">›</span></div>`).join("");
       const fd = document.getElementById("footDot"); if (fd) fd.className = "dot " + (bad.length ? "red" : "");
     }
@@ -2663,8 +2642,7 @@
     { c: "Home", n: "Scenes", w: "Snapshot every light as it is now under a name, optionally with music. Say the name to put it back.", say: ["Save this as movie night", "Movie night", "What scenes have I got?"], u: "scene", fresh: true },
     { c: "Home", n: "Samsung TVs", w: "On, off, volume, inputs, apps, channels and remote keys.", say: ["Turn the TV on", "Put Netflix on the TV"], u: "TV" },
     { c: "Home", n: "Fire TV Stick", w: "Power, apps like iPlayer and Netflix, play/pause and remote keys.", say: ["Open iPlayer on the Fire TV"], u: "Fire TV" },
-    { c: "Home", n: "TV home screen", w: "Clock, weather, diary, parcels, headlines and camera stills on the Samsung TV.", say: ["Put the home screen on the TV"], u: "TV home screen" },
-    { c: "Home", n: "Cameras", w: "Live views and snapshots from the Imou cameras, on screen or the TV.", say: ["Show me the front camera", "Show the car park camera on the TV"], u: "cameras" },
+    { c: "Home", n: "TV home screen", w: "Clock, weather, diary, parcels and headlines on the Samsung TV.", say: ["Put the home screen on the TV"], u: "TV home screen" },
     { c: "Home", n: "Sleep timer", w: "Music, TV, lights or everything off later.", say: ["Turn the music off in half an hour", "Everything off in an hour"], u: "sleep timer" },
     { c: "Home", n: "Focus mode", w: "Cool white lights and a calm mix for a set time, then a spoken break call. Sessions are logged.", say: ["Focus mode for 45 minutes", "How long left on my focus?"], u: "focus mode", fresh: true },
     { c: "Home", n: "Light show", w: "Lights that dance to whatever's playing (Govee music mode, using the lights' own microphones), or a festive red, green and gold cycle.", say: ["Make the lights go with the music", "Make it christmasy", "Stop the light show"], u: "light show", fresh: true },
@@ -2710,10 +2688,9 @@
     { c: "Looking back", n: "YouTube summaries", w: "Give it a link and get the gist.", say: ["What's this video about? (paste the link)"], u: "video summary" },
     { c: "Looking back", n: "Sport", w: "Scores, and goal updates on Telegram while you follow a match.", say: ["What's the Jersey Bulls score?", "Keep me posted on the match"], u: "sport" },
     // Automatic
-    { c: "Automatic", n: "Round-ups", w: "Wrap-up weekdays 5:30, weekly spend Sundays, cameras 8am, payroll reminders, bin night Wednesdays 7pm with the right recycling box.", say: ["What's my wrap-up?", "Which recycling box this week?"], u: null, auto: true },
+    { c: "Automatic", n: "Round-ups", w: "Wrap-up weekdays 5:30, weekly spend Sundays, payroll reminders, bin night Wednesdays 7pm with the right recycling box.", say: ["What's my wrap-up?", "Which recycling box this week?"], u: null, auto: true },
     { c: "Automatic", n: "Spoken news", w: "A short bulletin in Bernard's voice on Telegram at half seven.", say: ["Send me the news to listen to"], u: null, auto: true },
     { c: "Automatic", n: "Routine spotting", w: "Notices what you ask for at the same time most days, and offers to automate it. Sunday evening note.", say: ["What routines have you spotted?"], u: null, auto: true, fresh: true },
-    { c: "Automatic", n: "Camera pop-up on TV", w: "After hours, a person on camera pops up on the TV if it's already on.", say: ["Turn the camera pop-up off"], u: null, auto: true },
     // Fun
     { c: "Fun & learning", n: "Spanish and languages", w: "Lessons and practice in Spanish, French, Portuguese or Polish.", say: ["Practise Spanish with me"], u: null },
     { c: "Fun & learning", n: "Adventure games and quizzes", w: "Spoken text adventures, riddles, twenty questions and trivia.", say: ["Let's play an adventure game", "Give me a quiz"], u: null },
@@ -2721,7 +2698,7 @@
     { c: "Fun & learning", n: "Photos", w: "Show a paint tin, label or car damage; he reads it and finds the data sheet.", say: ["(Use the camera button) What's this product?"], u: null },
     // Behind the scenes
     { c: "Bernard himself", n: "System check", w: "What's working and what isn't, with the fix.", say: ["Is everything working?"], u: null },
-    { c: "Bernard himself", n: "Tell Claude", w: "Notes for Claude to build or fix; they appear in the For Claude panel.", say: ["Tell Claude the TV keeps losing the camera"], u: "note for Claude" },
+    { c: "Bernard himself", n: "Tell Claude", w: "Notes for Claude to build or fix; they appear in the For Claude panel.", say: ["Tell Claude the TV home screen is too dim"], u: "note for Claude" },
     { c: "Bernard himself", n: "Zapier", w: "Actions in your other apps through Zapier.", say: ["What can you do with Zapier?"], u: null },
   ];
   let featUsage = null, featCat = "All";
@@ -3059,19 +3036,19 @@
     try {
       const j = await (await fetch(`${SERVER}/dash/digests`, { method: "POST", headers: { "content-type": "application/json", "x-dashboard-key": pass }, body: JSON.stringify(post || { action: "status" }) })).json();
       const box = $("rdList"); box.innerHTML = ""; $("rdNote").textContent = "";
-      const rows = [["wrapup", "End-of-day wrap-up"], ["spend", "Weekly spend"], ["cameras", "Overnight cameras"], ["payroll", "Payroll"], ["bins", "Bin night"], ["diary", "Nightly diary"], ["news_audio", "Spoken morning news"], ["tv_popup", "Camera on the TV"]];
+      const rows = [["wrapup", "End-of-day wrap-up"], ["spend", "Weekly spend"], ["payroll", "Payroll"], ["bins", "Bin night"], ["diary", "Nightly diary"], ["news_audio", "Spoken morning news"]];
       for (const [k, name] of rows) {
-        const v = k === "tv_popup" ? j.tv_camera_popup : j[k]; const on = /^on/.test(String(v));
+        const v = j[k]; const on = /^on/.test(String(v));
         const row = document.createElement("div"); row.className = "btnrow"; row.style.alignItems = "center";
         const label = document.createElement("span"); label.textContent = `${name}: ${v}`; label.style.flex = "1"; label.style.fontSize = "13px";
         const b = document.createElement("button"); b.className = "btn"; b.type = "button"; b.textContent = on ? "Turn off" : "Turn on";
-        b.onclick = () => rdShow(k === "tv_popup" ? { action: "status", tv_popup: !on } : { action: "set", [k]: !on });
+        b.onclick = () => rdShow({ action: "set", [k]: !on });
         row.append(label, b); box.appendChild(row);
       }
     } catch { $("rdNote").textContent = "Couldn't reach Bernard's server."; }
   }
   $("rdBtn").addEventListener("click", () => rdShow());
-  // The address for the TV browser's home page (camera view and Bernard's home screen, no passcode to type on the TV).
+  // The address for the TV browser's home page (Bernard's home screen, no passcode to type on the TV).
   $("tvLink").addEventListener("click", async () => {
     const pass = store.get("bernud.dashKey"); if (!pass) { $("rdNote").textContent = "Enter your passcode in the CCP brief first."; return; }
     try {

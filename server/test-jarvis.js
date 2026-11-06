@@ -41,7 +41,6 @@ const j = createJarvis({ kv, fetchImpl, elevenKey: "k", agentId: "a",
   dayLog: { add() {}, today: async () => ({ asked: ["09:00 turn the lights on", "10:00 what's the score"] }), search: async () => [{ when: "today 09:00", who: "Nicholas", said: "where is the key" }] },
   voiceRequests: async () => ["good night bernard"],
   saveMemory: async (text, cat) => { saved.push([cat, text]); },
-  imou: { cameras: async () => [{ name: "Front", online: true }, { name: "Back", online: false }], snapshot: async (c) => "https://pic/" + c.name },
   eventsToday: async () => [{ title: "Dentist", start: "2026-10-29T15:00:00Z" }],
   parcels: { lines: async () => ["Amazon: arriving today"] },
 });
@@ -92,16 +91,16 @@ assert.equal(saved[0][0], "diary");
 r = await j.newsAudio({ topics: ["uk"] });
 assert.equal(r.ok, true); assert.match(tg.at(-1), /^audio:\d+:🎙 Your morning news/);
 
-// Ambient screen data (offline cameras left out).
+// Ambient screen data.
 r = await j.ambient();
 assert.equal(r.weather.now, 12); assert.equal(r.weather.rain, 40);
-assert.deepEqual(r.cameras, [{ camera: "Front", url: "https://pic/Front" }]);
+assert.equal(r.cameras, undefined);
 assert.equal(r.events[0].title, "Dentist"); assert.deepEqual(r.parcels, ["Amazon: arriving today"]);
 
 // The digests run the diary at 22:30 and the spoken news at 07:30.
 let diaryRuns = 0, newsRuns = 0; const dn = [];
 const at = (iso) => () => new Date(iso);
-const mk = (iso) => createDigests({ kv: mem(), notify: async (t, o) => { dn.push(o.title); return true; }, needsReply: async () => [], priorities: async () => [], events: async () => [], parcels: { lines: async () => [] }, receipts: { week: async () => ({}) }, camEvents: async () => ({}),
+const mk = (iso) => createDigests({ kv: mem(), notify: async (t, o) => { dn.push(o.title); return true; }, needsReply: async () => [], priorities: async () => [], events: async () => [], parcels: { lines: async () => [] }, receipts: { week: async () => ({}) },
   diary: async () => { diaryRuns++; return "Diary 2026-10-29: A fine day."; }, newsAudio: async () => { newsRuns++; }, now: at(iso) });
 await mk("2026-10-29T22:35:00Z").tick();
 assert.equal(diaryRuns, 1); assert.ok(dn.includes("📔 Today's diary"));
@@ -113,7 +112,7 @@ assert.equal(newsRuns, 1);
   const kv2 = mem(); let t = Date.parse("2026-10-30T21:00:00Z"); const spoken = [], sent = [], acts = [];
   const j2 = createJarvis({ kv: kv2, now: () => new Date(t), notify: async (x, o) => { sent.push(o.title + "|" + x); return true; }, sayOnPhone: async (x) => spoken.push(x),
     pc: { online: () => false }, telegram: {}, lights: { control: async (a) => { acts.push("lights " + a.action); return { ok: true }; } }, dj: {}, brain: {}, speakMp3: async () => null,
-    headlines: async () => [], dayLog: { add() {} }, voiceRequests: async () => [], saveMemory: async () => {}, imou: {}, eventsToday: async () => [], parcels: {},
+    headlines: async () => [], dayLog: { add() {} }, voiceRequests: async () => [], saveMemory: async () => {}, eventsToday: async () => [], parcels: {},
     pauseMusic: async () => acts.push("music paused"), tvOff: async (d) => acts.push("tv off " + d) });
   await j2.homeReminders({ action: "add", text: "put the bins out" });
   await j2.homeReminders({ action: "add", text: "ring Mum" });
@@ -137,7 +136,7 @@ assert.equal(newsRuns, 1);
 {
   const kv3 = mem(); let t = Date.parse("2026-12-18T09:00:00Z"); const sent = [], spoken = [], acts = []; const power = { "Lounge lamp": "on", "Hall": "off", "55 TV": "on" };
   const j3 = createJarvis({ kv: kv3, now: () => new Date(t), notify: async (x, o) => { sent.push(o.title + "|" + x); return true; }, sayOnPhone: async (x) => spoken.push(x),
-    pc: { online: () => false }, telegram: {}, brain: {}, speakMp3: async () => null, headlines: async () => [], dayLog: { add() {} }, voiceRequests: async () => [], saveMemory: async () => {}, imou: {}, eventsToday: async () => [], parcels: {},
+    pc: { online: () => false }, telegram: {}, brain: {}, speakMp3: async () => null, headlines: async () => [], dayLog: { add() {} }, voiceRequests: async () => [], saveMemory: async () => {}, eventsToday: async () => [], parcels: {},
     dj: { mix: async ({ mood }) => { acts.push("mix " + mood); return { ok: true, playing_on: "PC" }; } }, pauseMusic: async () => acts.push("paused"),
     lights: { list: async () => [{ name: "Lounge lamp", type: "light" }, { name: "Hall", type: "light" }, { name: "55 TV", type: "tv" }],
       control: async (a) => { if (a.action === "status") return { ok: true, device: { power: power[a.device] } }; acts.push(`${a.device} ${a.action}${a.value ? " " + a.value : ""}`); if (a.action === "off") power[a.device] = "off"; return { ok: true }; } } });
@@ -185,7 +184,7 @@ assert.equal(newsRuns, 1);
   const kv4 = mem(); let t = Date.parse("2026-10-30T19:00:00Z"); const sent = [], calls = [];
   const state = { "Lounge lamp": { power: "on", brightness: 30, white_kelvin: 2700 }, "Strip": { power: "on", brightness: 80, colour_rgb: [128, 0, 255] }, "Hall": { power: "off" } };
   const j4 = createJarvis({ kv: kv4, now: () => new Date(t), notify: async (x, o) => { sent.push(o.title + "|" + x); return true; }, sayOnPhone: async () => {},
-    pc: { online: () => false }, telegram: {}, brain: {}, speakMp3: async () => null, headlines: async () => [], dayLog: { add() {} }, voiceRequests: async () => [], saveMemory: async () => {}, imou: {}, eventsToday: async () => [], parcels: {},
+    pc: { online: () => false }, telegram: {}, brain: {}, speakMp3: async () => null, headlines: async () => [], dayLog: { add() {} }, voiceRequests: async () => [], saveMemory: async () => {}, eventsToday: async () => [], parcels: {},
     dj: { mix: async ({ mood }) => ({ ok: true, title: mood + " mix" }) },
     lights: { list: async () => Object.keys(state).map((name) => ({ name, type: "light" })).concat([{ name: "55 TV", type: "tv" }]),
       control: async (a) => { if (a.action === "status") return { ok: true, device: state[a.device] }; calls.push(`${a.device} ${a.action}${a.value ? " " + a.value : ""}`); return { ok: true }; } } });

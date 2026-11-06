@@ -5,7 +5,7 @@ import { createSpeakers } from "./speakers.js";
 const mem = () => { const m = new Map(); return { get: async (k) => m.get(k) ?? null, set: async (k, v) => { m.set(k, v); } }; };
 const calls = [];
 const j = createJarvis({ kv: mem(), notify: async () => true, sayOnPhone: async () => {}, pc: { online: () => false }, telegram: {}, brain: {}, speakMp3: async () => null,
-  headlines: async () => [], dayLog: { add() {} }, voiceRequests: async () => [], saveMemory: async () => {}, imou: {}, eventsToday: async () => [], parcels: {}, dj: {},
+  headlines: async () => [], dayLog: { add() {} }, voiceRequests: async () => [], saveMemory: async () => {}, eventsToday: async () => [], parcels: {}, dj: {},
   lights: { control: async (a) => { calls.push(`lights ${a.device} ${a.action}`); return { ok: true, devices: ["Lounge", "Hall"] }; } },
   tvOn: async (d) => calls.push(`tv ${d} on`), tvOff: async (d) => calls.push(`tv ${d} off`), mainTv: async () => "55" });
 
@@ -13,7 +13,7 @@ const j = createJarvis({ kv: mem(), notify: async () => true, sayOnPhone: async 
 let r = await j.everything({ action: "on" });
 assert.equal(r.ok, true); assert.deepEqual(calls, ["lights all on", "tv 55 on"]); assert.deepEqual(r.done, ["lights on (2)", "the S95B TV on"]);
 // A TV failure is reported, not hidden.
-const j2 = createJarvis({ kv: mem(), notify: async () => true, sayOnPhone: async () => {}, pc: {}, telegram: {}, brain: {}, speakMp3: async () => null, headlines: async () => [], dayLog: { add() {} }, voiceRequests: async () => [], saveMemory: async () => {}, imou: {}, eventsToday: async () => [], parcels: {}, dj: {},
+const j2 = createJarvis({ kv: mem(), notify: async () => true, sayOnPhone: async () => {}, pc: {}, telegram: {}, brain: {}, speakMp3: async () => null, headlines: async () => [], dayLog: { add() {} }, voiceRequests: async () => [], saveMemory: async () => {}, eventsToday: async () => [], parcels: {}, dj: {},
   lights: { control: async () => ({ ok: true, devices: ["Lounge"] }) }, tvOn: async () => { throw new Error("SmartThings isn't connected"); }, mainTv: async () => "55" });
 r = await j2.everything({});
 assert.equal(r.ok, true); assert.match(r.failed[0], /TV: SmartThings isn't connected/);
@@ -41,7 +41,7 @@ console.log("everything on + Spotify on the TV ok");
     { sku: "H6001", device: "b", deviceName: "Hall bulb", type: "devices.types.light", capabilities: [{ type: "devices.capabilities.on_off", instance: "powerSwitch" }] }];
   const gv = createGovee({ apiKey: "k", fetchImpl: async (url, o) => { if (url.endsWith("/user/devices")) return { ok: true, json: async () => ({ code: 200, data: devs }) }; sent.push(JSON.parse(o.body).payload); return { ok: true, json: async () => ({ code: 200 }) }; } });
   const lc = [];
-  const j3 = createJarvis({ govee: gv, kv: mem(), notify: async () => true, sayOnPhone: async () => {}, pc: {}, telegram: {}, brain: {}, speakMp3: async () => null, headlines: async () => [], dayLog: { add() {} }, voiceRequests: async () => [], saveMemory: async () => {}, imou: {}, eventsToday: async () => [], parcels: {}, dj: {},
+  const j3 = createJarvis({ govee: gv, kv: mem(), notify: async () => true, sayOnPhone: async () => {}, pc: {}, telegram: {}, brain: {}, speakMp3: async () => null, headlines: async () => [], dayLog: { add() {} }, voiceRequests: async () => [], saveMemory: async () => {}, eventsToday: async () => [], parcels: {}, dj: {},
     lights: { control: async (a) => { lc.push(`${a.action} ${a.value}`); return { ok: true }; } } });
   let r = await j3.lightShow({ action: "music" });
   assert.deepEqual(r.dancing, ["Lounge lamp"]); assert.match(r.cant[0], /Hall bulb/);

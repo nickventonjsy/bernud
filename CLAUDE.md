@@ -3,7 +3,7 @@
 ## Toolbox
 - **REA (Reverse Engineer Anything)**, https://github.com/morluto/rea. Nicholas asked for this in Claude's toolbox
   (not Bernard's). Use it when a device or app has no public API and we need to see how its own app talks to it:
-  Imou cameras, Fire TV, Samsung Health (watch data), Alexa/Echo, Govee local control.
+  Fire TV, Samsung Health (watch data), Alexa/Echo, Govee local control.
   The cloud workspace is wiped between sessions, so set it up when needed (tested 27 Oct 2026, REA 6.8.0):
   ```
   mkdir -p /home/claude/tools/rea && cd /home/claude/tools/rea && npm init -y >/dev/null
@@ -50,7 +50,7 @@ New test files are picked up automatically (any `test-*.js`). End a test file wi
 - `server/livekit-agent.js`: the phone voice worker (Groq Whisper STT, transcript screening, goodbye rules, holding line).
 - `server/jarvis.js`: newer "around the house" features (announce, party, sports, rewind, diary, sleep timer, home reminders...).
 - `server/digests.js`: timed jobs (brief, diary 22:30, spoken news 07:30). `server/scheduler.js`, `reminders.js`: reminders.
-- Devices: `smartthings.js` (TVs), `govee.js` (lights), `imou.js`/`camalerts.js` (cameras), `speakers.js` (Spotify devices),
+- Devices: `smartthings.js` (TVs), `govee.js` (lights), `speakers.js` (Spotify devices),
   `devices.js` (phone control, WhatsApp, send gate). Messaging out: `telegram.js`.
 - `index.html` (dashboard), `camera.html` (camera/TV screen), `android/` (phone app), `pc-helper/` (Windows helper).
 - Storage: Postgres kv via `db.kv.get/set` (JSON values).
@@ -73,3 +73,4 @@ New test files are picked up automatically (any `test-*.js`). End a test file wi
   Keys come from Render env vars / the earlier session, never from this file (the repo is public).
 - Logs: Render `list_logs` on the server and voice worker are the evidence for "make Bernard better" rounds
   (look for misheard phrases, slow replies, tool errors, "didn't work" complaints).
+- The Imou cameras were removed on 6 Nov 2026 (code, tools and prompt lines). `camera.html` is now only the TV home screen; its address is kept because the TV opens it.

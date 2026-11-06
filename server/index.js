@@ -185,34 +185,11 @@ export const dayLog = createDayLog({ kv: db.kv });
 const { createRoutines } = await import("./routines.js");
 export const routines = createRoutines({ kv: db.kv, lights, smartthings, phone, pc, zw: { url: (process.env.ZW_URL || "https://zentrawire.onrender.com").replace(/\/+$/, ""), key: process.env.ZW_ASSISTANT_KEY || "" }, events: async () => (await calendarForBrief()).events, verdict: (ctx) => dayVerdict(ctx) });
 const { briefSummary } = await import("./briefsummary.js");
-const { createImou, STREAM_HOST, rewritePlaylist } = await import("./imou.js");
-export const imou = createImou({ appId: (process.env.IMOU_APP_ID || "").trim(), appSecret: (process.env.IMOU_APP_SECRET || "").trim() });
 const { createHmac } = await import("node:crypto");
-// Short-lived signature so the video player (which can't send headers) can use the camera relay.
-const relaySig = (exp) => createHmac("sha256", "relay:" + DASHBOARD_KEY).update(String(exp)).digest("hex").slice(0, 32);
-const relayUrl = (u, exp) => `${PUBLIC_URL}/camera/relay?e=${exp}&s=${relaySig(exp)}&u=${encodeURIComponent(u)}`;
-const { createCamAlerts } = await import("./camalerts.js");
 // The TV's own key: the TV browser's home page carries it (?tvk=...), so nobody has to type the dashboard passcode
-// with the remote. It only opens the camera and home-screen pages, nothing else.
+// with the remote. It only opens the home-screen page, nothing else.
 const TV_KEY = DASHBOARD_KEY ? createHmac("sha256", "tv:" + DASHBOARD_KEY).update("tv-page").digest("hex").slice(0, 24) : "";
 const tvOrDashboard = (req) => Boolean(DASHBOARD_KEY) && (req.headers["x-dashboard-key"] === DASHBOARD_KEY || (TV_KEY && req.headers["x-tv-key"] === TV_KEY));
-// After-hours person alert: if the lounge TV is already on, put that camera up on it (never switches the TV on). Off with kv camera_tv_popup = "off".
-async function cameraTvPopup(cam) {
-  if ((await db.kv.get("camera_tv_popup")) !== "on") return;   // off unless he turns it on (2 Nov: it kept switching the TV to the browser)
-  if (!(await smartthings.connected().catch(() => false))) return;
-  await db.kv.set("tv_camera", JSON.stringify({ id: cam.id, name: cam.name, at: Date.now() }));
-  const r = await smartthings.openBrowser("", { onlyIfOn: true });
-  if (!r.skipped) dayLog.add("event", `Put ${cam.name} on ${r.tv} (person after hours)`, "camera");
-}
-// Camera alerts go to his phone only unless he turns Telegram back on (5 Nov: he asked for them off Telegram).
-const cameraNotify = async (text, opts = {}) => notify(text, { ...opts, telegram: (await db.kv.get("camera_alerts_telegram").catch(() => null)) === "on" });
-export const camAlerts = createCamAlerts({ kv: db.kv, imou, notify: cameraNotify, onPerson: (cam) => cameraTvPopup(cam), publicUrl: PUBLIC_URL, hookSecret: createHmac("sha256", "hook:" + DASHBOARD_KEY).update("imou").digest("hex").slice(0, 24) });
-async function cameraShow(name, quality = "HD") {
-  const cam = await imou.find(name);
-  const { url, quality: q } = await imou.stream(cam, quality);
-  const exp = Date.now() + 2 * 3600_000;
-  return { camera: { id: cam.id, name: cam.name, online: cam.online, guessed: !!cam.guessed }, quality: q, url: relayUrl(url, exp), direct: url };
-}
 const { createGeminiVoice } = await import("./geminivoice.js");
 export const geminiVoice = createGeminiVoice({ apiKey: process.env.GEMINI_API_KEY || "" });
 const { factFor } = await import("./jerseyfacts.js");
@@ -221,10 +198,6 @@ export const coinPrices = createCrypto();
 const { createBrain } = await import("./brain.js");
 const { createLearner } = await import("./learn.js");
 export const learner = createLearner({ db, complete: (a) => brain.complete(a) });
-// 5 Nov: camera notifications off Telegram: the 08:00 overnight-cameras round-up too (once; he can turn it back on).
-setTimeout(async () => { try { if (!(await db.kv.get("camera_telegram_off_5nov"))) { await digests.handle({ action: "set", cameras: false }); await db.kv.set("camera_telegram_off_5nov", "1"); console.log("camera round-up switched off"); } } catch (e) { console.error("camera round-up off:", e.message); } }, 12_000).unref?.();
-// 2 Nov: the camera pop-up kept switching his TV to the browser. Off (once); he can turn it back on by voice.
-setTimeout(async () => { try { if (!(await db.kv.get("camera_tv_popup_reset_2nov"))) { await db.kv.set("camera_tv_popup", "off"); await db.kv.set("camera_tv_popup_reset_2nov", "1"); console.log("camera TV pop-up switched off"); } } catch {} }, 10_000).unref?.();
 // 31 Oct: Whisper heard "S95B" as "SP95" and Bernard learned it that way. Put the right name in (once; harmless after).
 setTimeout(async () => { try { for (const r of await db.all()) if (/\bSP ?95\b/.test(r.text)) { await db.remove(r.id); await db.save(r.text.replace(/\bSP ?95\b/g, "S95B").replace(/only the S95B TV should be powered on and no other TVs/, "turn on all the lights and only the S95B TV (no other TVs)"), r.category); console.log("fixed learned TV name"); scheduleAgentPromptSync(); } } catch (e) { console.error("fix learned:", e.message); } }, 15_000).unref?.();
 export const brain = createBrain({ briefHandler: (text) => briefForBrain(text), dayLog, learner, geminiKey: (process.env.GEMINI_API_KEY || "").trim(), groqKey: (process.env.GROQ_API_KEY || "").trim(), elevenKey: process.env.ELEVENLABS_API_KEY || "", agentId: process.env.AGENT_ID || "agent_0501m5q6cc15eqcrnamk2e1w84xc", kv: db.kv, port: PORT, bernudKey: API_KEY, zwKey: process.env.ZW_ASSISTANT_KEY || "" });
@@ -370,7 +343,7 @@ const PROMPT_FIXES = [
   (base) => (base.includes("# Fun and games") ? base : base.replace("# Not wired up yet", `# Around the house: extras
 - Announcements: "announce dinner's ready", "tell everyone we're leaving in five" use announce. It speaks on his phone in your voice, on his PC if it's on, and goes to every Telegram chat (Michelle's included). The Echo speakers can't take announcements; say so only if he asks why.
 - Party mode: party_mode start or stop (lights cycle colours, and a party mix from his liked songs). Stopping puts the lights back to warm white.
-- The TV home screen: tv_home_screen puts a clock, weather, today's diary, parcels, headlines and camera stills on the Samsung TV. Asking for a camera switches back.
+- The TV home screen: tv_home_screen puts a clock, weather, today's diary, parcels, and headlines on the Samsung TV.
 - Arriving home: when his phone joins the home Wi-Fi after he's been out, you greet him on the phone and put the hall lights on if it's dark (home_arrival changes the settings). It needs the dashboard button "This is my home Wi-Fi" pressed once at home.
 
 # Sport
@@ -393,8 +366,6 @@ const PROMPT_FIXES = [
 ` + "# Not wired up yet")),
   (base) => (base.includes("- announce, party_mode") ? base : base.replace("- end_call: when he says goodbye", "- announce, party_mode, tv_home_screen, home_reminders, sleep_timer, countdown, life_log, focus_mode, away_check, sports, rewind, diary, news_audio and video_summary: see \"Around the house: extras\", \"Sport\" and \"Looking back\".\n- end_call: when he says goodbye")),
   (base) => (base.includes("When he says it didn't work") ? base : base.replace("- Receipts, always.", "- When he says it didn't work, believe him. Never repeat that something worked once he's told you it hasn't: you can't see his screens or hear his speakers. Say what the tool did report (\"the TV accepted the command\"), say what's probably wrong, and give the fix or the next thing to try.\n- Receipts, always.")),
-  (base) => (base.includes("Camera alerts go to his phone only") ? base : base.replace("- Arriving home: when his phone joins", "- Camera alerts go to his phone only, not Telegram (his choice, 5 Nov), and the 08:00 overnight-cameras round-up is off. If he wants them on Telegram again, note it for Claude with tell_claude; the round-up can be switched back on with roundups (cameras on).\n- Arriving home: when his phone joins")),
-  (base) => (base.includes("pop-up is off unless he turns it on") ? base : base.replace("- After hours, when a camera sees a person and the TV is already on, that camera pops up on the TV by itself. It never switches the TV on for this.", "- The camera pop-up on the TV (a person on a shop camera after hours switches the TV to the browser to show it) is off unless he turns it on with tv_popup. The phone alerts still come either way.")),
   (base) => (base.includes("light_show") ? base : base.replace("- Arriving home: when his phone joins", "- Light show: \"make the lights go with the music\" / \"lights dance to the music\" is light_show music (the Govee lights listen through their own microphones). \"Make it christmasy\" / \"festive lights\" is light_show festive (red, green and gold, changing). \"Stop the light show\" is stop. Don't switch the TV on for these.\n- Goodbyes are goodbyes: \"bye\", \"tchau\", \"ciao\", \"see you\" never mean the bedtime routine. Only run goodnight when he says bed, bedtime or goodnight.\n- Arriving home: when his phone joins")),
   (base) => (base.includes('spotify_play_on with device "TV"') ? base : base
     .replace("- \"Play it on the TV / PC / Lounge speaker\": spotify_info devices, then spotify_control transfer with that device's id.", "- Anything on the TV (\"put Ella Langley on Spotify on the TV\", \"play it on the telly\"): spotify_play_on with device \"TV\" and the query (empty query moves what's playing). It switches the S95B on and opens Spotify there if the TV isn't listed yet. Never tell him the TV isn't a Spotify device without trying spotify_play_on first. The PC or another speaker: spotify_play_on with that device's name.")
@@ -405,6 +376,15 @@ const PROMPT_FIXES = [
   (base) => (base.includes("focus_mode") ? base : base.replace("- Arriving home: when his phone joins", "- Countdowns: \"how many days until Christmas / my holiday?\" use countdown (Christmas, New Year, Halloween, Bonfire Night and Liberation Day are built in); \"start a countdown to…\" adds one. He's nudged a week before and the day before.\n- Life log: \"log that I changed the oil\", \"when did I last cut the grass?\", \"how many times have I been to the gym this month?\" use life_log. It only knows what he's logged; if nothing's there, say so and offer to log it now.\n- Focus mode: \"focus mode for 45 minutes\" / \"I need to concentrate\" use focus_mode: cool white lights and a calm mix, then a spoken break call when time's up. Say when it ends, briefly.\n- Away check: about ten minutes after he leaves, lights and TVs left on are flagged on his phone (or switched off if he's turned auto-off on). \"Did I leave anything on?\" is away_check check_now; offer to switch off what's on.\n- Arriving home: when his phone joins")),
   (base) => (base.includes("sleep_timer") ? base : base.replace("- Arriving home: when his phone joins", "- Reminders for when he gets home: \"remind me to put the bins out when I get in\" uses home_reminders add (not reminder). They go off the next time he arrives home.\n- Sleep timer: \"turn the music off in half an hour\", \"TV off in an hour\", \"everything off in an hour\" use sleep_timer. Say the clock time it'll happen.\n- Arriving home: when his phone joins")),
   (base) => (base.includes("spoken morning news at half seven") ? base : base.replace("and bin night on Wednesday at seven before Thursday's collection,", "the day's diary at half ten at night, the spoken morning news at half seven, and bin night on Wednesday at seven before Thursday's collection,")),
+  // 6 Nov: the Imou cameras were removed from Bernard. Strip every camera line from his instructions.
+  (base) => base
+    .replace(/\n- The camera pop-up on the TV[^\n]*/g, "")
+    .replace(/\n- Camera alerts go to his phone only[^\n]*/g, "")
+    .replace(/\n- After hours, when a camera sees a person[^\n]*/g, "")
+    .replace(/ Turning the camera pop-up on the TV off or on is tv_popup\./g, "")
+    .replace(/, the overnight cameras summary at eight each morning/g, "")
+    .replace(/,? headlines and camera stills on the Samsung TV\. Asking for a camera switches back\./g, " and headlines on the Samsung TV.")
+    .replace(/\n# Cameras\n(?:[^\n#][^\n]*\n?)*/g, "\n"),
 ];
 let promptSyncTimer = null;
 function scheduleAgentPromptSync() { clearTimeout(promptSyncTimer); promptSyncTimer = setTimeout(() => syncAgentPrompt().catch((e) => console.error("prompt sync", e.message)), 3 * 60_000); promptSyncTimer.unref?.(); }
@@ -459,7 +439,6 @@ export const watchdog = createWatchdog({ kv: db.kv, notify, checks: [
   { name: "ZentraWire", run: async () => { await zwGet("/api/assistant/summary"); return { ok: true }; } },
   { name: "Spotify", run: async () => { const j = await zwGet("/api/assistant/spotify?what=state"); return j.connected ? { ok: true } : { ok: false, detail: j.error || "Spotify isn't connected in ZentraWire" }; } },
   { name: "Lights and TVs (SmartThings)", run: async () => smartthings.configured() ? ((await smartthings.connected().catch(() => false)) ? { ok: true } : { ok: false, detail: "SmartThings needs reconnecting" }) : { skip: true } },
-  { name: "Cameras", run: async () => { if (!imou.configured()) return { skip: true }; const cams = await imou.cameras(true); return cams.map((c) => ({ name: `Camera: ${c.name}`, ok: c.online, detail: c.online ? "" : "offline (check its power and Wi-Fi)" })); } },
   { name: "Bernard app on the phone", run: async () => (PHONE_TOPIC && PHONE_SECRET) ? (phone.online() ? { ok: true } : { ok: false, detail: "not connected; open the Bernard app on the phone" }) : { skip: true } },
   { name: "Free mode brain", run: async () => { const s = await brain.status(); return s.ok && s.configured ? { ok: true } : { ok: false, detail: s.error || "no AI keys" }; } },
   { name: "Morning brief", run: async () => { const last = JSON.parse((await db.kv.get("brief_last_result")) || "null"); return !last || last.ok ? { ok: true } : { ok: false, detail: "the last brief failed: " + (last.error || "unknown reason") }; } },
@@ -486,7 +465,7 @@ const { createMeals } = await import("./meals.js");
 export const meals = createMeals({ kv: db.kv, memories: () => db.all(), complete: (o) => brain.complete(o) });
 const { createParcels } = await import("./parcels.js");
 export const parcels = createParcels({ inboxes: { ccp: gmail, personal: personalGoogle }, complete: (o) => brain.complete(o) });
-// Scheduled round-ups on Telegram: end-of-day wrap-up, weekly spend, overnight cameras, payroll and bin reminders.
+// Scheduled round-ups on Telegram: end-of-day wrap-up, weekly spend, payroll and bin reminders.
 const { createDigests } = await import("./digests.js");
 async function eventsOn(day) {
   const from = londonToDate(day + "T00:00"), to = new Date(from.getTime() + 864e5), out = [];
@@ -498,7 +477,7 @@ const { createJarvis, sameNetwork } = await import("./jarvis.js");
 const { createPrepStore } = await import("./prepstore.js");
 export const prepStore = createPrepStore({ kv: db.kv, notify });
 export const jarvis = createJarvis({ govee, kv: db.kv, notify, sayOnPhone, pc, telegram, lights, dj, brain, speakMp3, headlines, dayLog, voiceRequests: voiceRequestsToday,
-  saveMemory: (text, category) => db.save(text, category), imou, parcels,
+  saveMemory: (text, category) => db.save(text, category), parcels,
   eventsToday: () => eventsOn(new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(new Date())),
   elevenKey: process.env.ELEVENLABS_API_KEY || "", agentId: process.env.AGENT_ID || "agent_0501m5q6cc15eqcrnamk2e1w84xc",
   // Sleep timer: pause Spotify wherever it's playing; switch the main TV off.
@@ -507,7 +486,7 @@ export const jarvis = createJarvis({ govee, kv: db.kv, notify, sayOnPhone, pc, t
   mainTv,
   tvOff: async (device = "") => { try { return await smartthings.control({ device, action: "off" }); } catch (e) { if (/Which TV/.test(e.message)) return smartthings.control({ device: "55", action: "off" }); throw e; } } });
 export const digests = createDigests({ kv: db.kv, notify, needsReply: async () => ((await gmail.connected()) ? gmail.needsReply() : null), priorities: async () => priorities.list(await briefPrioritiesTop()),
-  events: eventsOn, parcels, receipts, camEvents: (a) => camAlerts.events(a),
+  events: eventsOn, parcels, receipts,
   diary: () => jarvis.writeDiary(), newsAudio: () => jarvis.newsAudio() });
 async function briefPrioritiesTop() {
   try { const b = await ccp.latestBrief(); return { from: b?.created_at || null, items: b?.text ? briefTop3(b.text) : [] }; } catch { return { from: null, items: [] }; }
@@ -813,18 +792,6 @@ export async function handle(req, res) {
 
   if (path === "/" || path === "/health") return send(res, 200, { ok: true, service: "bernud", storage: db.kind, version: (process.env.RENDER_GIT_COMMIT || "dev").slice(0, 7) }, req);
 
-  // Imou pushes camera alarms here (secret path). Reply straight away, then deal with it.
-  if (path.startsWith("/camera/hook/")) {
-    const expect = createHmac("sha256", "hook:" + DASHBOARD_KEY).update("imou").digest("hex").slice(0, 24);
-    if (!DASHBOARD_KEY || path.slice("/camera/hook/".length) !== expect) return send(res, 404, { error: "not found" });
-    if (req.method !== "POST") return send(res, 200, { code: "0", msg: "ok" }); // Imou checks the address is reachable first
-    const b = await readJson(req).catch(() => ({}));
-    if (!b || typeof b !== "object" || (!b.did && !b.deviceId && !Array.isArray(b))) return send(res, 200, { code: "0", msg: "ok" });
-    send(res, 200, { code: "0", msg: "ok" });
-    for (const m of Array.isArray(b) ? b : [b]) camAlerts.handle(m).catch((e) => console.error("camera hook", e.message));
-    return;
-  }
-
   // Documents waiting to be printed by a PC helper.
   if (req.method === "GET" && /^\/files\/[0-9a-f]{32}\.pdf$/.test(path)) {
     const f = tempFiles.get(path.slice(7, 39));
@@ -843,28 +810,6 @@ export async function handle(req, res) {
     if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
     if (!WORK_KEY) return send(res, 200, { ok: false, error: "No device key is configured on the server." }, req);
     return send(res, 200, { ok: true, online: workPc.online(), last_seen: workPc.lastSeen(), command: `$k='${WORK_KEY}'; irm https://raw.githubusercontent.com/nickventonjsy/bernud/main/pc-helper/setup-work.ps1 | iex` }, req);
-  }
-
-  // Camera video relay: passes Imou's live stream through this server (signed, time-limited, Imou hosts only),
-  // so browsers and the TV can play it without cross-site restrictions.
-  if (req.method === "GET" && path === "/camera/relay") {
-    const exp = Number(url.searchParams.get("e")), sig = url.searchParams.get("s") || "";
-    let target; try { target = new URL(url.searchParams.get("u") || ""); } catch { return send(res, 400, { error: "bad url" }); }
-    if (!DASHBOARD_KEY || !(exp > Date.now()) || sig !== relaySig(exp) || !/^https?:$/.test(target.protocol) || !STREAM_HOST.test(target.hostname)) return send(res, 403, { error: "forbidden" });
-    try {
-      const up = await fetch(target, { signal: AbortSignal.timeout(20_000) });
-      const type = up.headers.get("content-type") || "";
-      const cors = { "access-control-allow-origin": "*", "cache-control": "no-store" };
-      if (/mpegurl|m3u8/i.test(type) || /\.m3u8$/i.test(target.pathname)) {
-        const text = rewritePlaylist(await up.text(), target.href, (u) => relayUrl(u, exp));
-        res.writeHead(up.status, { ...cors, "content-type": "application/vnd.apple.mpegurl" });
-        return res.end(text);
-      }
-      res.writeHead(up.status, { ...cors, "content-type": type || "video/mp2t", ...(up.headers.get("content-length") ? { "content-length": up.headers.get("content-length") } : {}) });
-      if (!up.body) return res.end();
-      const { Readable } = await import("node:stream");
-      return Readable.fromWeb(up.body).on("error", () => res.end()).pipe(res);
-    } catch (e) { return send(res, 502, { error: String(e.message).slice(0, 120) }); }
   }
 
   // Short-lived spoken clips in Bernard's voice, fetched by Tasker on the phone (unguessable id, 10-minute life).
@@ -937,7 +882,7 @@ export async function handle(req, res) {
   }
   // Tick, untick, add or remove a priority from the dashboard.
   // "This is my home Wi-Fi": remembers this browser's internet address as the house's, for the arrival greeting.
-  // The address to set as the TV browser's home page (camera view and Bernard's home screen, no passcode needed there).
+  // The address to set as the TV browser's home page (Bernard's home screen, no passcode needed there).
   if (path === "/dash/tv-link" && req.method === "GET") {
     if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
     return send(res, 200, { ok: true, url: `https://bernud.onrender.com/camera.html?tv=1&tvk=${TV_KEY}` }, req);
@@ -963,9 +908,8 @@ export async function handle(req, res) {
   if (path === "/dash/digests" && req.method === "POST") {
     if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
     const b = await readJson(req);
-    if (b.tv_popup !== undefined) await db.kv.set("camera_tv_popup", b.tv_popup ? "on" : "off");
     const r = await digests.handle({ action: b.action === "set" ? "set" : "status", wrapup: b.wrapup, spend: b.spend, cameras: b.cameras, payroll: b.payroll, bins: b.bins, diary: b.diary, news_audio: b.news_audio });
-    return send(res, 200, { ...r, tv_camera_popup: (await db.kv.get("camera_tv_popup")) === "on" ? "on" : "off" }, req);
+    return send(res, 200, r, req);
   }
   if (path === "/dash/priorities" && req.method === "POST") {
     if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
@@ -1074,41 +1018,11 @@ export async function handle(req, res) {
       return res.end(wav);
     } catch (e) { return send(res, e.status === 429 ? 429 : 502, { ok: false, error: String(e.message).slice(0, 200) }, req); }
   }
-  // ---- Imou cameras (dashboard passcode) ----
-  if (path === "/camera/list" && req.method === "GET") {
-    if (!tvOrDashboard(req)) return send(res, 401, { error: "unauthorised" }, req);
-    try { return send(res, 200, { ok: true, cameras: await imou.cameras(url.searchParams.get("refresh") === "1") }, req); }
-    catch (e) { return send(res, 200, { ok: false, code: e.code, error: String(e.message).slice(0, 200) }, req); }
-  }
-  if (path === "/camera/stream" && req.method === "GET") {
-    if (!tvOrDashboard(req)) return send(res, 401, { error: "unauthorised" }, req);
-    try { return send(res, 200, { ok: true, ...(await cameraShow(url.searchParams.get("camera") || "", url.searchParams.get("quality") || "HD")) }, req); }
-    catch (e) { return send(res, 200, { ok: false, code: e.code, error: String(e.message).slice(0, 200) }, req); }
-  }
-  // The camera page reports when live video won't play (which player, which error), for diagnosing the TV.
-  if (path === "/camera/diag" && req.method === "POST") {
-    if (!tvOrDashboard(req)) return send(res, 401, { error: "unauthorised" }, req);
-    const b = await readJson(req);
-    console.log("camera diag", JSON.stringify({ stage: String(b.stage || "").slice(0, 40), detail: String(b.detail || "").slice(0, 300), tv: !!b.tv, hls: !!b.hls, native: String(b.native || "").slice(0, 20), ua: String(b.ua || "").slice(0, 160) }));
-    return send(res, 200, { ok: true }, req);
-  }
-  // The camera the TV should be showing (asked for by voice); the TV-mode camera page checks it every few seconds.
-  if (path === "/camera/tv" && req.method === "GET") {
-    if (!tvOrDashboard(req)) return send(res, 401, { error: "unauthorised" }, req);
-    let want = null; try { want = JSON.parse((await db.kv.get("tv_camera")) || "null"); } catch {}
-    return send(res, 200, { ok: true, camera: want }, req);
-  }
-  // The TV's ambient screen: clock, weather, today's diary, parcels, headlines and camera stills (cached for a minute).
+  // The TV's ambient screen: clock, weather, today's diary, parcels and headlines (cached for a minute).
   if (path === "/ambient" && req.method === "GET") {
     if (!tvOrDashboard(req)) return send(res, 401, { error: "unauthorised" }, req);
     try { return send(res, 200, await jarvis.ambient(), req); } catch (e) { return send(res, 200, { ok: false, error: String(e.message).slice(0, 200) }, req); }
   }
-  if (path === "/camera/snapshot" && req.method === "GET") {
-    if (!tvOrDashboard(req)) return send(res, 401, { error: "unauthorised" }, req);
-    try { const cam = await imou.find(url.searchParams.get("camera") || ""); return send(res, 200, { ok: true, camera: cam, url: await imou.snapshot(cam) }, req); }
-    catch (e) { return send(res, 200, { ok: false, code: e.code, error: String(e.message).slice(0, 200) }, req); }
-  }
-
   if (path === "/brain/status" && req.method === "GET") {
     if (!DASHBOARD_KEY || req.headers["x-dashboard-key"] !== DASHBOARD_KEY) return send(res, 401, { error: "unauthorised" }, req);
     return send(res, 200, await brain.status(), req);
@@ -1348,7 +1262,7 @@ export async function handle(req, res) {
     }
     if (path === "/meals/ideas" && req.method === "POST") { try { return send(res, 200, await meals.ideas(await readJson(req))); } catch (e) { return send(res, 200, { ok: false, error: "busy", message: "I couldn't come up with ideas just now. Ask me again in a moment." }); } }
     if (path === "/parcels" && req.method === "POST") { const b = await readJson(req); try { return send(res, 200, await parcels.list({ refresh: b.refresh === true })); } catch (e) { return send(res, 200, { ok: false, error: e.code === "busy" ? "The AI is busy, try again in a minute." : String(e.message).slice(0, 160) }); } }
-    if (path === "/digests" && req.method === "POST") { const b = await readJson(req); if (b.tv_popup !== undefined) await db.kv.set("camera_tv_popup", b.tv_popup ? "on" : "off"); return send(res, 200, { ...(await digests.handle(b)), tv_camera_popup: (await db.kv.get("camera_tv_popup")) === "on" ? "on (after-hours person alerts switch the TV to the browser to show the camera, only when the TV is already on)" : "off (phone alerts still come)" }); }
+    if (path === "/digests" && req.method === "POST") return send(res, 200, await digests.handle(await readJson(req)));
     if (path === "/priorities" && req.method === "POST") { const b = await readJson(req); return send(res, 200, await priorities.handle({ ...b, brief: await briefPriorities() })); }
     if (path === "/wakeup" && req.method === "POST") return send(res, 200, await wakeup.handle(await readJson(req)));
     if (path === "/firetv" && req.method === "POST") {
@@ -1404,36 +1318,6 @@ export async function handle(req, res) {
         const r = await q.send("print", putTempFile(doc.pdf), `${copies}|${String(b.printer || "").replace(/[|"]/g, "").slice(0, 80)}`);
         return send(res, 200, { device: which, file: doc.name, copies, ...r });
       } catch (e) { return send(res, 200, { ok: false, error: e.code || "error", message: String(e.message).slice(0, 300), link: e.link }); }
-    }
-    if (path === "/camera" && req.method === "POST") {
-      const b = await readJson(req);
-      try {
-        const action = String(b.action || "show");
-        if (action === "list") return send(res, 200, { ok: true, cameras: (await imou.cameras()).map((c) => ({ name: c.name, online: c.online })) });
-        if (action === "snapshot") { const cam = await imou.find(b.camera); return send(res, 200, { ok: true, camera: cam.name, image_url: await imou.snapshot(cam) }); }
-        // A test camera alert with a fresh picture, to check alerts reach Telegram without waiting for real motion.
-        if (action === "test_alert") {
-          const cam = await imou.find(b.camera);
-          const pic = await imou.snapshot(cam).catch(() => "");
-          const sent = await notify(`Test alert from ${cam.name}. If you can see the picture, camera alerts are working.`, { title: `Test: ${cam.name}`, click: `https://bernud.onrender.com/camera.html?camera=${encodeURIComponent(cam.name)}`, attach: pic && /^https?:/.test(pic) ? pic : undefined });
-          return send(res, 200, { ok: Boolean(sent), camera: cam.name, with_picture: Boolean(pic), message: sent ? `Test alert sent for ${cam.name}${pic ? " with a picture" : " (no picture: the snapshot failed)"}.` : "Couldn't send the test alert." });
-        }
-        if (action === "events") return send(res, 200, await camAlerts.events({ camera: b.camera, hours: b.hours }));
-        if (action === "alerts" && b.telegram !== undefined) { await db.kv.set("camera_alerts_telegram", b.telegram ? "on" : "off"); return send(res, 200, { ok: true, telegram: b.telegram ? "on" : "off", note: b.telegram ? "Camera alerts go to Telegram again (and the phone if Telegram can't be reached)." : "Camera alerts now go to his phone only, not Telegram." }); }
-        if (action === "alerts") return send(res, 200, await camAlerts.configure({ action: b.mode || b.people_only !== undefined || b.enabled !== undefined || b.start || b.end || b.saturday_from || b.weekends !== undefined ? "set" : "status", camera: b.camera, mode: b.mode, people_only: b.people_only, enabled: b.enabled, start: b.start, end: b.end, saturday_from: b.saturday_from, weekends: b.weekends }));
-        const cam = await imou.find(b.camera);
-        const tv = /tv|telly|television|s95|samsung|lounge/i.test(String(b.screen || ""));
-        if (tv) {
-          // The TV's browser home page is the camera page in TV mode; it watches for this and switches to the camera asked for.
-          await db.kv.set("tv_camera", JSON.stringify({ id: cam.id, name: cam.name, at: Date.now() }));
-          if (!(await smartthings.connected().catch(() => false))) return send(res, 200, { ok: false, error: "not_connected", message: "SmartThings isn't connected, so I can't put the browser up on the TV." });
-          const r = await smartthings.openBrowser(String(b.screen || ""));
-          return send(res, 200, { ok: true, camera: cam.name, online: cam.online, tv: r.tv,
-            note: `Opened the web browser on ${r.tv}${r.woke ? " (woke it up first)" : ""}; if its home page is set to Bernard's page, it shows ${cam.name} full screen within a few seconds (you can't see the screen, so don't claim it's showing). If the TV shows a different page instead, its browser home page needs setting (one-off): on the TV, Internet, Settings, General, Set Homepage, Custom, and type the address from the "TV home page address" button on his dashboard (Round-ups panel).` + (cam.online === false ? ` ${cam.name} looks offline right now.` : "") });
-        }
-        return send(res, 200, { ok: true, show_camera: { id: cam.id, name: cam.name, screen: "here" }, camera: cam.name, online: cam.online,
-          note: `Now call show_camera with camera "${cam.name}": that is what opens it on his screen.${cam.guessed ? ` (No camera matched that name exactly, so it's ${cam.name}.)` : ""}` });
-      } catch (e) { return send(res, 200, { ok: false, error: e.code || "error", message: String(e.message).slice(0, 200) }); }
     }
     if (path === "/home/settings" && req.method === "POST") return send(res, 200, await home.settings(await readJson(req)));
     if (path === "/orders" && req.method === "POST") {
@@ -1702,8 +1586,6 @@ if (ccp.configured() && process.env.NODE_ENV !== "test") ccp.startBackgroundInde
 if (process.env.NODE_ENV !== "test") { telegram.start(); weekly.start(); if (livekit.configured) { if (!livekit.start()) console.log("livekit: configured; the voice worker runs as its own service (LIVEKIT_WORKER=inline to run it here)"); } else console.log("livekit: not configured (LIVEKIT_URL/API_KEY/API_SECRET), LiveKit mode off"); }
 if (process.env.NODE_ENV !== "test" && NTFY_TOPIC) { scheduler.start(); reminders.start(); orders.start(); digests.start(); jarvis.start(); setInterval(() => prepStore.tick().catch(() => {}), 5 * 60_000).unref?.(); watchdog.start(); wakeup.start(); }
 if (process.env.NODE_ENV !== "test") setTimeout(async () => { const s = await brain.status(); console.log("brain status", JSON.stringify(s)); if (s.ok && s.configured) console.log("brain selftest", JSON.stringify(await brain.selfTest()));
-  if (imou.configured() && DASHBOARD_KEY) camAlerts.start();
-  if (imou.configured()) { try { const c = await imou.cameras(true); console.log("imou cameras", JSON.stringify(c.map((x) => ({ name: x.name, online: x.online })))); } catch (e) { console.log("imou failed", e.code, e.message); } }
   }, 5000);
 if (process.env.NODE_ENV !== "test") smartthings.startKeepAlive();
 

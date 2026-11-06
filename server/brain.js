@@ -54,7 +54,6 @@ export function michelleLine(rand = Math.random) {
   michelleRecent = [...michelleRecent, line].slice(-8);
   return line;
 }
-export const CLOSE_CAMERA = /^(?:(?:ok(?:ay)?|right|now|bernard|bernud|bernie|please)[, ]+)*(?:(?:can you |could you |please )?(?:close|shut|hide|exit|stop|turn off|switch off|get rid of|come out of|take (?:that|it) off)(?: the| that| this)?(?: [a-z']+)?(?: camera| cam| cctv| feed| video| cameras)(?: (?:view|window|feed|now|please|for me))*|(?:go|come|take me|switch|get) back(?: to (?:you|bernard|bernud|the dashboard|the main screen|normal|your face))?(?: from the camera)?|back to (?:you|bernard|bernud)|close (?:it|that)(?: down)?)[.!? ]*(?:please|thanks|thank you)?[.!]*$/i;
 const TEXT_MODE_NOTE = `
 
 # Text mode (push-to-talk)
@@ -95,7 +94,6 @@ export function toDeclaration(t) {
 // ---- Slimming: only the instructions and tools a question needs ----
 // Tool groups and the words that bring them in. Tools not listed in any group (added later in ElevenLabs) are always sent.
 export const GROUPS = {
-  cameras: { tools: ["camera"], re: /\b(cameras?|cctv|doorbell|front door|driveway|garden|garage|imou|shop|car ?park|living room|bedroom|anyone|anybody|someone|motion|movement|alerts?|intruder|security|overnight|last night|snapshot|footage)\b/ },
   home: { tools: ["lights", "tv_control", "everything", "goodnight", "home_arrival", "youtube"], re: /\b(lights?|lamps?|bulbs?|bright|dim|colou?r|ceiling|govee|hue|tv|telly|television|netflix|youtube|video|watch|good ?night|bed|arriv|home|leave|leaving)\b/ },
   music: { tools: ["spotify_info", "spotify_control", "spotify_dj", "spotify_play_on"], re: /\b(echo|alexa|spotify|music|songs?|play|playing|playlist|tracks?|album|artist|pause|resume|skip|next|previous|shuffle|repeat|louder|quieter|volume|speaker|dj|mix|tunes|vibe|mood)\b/ },
   claude: { tools: ["tell_claude"], re: /\b(claude|pass (it|this|that) on|feature request|change request|can you (add|change|fix)|i'?d like (you|bernard) to)\b/ },
@@ -276,7 +274,6 @@ export function createBrain({ briefHandler = null, dayLog = null, learner = null
     const t = byName.get(name);
     try {
       const out = t ? await runTool(t, args || {}, used.via || "") : { error: "unknown tool" };
-      if (out && out.show_camera) used.ui = { camera: out.show_camera }; // tells the screen to open the camera
       if (out && out.hang_up) used.ui = { ...(used.ui || {}), hangup: true };  // music on his phone starts once the call ends
       return out;
     } catch (e) { return { error: String(e.message || e).slice(0, 300) }; }
@@ -531,12 +528,6 @@ export function createBrain({ briefHandler = null, dayLog = null, learner = null
       const reply = /night/i.test(text) ? "Good night, sir." : "Very good, sir.";
       s.turns = [...s.turns, { user: text, reply }].slice(-6);
       return { ok: true, reply, tools: [], model: "instant", ms: Date.now() - t0 };
-    }
-    // Close the camera window on his screen (a screen action, nothing else to do).
-    if (CLOSE_CAMERA.test(text.trim())) {
-      const reply = "Camera closed, sir.";
-      s.turns = [...s.turns, { user: text, reply }].slice(-6);
-      return { ok: true, reply, tools: [], ui: { closeCamera: true }, model: "instant", ms: Date.now() - t0 };
     }
     // 0. "My brief": read the saved CCP brief, or have one prepared (too big a job for the free AIs).
     if (briefHandler && BRIEF_ASK.test(text.trim())) {

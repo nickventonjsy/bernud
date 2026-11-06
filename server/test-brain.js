@@ -46,9 +46,6 @@ assert.equal(q("skip this song").args.action, "next");
 assert.equal(q("Goodnight Bernard").tool, "goodnight");
 assert.equal(q("find my phone").args.action, "ring");
 assert.equal(q("put the kettle on"), null);
-assert.deepEqual(q("show me the front door camera").args, { action: "show", camera: "front door", screen: "" });
-assert.deepEqual(q("Show the camera on the TV").args, { action: "show", camera: "", screen: "tv" });
-assert.equal(q("open the camera").tool, "camera");
 assert.equal(q("turn the music up"), null);
 assert.equal(q("what's the weather like"), null);
 assert.equal(q("turn on do not disturb").args.action, "dnd");
@@ -153,16 +150,8 @@ const nCalls = calls.length, nGem = gemBodies.length;
 r = await b2.chat({ session: "g3", text: "what's the weather" });
 assert.equal(calls.length, nCalls + 1); assert.equal(gemBodies.length, nGem + 1); assert.equal(r.reply, "Taken over: twelve degrees.");
 
-// Camera on the TV by voice: straight to the camera tool with the TV named.
-assert.deepEqual(matchQuick("play the living room camera on the sb95 tv", "").args, { action: "show", camera: "living room", screen: "S95B tv" });
-assert.deepEqual(matchQuick("put the car park camera on the telly", "").args, { action: "show", camera: "car park", screen: "telly" });
-assert.equal(matchQuick("show me the shop camera", "").args.screen, "");
-
-// "Close the camera" / "go back to you": shuts the camera window, nothing else.
-{ const { CLOSE_CAMERA } = await import("./brain.js");
-  for (const w of ["close the camera", "Close that camera.", "go back to you", "Bernard, go back", "close the shop camera please", "take me back", "get rid of the camera", "back to you", "close it"]) assert.ok(CLOSE_CAMERA.test(w), w);
-  for (const w of ["show me the shop camera", "go back to the living room camera", "close the curtains", "turn off the lights"]) assert.ok(!CLOSE_CAMERA.test(w), w);
-  const rc = await mk().chat({ session: "cc", text: "close the camera" }); assert.deepEqual(rc.ui, { closeCamera: true }); assert.equal(rc.model, "instant"); }
+// Cameras were removed (6 Nov): asking for one is no longer a quick command.
+assert.equal(matchQuick("show me the shop camera", ""), null);
 
 // Groq's minute allowance: a request that won't fit isn't sent to Groq at all; Gemini answers straight away.
 { const nGq = groqBodies.length, nGm2 = gemBodies.length;

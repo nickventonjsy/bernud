@@ -69,11 +69,6 @@ export function matchQuick(text, lastDevice = "") {
   if (!t || t.length > 60) return null;
   let m;
 
-  if ((m = t.match(/^(?:show|open|play|put|stick|cast|throw|let me see|can i see|bring up|pull up|check)(?: me)?(?: up)?(?: (?:the|my))? ?(.*?) ?(?:camera|cam|cctv)s?(?: feed)?(?: up)?(?: (?:on|to|onto) (?:the |my )?((?:(?:s ?b? ?95 ?b?|samsung|lounge|living room|big|main) ?)?(?:tv|telly|television)|s ?b? ?95 ?b?|phone|laptop|pc|computer|screen))?$/))) {
-    const name = m[1] || "", screen = m[2] || "";
-    const tv = /tv|telly|television|95/.test(screen);
-    return { tool: "camera", args: { action: "show", camera: name, screen: tv ? screen.replace(/s ?b? ?95 ?b? ?/, "S95B ").trim() : screen }, reply: (r) => (r.ok === false ? null : tv ? `The ${r.camera} camera is going up on the ${r.tv || "TV"}, sir. Give it a few seconds.` : `Here's the ${r.camera} camera.`) };
-  }
   if (/^(?:(?:it'?s )?bed ?time(?: now| routine)?|time for bed|good ?night|night night|nighty night|i'?m (?:off|going) to bed)$/.test(t)) return { tool: "goodnight", args: { action: "run" }, reply: goodnightReply, end: true };
 
   // Shopping list

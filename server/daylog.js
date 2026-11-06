@@ -9,7 +9,7 @@ const ROUTES = [
   [/^\/news/, "news"], [/^\/crypto|^\/prices|^\/zentrawire|^\/price-alert/, "markets"], [/^\/reminder/, "reminders"],
   [/^\/calendar/, "calendar"], [/^\/gmail/, "email"], [/^\/ccp\/document/, "printing"], [/^\/ccp\/brief/, "morning brief"],
   [/^\/ccp/, "CCP documents"], [/^\/web/, "web search"], [/^\/device\/pc|^\/pc/, "PC"], [/^\/device\/phone|^\/phone/, "phone"],
-  [/^\/camera/, "cameras"], [/^\/memory/, "memory"], [/^\/notify/, "sent to phone"], [/^\/routine\/goodnight/, null],
+  [/^\/memory/, "memory"], [/^\/notify/, "sent to phone"], [/^\/routine\/goodnight/, null],
   [/^\/priorities/, "priorities"], [/^\/receipts/, "receipts"], [/^\/claude/, "note for Claude"], [/^\/youtube/, "YouTube"], [/^\/orders|^\/reorder/, "order list"], [/^\/home/, "home"], [/^\/shopping/, "shopping list"], [/^\/wakeup/, "wake-up"], [/^\/firetv/, "Fire TV"], [/^\/announce/, "announcement"], [/^\/party/, "party mode"], [/^\/sports/, "sport"], [/^\/video/, "video summary"], [/^\/rewind|^\/diary/, "looking back"], [/^\/tv\/ambient/, "TV home screen"], [/^\/scene/, "scene"], [/^\/light-show/, "light show"], [/^\/home\/everything/, "home"], [/^\/prep/, "emergency store"], [/^\/upkeep/, "upkeep jobs"], [/^\/routine-ideas/, null], [/^\/countdown/, "countdowns"], [/^\/life-log/, "life log"], [/^\/focus/, "focus mode"], [/^\/away-check/, "away check"], [/^\/sleep-timer/, "sleep timer"], [/^\/system/, null],
 ];
 export const routeLabel = (path) => { const r = ROUTES.find(([re]) => re.test(path)); return r ? r[1] : undefined; };

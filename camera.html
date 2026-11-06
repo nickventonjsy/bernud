@@ -3,36 +3,18 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Bernard Cameras</title>
+<title>Bernard Home Screen</title>
+<!-- The TV browser's home page (the address is kept from when this was the camera page, so the TV still opens it).
+     Since 6 Nov it's only Bernard's home screen: clock, weather, today's diary and parcels, and the headlines. -->
 <style>
-  :root { --bg: #0b0506; --panel: #140809; --line: #5a1a1f; --text: #f4e9e9; --dim: #b89a9c; --red: #ff3b4a; }
+  :root { --bg: #0b0506; --line: #5a1a1f; --text: #f4e9e9; --dim: #b89a9c; --red: #ff3b4a; }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 15px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  body { display: flex; flex-direction: column; }
-  header { display: flex; gap: 10px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
-  header b { color: var(--red); letter-spacing: .12em; font-size: 13px; margin-right: auto; }
-  select, button, input { background: transparent; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; font: inherit; }
-  button { cursor: pointer; }
-  button:hover, button:focus-visible, select:focus-visible { border-color: var(--red); outline: none; }
-  main { flex: 1; display: grid; place-items: center; min-height: 0; position: relative; background: #000; }
-  video, img.snap { width: 100%; height: 100%; object-fit: contain; background: #000; }
-  .msg { position: absolute; inset: auto 16px 16px 16px; text-align: center; color: var(--dim); font-size: 14px; pointer-events: none; }
-  .pass { display: grid; gap: 10px; padding: 24px; max-width: 360px; }
-  .embed header b { display: none; }
+  main { position: relative; height: 100%; }
+  .msg { position: absolute; inset: auto 16px 16px 16px; text-align: center; color: var(--dim); font-size: 14px; }
+  .pass { position: absolute; inset: 0; display: grid; place-content: center; gap: 10px; padding: 24px; }
+  .pass input, .pass button { background: transparent; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; font: inherit; }
   .hidden { display: none !important; }
-  /* TV mode (the TV browser's home page): just the picture, full screen, and a name tag that fades. */
-  .tv header { display: none; }
-  .tv .msg { font-size: 26px; }
-  .tag { position: absolute; top: 24px; left: 32px; padding: 8px 16px; border-radius: 8px; background: rgba(0,0,0,.55); color: #fff; font-size: 28px; transition: opacity 1s; pointer-events: none; }
-  .tag.gone { opacity: 0; }
-  /* TV camera picker: appears on any remote button, arrows to move, OK to pick; hides itself. */
-  .picker { position: absolute; left: 0; right: 0; bottom: 0; display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; padding: 24px 32px 36px; background: linear-gradient(transparent, rgba(0,0,0,.85)); transition: opacity .4s; }
-  .picker.gone { opacity: 0; pointer-events: none; }
-  .picker button { font-size: 26px; padding: 14px 26px; border: 2px solid rgba(255,255,255,.35); border-radius: 12px; background: rgba(20,8,9,.85); color: #fff; }
-  .picker button.on { border-color: var(--red); }
-  .picker button:focus { outline: none; border-color: #fff; background: var(--red); }
-  .picker .hint { flex-basis: 100%; text-align: center; color: var(--dim); font-size: 18px; }
-  /* Ambient screen (TV mode, asked for by voice): clock, weather, today, news and the cameras, refreshed every minute. */
   .amb { position: absolute; inset: 0; display: grid; grid-template-columns: 1.15fr 1fr; grid-template-rows: auto 1fr auto; gap: 28px 48px; padding: 48px 64px; background: radial-gradient(ellipse at top left, #2a0c10, #0b0506 60%); color: #fff; }
   .amb .clock { font-size: 150px; font-weight: 200; line-height: 1; letter-spacing: -.02em; }
   .amb .date { font-size: 34px; color: var(--dim); margin-top: 8px; }
@@ -42,186 +24,52 @@
   .amb h3 { margin: 0 0 12px; font-size: 20px; letter-spacing: .14em; color: var(--red); font-weight: 600; }
   .amb ul { margin: 0; padding: 0; list-style: none; font-size: 28px; line-height: 1.45; }
   .amb li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .amb .cams { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-content: start; }
-  .amb .cams figure { margin: 0; position: relative; }
-  .amb .cams img { width: 100%; aspect-ratio: 16/9; object-fit: cover; border-radius: 10px; background: #000; display: block; }
-  .amb .cams figcaption { position: absolute; left: 10px; bottom: 8px; font-size: 18px; background: rgba(0,0,0,.55); padding: 2px 10px; border-radius: 6px; }
+  .amb .day { grid-column: 1 / -1; }
   .amb .news { grid-column: 1 / -1; font-size: 26px; color: var(--dim); border-top: 1px solid var(--line); padding-top: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 </style>
 </head>
 <body>
-<header>
-  <b>BERNARD · CAMERAS</b>
-  <select id="cam" aria-label="Camera"></select>
-  <button id="quality" type="button" title="Switch picture quality">HD</button>
-  <button id="reload" type="button">Reload</button>
-  <button id="full" type="button">Full screen</button>
-  <button id="close" type="button" class="hidden">Close</button>
-</header>
-<main id="stage">
+<main>
   <form class="pass hidden" id="passForm">
     <label for="pass">Dashboard passcode</label>
     <input id="pass" type="password" autocomplete="off">
-    <button type="submit">View cameras</button>
+    <button type="submit">Show the home screen</button>
   </form>
-  <video id="video" playsinline muted autoplay controls class="hidden"></video>
-  <img id="snap" class="snap hidden" alt="Latest camera snapshot">
-  <div class="msg" id="msg">Loading…</div>
-  <div class="tag gone" id="tag"></div>
-  <div class="picker gone hidden" id="picker" role="toolbar" aria-label="Cameras"></div>
-  <section class="amb hidden" id="amb" aria-label="Home screen">
+  <section class="amb" id="amb" aria-label="Home screen">
     <div><div class="clock" id="ambClock"></div><div class="date" id="ambDate"></div></div>
     <div class="wx" id="ambWx"></div>
-    <div><h3>TODAY</h3><ul id="ambDay"></ul></div>
-    <div class="cams" id="ambCams"></div>
+    <div class="day"><h3>TODAY</h3><ul id="ambDay"></ul></div>
     <div class="news" id="ambNews"></div>
   </section>
+  <div class="msg" id="msg"></div>
 </main>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.13/hls.min.js"></script>
 <script>
   const SERVER = "https://bernud-server.onrender.com";
   const $ = (id) => document.getElementById(id);
   const params = new URLSearchParams(location.search);
-  const embed = params.get("embed") === "1";
-  if (embed) { document.body.classList.add("embed"); $("close").classList.remove("hidden"); }
-  // ?tv=1: the Samsung TV's browser home page. Bernard sets which camera to show; this page follows it.
-  const tvMode = params.get("tv") === "1";
-  if (tvMode) { document.body.classList.add("tv"); $("video").removeAttribute("controls"); }
   const store = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
-  let quality = store.get("bernud.camQuality") || "HD";
-  let hls = null, retries = 0, playId = 0;
   const msg = (t) => { $("msg").textContent = t || ""; };
-
   // On the TV the home page address carries its own key (?tvk=...), so nothing has to be typed with the remote.
   const TVK = params.get("tvk") || "";
   const authHeaders = () => (TVK ? { "x-tv-key": TVK } : { "x-dashboard-key": store.get("bernud.dashKey") || "" });
   async function api(path) {
-    const pass = store.get("bernud.dashKey");
-    if (!pass && !TVK) { showPass(); throw new Error("passcode"); }
+    if (!store.get("bernud.dashKey") && !TVK) { showPass(); throw new Error("passcode"); }
     const r = await fetch(SERVER + path, { headers: authHeaders() });
     if (r.status === 401) { showPass("That passcode wasn't accepted."); throw new Error("passcode"); }
     return r.json();
   }
-  function showPass(note) {
-    $("passForm").classList.remove("hidden"); $("video").classList.add("hidden"); $("snap").classList.add("hidden");
-    msg(note || "Enter Bernard's dashboard passcode once on this device.");
-  }
-  $("passForm").addEventListener("submit", (e) => { e.preventDefault(); store.set("bernud.dashKey", $("pass").value.trim()); $("passForm").classList.add("hidden"); start(); });
+  function showPass(note) { $("passForm").classList.remove("hidden"); $("amb").classList.add("hidden"); msg(note || "Enter Bernard's dashboard passcode once on this device."); }
+  $("passForm").addEventListener("submit", (e) => { e.preventDefault(); store.set("bernud.dashKey", $("pass").value.trim()); $("passForm").classList.add("hidden"); $("amb").classList.remove("hidden"); msg(""); refresh().then(rotateNews); });
 
-  function stopVideo() { if (hls) { hls.destroy(); hls = null; } const v = $("video"); v.removeAttribute("src"); v.load(); }
-
-  // Tell the server what went wrong (it logs it), so a TV that won't play can be diagnosed.
-  function diag(stage, detail) {
-    if (!store.get("bernud.dashKey") && !TVK) return;
-    fetch(SERVER + "/camera/diag", { method: "POST", headers: { ...authHeaders(), "content-type": "application/json" }, body: JSON.stringify({ stage, detail: String(detail || "").slice(0, 300), tv: tvMode, ua: navigator.userAgent.slice(0, 160), hls: !!(window.Hls && Hls.isSupported()), native: $("video").canPlayType("application/vnd.apple.mpegurl") }) }).catch(() => {});
-  }
-
-  // When live video won't play here, keep the picture moving with a fresh snapshot every few seconds.
-  let snapTimer = null, snapFor = "";
-  function stopSnaps() { clearTimeout(snapTimer); snapTimer = null; snapFor = ""; }
-  async function snapshotFallback(name) {
-    stopSnaps(); snapFor = name;
-    const next = async (first) => {
-      if (snapFor !== name) return;
-      try {
-        const j = await api(`/camera/snapshot?camera=${encodeURIComponent(name)}`);
-        if (j.ok) {
-          // Imou makes the picture a moment after giving its address: try loading it a few times.
-          for (let i = 0; i < 4 && snapFor === name; i++) {
-            const ok = await new Promise((r) => { const im = new Image(); im.onload = () => r(true); im.onerror = () => r(false); im.src = j.url; });
-            if (ok) { $("snap").src = j.url; $("snap").classList.remove("hidden"); $("video").classList.add("hidden"); if (first) msg(tvMode ? "" : "Live video wouldn't load here, so this picture refreshes every few seconds. Tap Reload to try live again."); first = false; break; }
-            await new Promise((r) => setTimeout(r, 1200));
-          }
-        } else if (first) msg(j.error || "Couldn't load this camera.");
-      } catch {}
-      if (snapFor === name) snapTimer = setTimeout(() => next(first), 3000);
-    };
-    if (tvMode) tag(name + " · updates every few seconds");
-    next(true);
-  }
-
-  // Ways to play, best first. The cameras send HEVC video: the web player (hls.js) can't decode it, but a TV's or
-  // iPhone's own player usually can, so where there's a built-in HLS player it goes first. Then the other quality.
-  function attempts(q) {
-    const native = !!$("video").canPlayType("application/vnd.apple.mpegurl");
-    const hlsOk = !!(window.Hls && Hls.isSupported());
-    const other = q === "HD" ? "SD" : "HD";
-    const list = [];
-    for (const qq of [q, other]) { if (native && (tvMode || !hlsOk)) list.push([qq, "native"]); if (hlsOk) list.push([qq, "hls"]); if (native && !tvMode && hlsOk) list.push([qq, "native"]); }
-    // What played last time on this screen goes first (the TV can't play the cameras' HD format, so it learns SD).
-    const won = store.get("bernud.camWorks");
-    if (won && tvMode) { const i = list.findIndex(([a, b]) => `${a} ${b}` === won); if (i > 0) list.unshift(...list.splice(i, 1)); }
-    return list;
-  }
-  async function play(name, q = quality, step = 0) {
-    stopVideo(); stopSnaps();
-    const id = ++playId;
-    const plan = attempts(q);
-    if (step >= plan.length) { diag("no player", "nothing could play it"); return snapshotFallback(name); }
-    const [qq, how] = plan[step];
-    $("snap").classList.add("hidden");
-    msg(step ? "Trying another way to play it…" : "Connecting to the camera…");
-    let j;
-    try { j = await api(`/camera/stream?camera=${encodeURIComponent(name)}&quality=${qq}`); } catch { return; }
-    if (id !== playId) return;
-    if (!j.ok) { msg(j.error || "Couldn't get the camera stream."); return; }
-    if (j.camera && j.camera.online === false) msg(`${j.camera.name} looks offline, trying anyway…`);
-    const v = $("video"); v.classList.remove("hidden");
-    let done = false;
-    const giveUp = (why) => { if (id !== playId || done) return; done = true; clearTimeout(watchdog); diag(`${qq} ${how} failed`, why); play(name, q, step + 1); };
-    const watchdog = setTimeout(() => { if (v.paused || v.readyState < 2) giveUp("no picture after 15s"); }, 15000);
-    v.onplaying = () => { if (id !== playId) return; done = true; clearTimeout(watchdog); msg(""); retries = 0; store.set("bernud.camWorks", `${qq} ${how}`); if (tvMode) tag(name + (qq === "SD" ? " · SD" : "")); };
-    if (how === "native") {
-      v.onerror = () => giveUp("native player error " + (v.error && v.error.code));
-      v.src = j.url; v.play().catch(() => {});
-    } else {
-      v.onerror = null;
-      hls = new Hls({ liveSyncDurationCount: 2, maxBufferLength: 10 });
-      hls.loadSource(j.url); hls.attachMedia(v);
-      hls.on(Hls.Events.MANIFEST_PARSED, () => v.play().catch(() => {}));
-      hls.on(Hls.Events.ERROR, (_, d) => {
-        if (!d.fatal || id !== playId) return;
-        if (retries++ < 2 && d.type === Hls.ErrorTypes.NETWORK_ERROR) { done = true; clearTimeout(watchdog); msg("Reconnecting…"); setTimeout(() => { if (id === playId) play(name, q, step); }, 1500); }
-        else giveUp(`${d.type}/${d.details}${d.reason ? " " + d.reason : ""}`);
-      });
-    }
-  }
-
-
-  async function start() {
-    let j;
-    try { j = await api("/camera/list"); } catch { return; }
-    if (!j.ok) { msg(j.error || "Couldn't reach the Imou account."); return; }
-    const sel = $("cam"); sel.innerHTML = "";
-    for (const c of j.cameras) { const o = document.createElement("option"); o.value = c.name; o.textContent = c.name + (c.online ? "" : " (offline)"); sel.appendChild(o); }
-    if (!j.cameras.length) { msg("No cameras found on your Imou account."); return; }
-    const want = (params.get("camera") || store.get("bernud.lastCam") || "").toLowerCase();
-    const match = j.cameras.find((c) => c.id.toLowerCase() === want || c.name.toLowerCase() === want) || j.cameras.find((c) => want && c.name.toLowerCase().includes(want));
-    sel.value = (match || j.cameras[0]).name;
-    play(sel.value);
-  }
-
-  $("cam").addEventListener("change", (e) => { store.set("bernud.lastCam", e.target.value); play(e.target.value); });
-  $("quality").textContent = quality;
-  $("quality").addEventListener("click", () => { quality = quality === "HD" ? "SD" : "HD"; store.set("bernud.camQuality", quality); $("quality").textContent = quality; play($("cam").value); });
-  $("reload").addEventListener("click", () => { retries = 0; play($("cam").value); });
-  $("full").addEventListener("click", () => { const el = $("stage"); (el.requestFullscreen || el.webkitRequestFullscreen || (() => {})).call(el); });
-  $("close").addEventListener("click", () => { stopVideo(); parent.postMessage({ bernud: "closeCamera" }, "*"); });
-  window.addEventListener("message", (e) => { if (e.data && e.data.bernud === "showCamera") { const n = e.data.camera || ""; const sel = $("cam"); const o = [...sel.options].find((x) => x.value.toLowerCase().includes(n.toLowerCase())); if (o) { sel.value = o.value; play(o.value); } } });
-  // TV mode: check every few seconds which camera Bernard was asked to show, and switch to it.
-  let tvAt = 0, tagTimer = null;
-  function tag(t) { const el = $("tag"); el.textContent = t; el.classList.remove("gone"); clearTimeout(tagTimer); tagTimer = setTimeout(() => el.classList.add("gone"), 5000); }
-  // Ambient screen: Bernard switches the TV to it ("put the home screen on the telly"); a camera request switches back.
   const WX = { 0: "Clear", 1: "Mostly clear", 2: "Partly cloudy", 3: "Cloudy", 45: "Fog", 48: "Fog", 51: "Drizzle", 53: "Drizzle", 55: "Drizzle", 61: "Light rain", 63: "Rain", 65: "Heavy rain", 71: "Snow", 73: "Snow", 75: "Heavy snow", 80: "Showers", 81: "Showers", 82: "Heavy showers", 95: "Thunderstorms", 96: "Thunderstorms", 99: "Thunderstorms" };
   const esc = (t) => String(t ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-  let ambOn = false, ambTimer = null, newsAt = 0;
   function clock() {
     const d = new Date(), o = { timeZone: "Europe/London" };
     $("ambClock").textContent = d.toLocaleTimeString("en-GB", { ...o, hour: "2-digit", minute: "2-digit" });
     $("ambDate").textContent = d.toLocaleDateString("en-GB", { ...o, weekday: "long", day: "numeric", month: "long" });
   }
-  let ambNews = [];
-  async function ambRefresh() {
+  let news = [], newsAt = 0;
+  async function refresh() {
     try {
       const j = await api("/ambient");
       if (!j || !j.ok) return;
@@ -229,76 +77,13 @@
       $("ambWx").innerHTML = w ? `<div class="t">${esc(w.now)}°</div><div class="d">${esc(WX[w.code] || "")}</div><div class="d">High ${esc(w.high)}° · Low ${esc(w.low)}°${w.rain != null ? ` · Rain ${esc(w.rain)}%` : ""}</div>` : "";
       const day = [...(j.events || []).map((e) => `${esc(e.when)} · ${esc(e.title)}`), ...(j.parcels || []).map((p) => `📦 ${esc(p)}`)];
       $("ambDay").innerHTML = (day.length ? day : ["Nothing in the diary."]).slice(0, 6).map((l) => `<li>${l}</li>`).join("");
-      $("ambCams").innerHTML = (j.cameras || []).map((c) => `<figure><img src="${esc(c.url)}" alt=""><figcaption>${esc(c.camera)}</figcaption></figure>`).join("");
-      ambNews = j.news || [];
+      news = j.news || [];
     } catch {}
   }
-  function rotateNews() { if (ambNews.length) $("ambNews").textContent = ambNews[newsAt++ % ambNews.length]; }
-  function ambient(on) {
-    if (on === ambOn) return;
-    ambOn = on;
-    $("amb").classList.toggle("hidden", !on);
-    clearInterval(ambTimer);
-    if (on) {
-      if (typeof stopVideo === "function") stopVideo();
-      hidePicker(); clock(); ambRefresh().then(rotateNews);
-      let n = 0;
-      ambTimer = setInterval(() => { clock(); if (++n % 8 === 0) rotateNews(); if (n % 60 === 0) ambRefresh(); }, 1000);
-    }
-  }
-  async function followBernard() {
-    try {
-      const j = await api("/camera/tv");
-      const want = j && j.camera;
-      if (want && want.at > tvAt) {
-        tvAt = want.at;
-        if (want.ambient) { ambient(true); return; }
-        ambient(false);
-        const sel = $("cam"); const o = [...sel.options].find((x) => x.value === want.name) || [...sel.options].find((x) => x.value.toLowerCase().includes(String(want.name).toLowerCase()));
-        if (o) { sel.value = o.value; store.set("bernud.lastCam", o.value); retries = 0; play(o.value); tag(o.value); }
-      }
-    } catch {}
-  }
-  // TV camera picker.
-  let pickTimer = null;
-  function buildPicker() {
-    const box = $("picker"); box.innerHTML = "";
-    [...$("cam").options].forEach((o, i) => {
-      const b = document.createElement("button"); b.type = "button"; b.textContent = `${i + 1}  ${o.textContent}`; b.dataset.cam = o.value;
-      b.addEventListener("click", () => pick(o.value));
-      box.appendChild(b);
-    });
-    const h = document.createElement("div"); h.className = "hint"; h.textContent = "Arrows to choose, OK to show. Or press a number."; box.appendChild(h);
-  }
-  function showPicker() {
-    const box = $("picker"); if (!box.children.length) return;
-    box.classList.remove("hidden", "gone");
-    const btns = [...box.querySelectorAll("button")];
-    btns.forEach((b) => b.classList.toggle("on", b.dataset.cam === $("cam").value));
-    if (!box.contains(document.activeElement)) (btns.find((b) => b.dataset.cam === $("cam").value) || btns[0]).focus();
-    clearTimeout(pickTimer); pickTimer = setTimeout(hidePicker, 8000);
-  }
-  function hidePicker() { $("picker").classList.add("gone"); if ($("picker").contains(document.activeElement)) document.activeElement.blur(); }
-  function pick(name) { ambient(false); const sel = $("cam"); sel.value = name; store.set("bernud.lastCam", name); retries = 0; play(name); tag(name); hidePicker(); }
-  if (tvMode) {
-    document.addEventListener("keydown", (e) => {
-      if (ambOn) { if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter"].includes(e.key)) { e.preventDefault(); ambient(false); retries = 0; play($("cam").value); showPicker(); } return; }
-      const box = $("picker"), btns = [...box.querySelectorAll("button")];
-      const n = Number(e.key);
-      if (n >= 1 && n <= btns.length) { e.preventDefault(); pick(btns[n - 1].dataset.cam); return; }
-      const hidden = box.classList.contains("gone");
-      if (hidden) { if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter"].includes(e.key)) { e.preventDefault(); showPicker(); } return; }
-      const i = btns.indexOf(document.activeElement);
-      if (e.key === "ArrowRight" || e.key === "ArrowDown") { e.preventDefault(); btns[(i + 1) % btns.length].focus(); }
-      else if (e.key === "ArrowLeft" || e.key === "ArrowUp") { e.preventDefault(); btns[(i - 1 + btns.length) % btns.length].focus(); }
-      else if (e.key === "Escape" || e.key === "Backspace" || e.keyCode === 10009) { e.preventDefault(); hidePicker(); return; }
-      clearTimeout(pickTimer); pickTimer = setTimeout(hidePicker, 8000);
-    });
-    document.addEventListener("mousemove", () => { if (!ambOn) showPicker(); });   // the TV remote's pointer
-    start().then(() => { buildPicker(); showPicker(); }).then(() => { followBernard(); setInterval(followBernard, 4000); });
-    // Imou's live links expire: start the picture afresh every 20 minutes so a long watch doesn't freeze.
-    setInterval(() => { retries = 0; if ($("cam").value && !snapFor) play($("cam").value); }, 20 * 60 * 1000);
-  } else start();
+  function rotateNews() { if (news.length) $("ambNews").textContent = news[newsAt++ % news.length]; }
+  clock(); refresh().then(rotateNews);
+  let n = 0;
+  setInterval(() => { clock(); if (++n % 8 === 0) rotateNews(); if (n % 60 === 0) refresh(); }, 1000);
 </script>
 </body>
 </html>

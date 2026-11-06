@@ -31,7 +31,7 @@ export function parseEspn(j) {
   });
 }
 
-export function createJarvis({ kv, notify, sayOnPhone, pc, telegram, lights, dj, brain, speakMp3, headlines, dayLog, voiceRequests, saveMemory, imou, eventsToday, parcels,
+export function createJarvis({ kv, notify, sayOnPhone, pc, telegram, lights, dj, brain, speakMp3, headlines, dayLog, voiceRequests, saveMemory, eventsToday, parcels,
   elevenKey = "", agentId = "", fetchImpl = fetch, now = () => new Date(), log = console,
   pauseMusic = async () => {}, tvOff = async () => {}, tvOn = async () => {}, mainTv = async () => "55", govee = null }) {
 
@@ -206,18 +206,15 @@ export function createJarvis({ kv, notify, sayOnPhone, pc, telegram, lights, dj,
   let ambientCache = null;
   async function ambient() {
     if (ambientCache && Date.now() - ambientCache.at < 60_000) return ambientCache.value;
-    const [weather, news, events, coming, cams] = await Promise.all([
+    const [weather, news, events, coming] = await Promise.all([
       fetchImpl("https://api.open-meteo.com/v1/forecast?latitude=49.19&longitude=-2.11&current=temperature_2m,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=Europe%2FLondon&forecast_days=1", { signal: AbortSignal.timeout(8000) }).then((r) => r.json()).catch(() => null),
       headlines("uk", 6).catch(() => []),
       eventsToday().catch(() => []),
       parcels.lines().catch(() => []),
-      imou.cameras().catch(() => []),
     ]);
-    const snaps = [];
-    for (const c of cams.filter((c) => c.online).slice(0, 4)) { try { snaps.push({ camera: c.name, url: await imou.snapshot(c) }); } catch {} }
     const value = { ok: true,
       weather: weather?.current ? { now: Math.round(weather.current.temperature_2m), code: weather.current.weather_code, wind: Math.round(weather.current.wind_speed_10m), high: Math.round(weather.daily?.temperature_2m_max?.[0]), low: Math.round(weather.daily?.temperature_2m_min?.[0]), rain: weather.daily?.precipitation_probability_max?.[0] } : null,
-      news: news.map((h) => h.title).slice(0, 6), events: events.slice(0, 4).map((e) => ({ title: e.title, when: e.all_day ? "All day" : hhmm(new Date(e.start)) })), parcels: coming.slice(0, 3), cameras: snaps };
+      news: news.map((h) => h.title).slice(0, 6), events: events.slice(0, 4).map((e) => ({ title: e.title, when: e.all_day ? "All day" : hhmm(new Date(e.start)) })), parcels: coming.slice(0, 3) };
     ambientCache = { at: Date.now(), value };
     return value;
   }

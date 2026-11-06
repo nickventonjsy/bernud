@@ -51,13 +51,13 @@ const read = async (st) => { let o = ""; for await (const c of st) o += c; retur
 assert.match(await read(await ag.llmNode(ctxOf("Good night."))), /night/i); assert.equal(ag.ending, true); assert.equal(brainCalls, 0);
 const ag2 = new BernardAgent({ session: "lk-t", fetchImpl: async () => { brainCalls++; return { ok: true, json: async () => ({ reply: "Sunny." }) }; } });
 assert.equal(await read(await ag2.llmNode(ctxOf("weather?"))), "Sunny."); assert.ok(!ag2.ending); assert.equal(brainCalls, 1);
-// A screen action from the brain (open a camera) is sent to the room on the bernud.ui topic.
+// A screen action from the brain (open the brief) is sent to the room on the bernud.ui topic.
 const sentUi = [];
-const ag3 = new BernardAgent({ session: "lk-t", fetchImpl: async () => ({ ok: true, json: async () => ({ reply: "Here's the shop camera.", ui: { camera: { name: "Cory's Shop" } } }) }) });
+const ag3 = new BernardAgent({ session: "lk-t", fetchImpl: async () => ({ ok: true, json: async () => ({ reply: "Here's your brief.", ui: { brief: { name: "CCP brief" } } }) }) });
 ag3.room = { localParticipant: { sendText: async (t, o) => { sentUi.push([JSON.parse(t), o.topic]); } } };
-assert.equal(await read(await ag3.llmNode(ctxOf("show me the shop camera"))), "Here's the shop camera.");
+assert.equal(await read(await ag3.llmNode(ctxOf("show me my brief"))), "Here's your brief.");
 await new Promise((r) => setTimeout(r, 10));
-assert.deepEqual(sentUi, [[{ camera: { name: "Cory's Shop" } }, "bernud.ui"]]);
+assert.deepEqual(sentUi, [[{ brief: { name: "CCP brief" } }, "bernud.ui"]]);
 console.log("livekit ok");
 {
   const { screenTranscript } = await import("./livekit-agent.js");

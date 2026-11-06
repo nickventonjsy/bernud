@@ -22,8 +22,7 @@ const d = createDigests({ kv, notify, now: () => t,
   priorities: async () => [{ text: "Chase Sherwin", done: false }, { text: "Pay Capella", done: true }],
   events: async () => [{ title: "MOT", start: "2026-11-03T10:00:00Z", all_day: false }],
   parcels: { lines: async () => ["Masking tape from Toolstation: dispatched"] },
-  receipts: { week: async () => ({ total: 84.5, receipts: 3, previous_total: 60, shops: [{ shop: "Co-op", total: 50, visits: 2 }], month: { month_name: "November 2026", total: 84.5 } }) },
-  camEvents: async () => ({ summary: [{ camera: "Shop", kinds: { person: 2 }, first: "02:10", last: "02:14" }] }) });
+  receipts: { week: async () => ({ total: 84.5, receipts: 3, previous_total: 60, shops: [{ shop: "Co-op", total: 50, visits: 2 }], month: { month_name: "November 2026", total: 84.5 } }) } });
 assert.equal(await d.tick(), 1);
 assert.match(sent[0].text, /Kerr: Price for a bumper/); assert.match(sent[0].text, /Chase Sherwin/); assert.doesNotMatch(sent[0].text, /Capella/);
 assert.match(sent[0].text, /Tuesday:\n• 10:00 MOT/); assert.match(sent[0].text, /Masking tape/);
@@ -37,7 +36,6 @@ t = new Date("2026-11-25T09:10:00Z"); await d.tick(); assert.equal(sent.at(-1).t
 t = new Date("2026-11-10T09:10:00Z"); await d.tick(); assert.match(sent.at(-1).text, /due on the 15th/);
 // Previews.
 r = await d.handle({ action: "preview", which: "spend" }); assert.match(r.text, /£84.50 across 3 receipts \(£24.50 more/);
-r = await d.handle({ action: "preview", which: "cameras" }); assert.match(r.text, /Shop: 2 person \(02:10 to 02:14\)/);
 r = await d.handle({ action: "set", wrapup: false }); assert.equal(r.wrapup, "off");
 
 // Parcels.
